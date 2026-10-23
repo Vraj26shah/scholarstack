@@ -1,0 +1,2 @@
+-- This migration version was applied to production through Supabase's Management API.
+-- The ordered local migration at 20261023001200 contains the reproducible schema change.

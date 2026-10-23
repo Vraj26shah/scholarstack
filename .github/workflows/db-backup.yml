@@ -1,0 +1,28 @@
+name: Database backup
+# The Supabase free plan has no automatic backups. This takes a nightly dump
+# and keeps it as a private workflow artifact for 30 days.
+on:
+  schedule:
+    - cron: '41 21 * * *' # 03:11 IST
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+      - name: Dump
+        run: |
+          supabase db dump --db-url "$DB_URL" -f schema.sql
+          supabase db dump --db-url "$DB_URL" --data-only -f data.sql
+          gzip schema.sql data.sql
+        env:
+          # Supabase → Connect → Session pooler connection string (with the DB password)
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: db-${{ github.run_id }}
+          path: '*.sql.gz'
+          retention-days: 30

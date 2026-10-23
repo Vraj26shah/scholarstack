@@ -1,0 +1,35 @@
+{
+  "name": "scholars-stack",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @ss/api --filter @ss/web dev",
+    "dev:demo": "pnpm --parallel --filter @ss/api --filter @ss/web dev:demo",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @ss/web test:e2e",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "env:sync": "node scripts/env-sync.mjs",
+    "secrets:push": "node scripts/secrets-push.mjs",
+    "db:start": "supabase start",
+    "db:reset": "supabase db reset",
+    "db:push": "supabase db push",
+    "db:verify": "node supabase/verify-migrations.mjs",
+    "deploy:staging": "pnpm --filter @ss/web build && pnpm --filter @ss/api deploy:staging",
+    "deploy:production": "pnpm --filter @ss/web build && pnpm --filter @ss/api deploy:production",
+    "tunnel": "npx cloudflared tunnel --url http://localhost:8787",
+    "ops": "pnpm --silent --filter @ss/api ops",
+    "db:bundle": "pnpm --silent --filter @ss/api ops db:bundle"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@electric-sql/pglite": "^0.5.10",
+    "typescript": "^5.7.0"
+  }
+}
