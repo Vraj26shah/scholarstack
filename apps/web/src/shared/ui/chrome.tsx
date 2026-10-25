@@ -1,8 +1,9 @@
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useSession } from '../../lib/session';
-import { Wordmark } from './brand';
+import { LABEL } from '../copy';
+import { StackWord, Wordmark } from './brand';
 import { Button, LinkButton } from './button';
-import { Catalogue, ShelfIcon, User } from './icons';
+import { Catalogue, ShelfIcon, Toolbox } from './icons';
 import { ThemeToggle } from './theme-toggle';
 
 function initials(email: string, name: string | null) {
@@ -21,19 +22,32 @@ export function Header({ onDark = false }: { onDark?: boolean }) {
       <nav aria-label="Main" className="flex-none flex items-center gap-2 sm:gap-6 text-[15px]">
         <span className="hidden md:flex items-center gap-6">
           <Link to="/#catalogue" className={link}>
-            Catalogue
+            {LABEL.catalogue}
           </Link>
+          <NavLink to="/contribute" className={link}>
+            {LABEL.contribute}
+          </NavLink>
           {status === 'ready' && (
             <NavLink to="/shelf" className={link}>
-              My shelf
+              {LABEL.shelf}
             </NavLink>
           )}
           {me?.isAdmin && (
             <NavLink to="/admin" className={link}>
-              Admin
+              {LABEL.admin}
             </NavLink>
           )}
         </span>
+        {me?.isAdmin && (
+          <NavLink
+            to="/admin"
+            className={`md:hidden inline-flex items-center h-9 px-3 rounded-full text-[13px] font-semibold no-underline border ${
+              onDark ? 'border-white/40 text-white' : 'border-line text-ink'
+            }`}
+          >
+            Admin
+          </NavLink>
+        )}
         <ThemeToggle onDark={onDark} />
         {status === 'ready' && me ? (
           <Link
@@ -73,24 +87,30 @@ export function Header({ onDark = false }: { onDark?: boolean }) {
 
 export function Footer() {
   return (
-    <footer className="mx-auto max-w-[1280px] px-5 sm:px-9 pt-14 pb-28 md:pb-10">
+    <footer className="mx-auto max-w-[1280px] px-5 sm:px-9 pt-14 pb-[calc(84px+env(safe-area-inset-bottom))] md:pb-10">
       <div className="grid grid-cols-1 md:grid-cols-[auto_minmax(0,1fr)] items-end gap-5 md:gap-10 pb-8 border-b border-line">
         <Wordmark />
         <p className="m-0 md:justify-self-end font-display font-bold text-[clamp(22px,2.6vw,30px)] leading-tight tracking-[-0.035em] text-ink2 max-w-[640px] text-balance md:text-right">
-          Notes from your seniors, <span className="text-ink">filed and ready.</span>
+          Notes from your seniors, <StackWord className="text-ink">filed and ready.</StackWord>
         </p>
       </div>
       <div className="mt-6 flex flex-wrap items-center justify-between gap-4 text-sm text-ink2">
         <span>Independent student project. Not affiliated with VIT Bhopal University.</span>
         <nav aria-label="Footer" className="flex flex-wrap gap-6 font-medium">
+          <Link to="/contribute" className="text-ink no-underline">
+            {LABEL.contribute}
+          </Link>
+          <Link to="/help" className="text-ink no-underline">
+            {LABEL.help}
+          </Link>
           <Link to="/terms" className="text-ink no-underline">
-            Terms
+            {LABEL.terms}
           </Link>
           <Link to="/privacy" className="text-ink no-underline">
-            Privacy
+            {LABEL.privacy}
           </Link>
           <Link to="/contact" className="text-ink no-underline">
-            Contact
+            {LABEL.contact}
           </Link>
         </nav>
       </div>
@@ -98,33 +118,54 @@ export function Footer() {
   );
 }
 
-/** Phone-only bottom tab bar for signed-in students. */
+/**
+ * Phone-only tab bar for signed-in students, docked to the bottom edge like a native app:
+ * full width, a hairline on top, the phone's home-indicator area respected, and the current
+ * tab marked by a short teal line and bold label. Account lives behind the profile picture.
+ */
 export function TabBar() {
   const { status } = useSession();
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
   // The reader has its own controls at the bottom; sign-in is a full-screen card.
   if (status !== 'ready' || pathname.startsWith('/read/') || pathname === '/sign-in') return null;
-  const item = ({ isActive }: { isActive: boolean }) =>
-    `flex flex-col items-center justify-center gap-0.5 h-[50px] rounded-full text-[11px] no-underline ${
-      isActive ? 'bg-brand text-white font-semibold' : 'text-ink2 font-medium'
-    }`;
+  const onToolbox = (pathname === '/' && hash === '#toolbox') || pathname.startsWith('/tools/');
+  const tabs = [
+    {
+      to: '/#catalogue',
+      label: 'Catalogue',
+      icon: <Catalogue size={22} />,
+      active: pathname === '/' && !onToolbox,
+    },
+    { to: '/shelf', label: 'Shelf', icon: <ShelfIcon size={22} />, active: pathname.startsWith('/shelf') },
+    { to: '/#toolbox', label: 'Toolbox', icon: <Toolbox size={22} />, active: onToolbox },
+  ];
   return (
     <nav
       aria-label="App"
-      className="md:hidden fixed left-3.5 right-3.5 bottom-4 z-30 h-[66px] rounded-full bg-surface border border-line grid grid-cols-3 items-center px-2 shadow-lg"
+      className="md:hidden fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_18px_-14px_var(--shadow)]"
     >
-      <NavLink to="/" end className={item}>
-        <Catalogue />
-        Catalogue
-      </NavLink>
-      <NavLink to="/shelf" className={item}>
-        <ShelfIcon />
-        Shelf
-      </NavLink>
-      <NavLink to="/account" className={item}>
-        <User />
-        Account
-      </NavLink>
+      <ul className="m-0 p-0 list-none grid grid-cols-3 h-[60px]">
+        {tabs.map((t) => (
+          <li key={t.label} className="h-full">
+            <Link
+              to={t.to}
+              aria-current={t.active ? 'page' : undefined}
+              className={`relative h-full flex flex-col items-center justify-center gap-1 no-underline text-[11.5px] ${
+                t.active ? 'text-teal-text font-semibold' : 'text-ink2 font-medium'
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`absolute top-0 h-[3px] w-10 rounded-b-full bg-teal transition-opacity ${
+                  t.active ? 'opacity-100' : 'opacity-0'
+                }`}
+              />
+              {t.icon}
+              {t.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
     </nav>
   );
 }
@@ -134,7 +175,10 @@ export function Page({ children, wide = false }: { children: React.ReactNode; wi
   return (
     <>
       <Header />
-      <main id="main" className={`mx-auto ${wide ? 'max-w-[1280px]' : 'max-w-[1100px]'} px-5 sm:px-9 pb-16`}>
+      <main
+        id="main"
+        className={`page-enter mx-auto ${wide ? 'max-w-[1280px]' : 'max-w-[1100px]'} px-5 sm:px-9 pb-16`}
+      >
         {children}
       </main>
       <Footer />

@@ -200,7 +200,10 @@ export async function runQa(env: Env, container: (adminEmails: string) => Contai
     const { data, error } = await svc
       .from('file_pages')
       .select('file_id')
-      .in('file_id', sample.map((f) => f.id))
+      .in(
+        'file_id',
+        sample.map((f) => f.id),
+      )
       .range(from, from + 999);
     if (error) {
       pageRowsError = error.message;
@@ -305,10 +308,12 @@ export async function runQa(env: Env, container: (adminEmails: string) => Contai
     const outsiderEmail = `qa.outsider.${stamp}@example.com`;
     const link = await svc.auth.admin.generateLink({ type: 'magiclink', email: outsiderEmail });
     const hash = link.data.properties?.hashed_token;
-    if (link.error || !hash) throw new Error(`QA outsider magic link: ${link.error?.message ?? 'no token returned'}`);
+    if (link.error || !hash)
+      throw new Error(`QA outsider magic link: ${link.error?.message ?? 'no token returned'}`);
     const os = await anon.auth.verifyOtp({ token_hash: hash, type: 'magiclink' });
     const outsiderToken = os.data.session?.access_token;
-    if (os.error || !outsiderToken) throw new Error(`QA outsider session: ${os.error?.message ?? 'no access token'}`);
+    if (os.error || !outsiderToken)
+      throw new Error(`QA outsider session: ${os.error?.message ?? 'no access token'}`);
     {
       const probeApp = createApp(() => container('nobody@vitbhopal.ac.in'));
       const me = await probeApp.request('/api/me', { headers: { authorization: `Bearer ${outsiderToken}` } });
@@ -324,7 +329,8 @@ export async function runQa(env: Env, container: (adminEmails: string) => Contai
 
   const accessToken = env.SUPABASE_ACCESS_TOKEN?.trim();
   const projectRef =
-    env.SUPABASE_PROJECT_REF || (/https:\/\/([a-z0-9]+)\.supabase\.co/.exec(env.SUPABASE_URL ?? '')?.[1] ?? '');
+    env.SUPABASE_PROJECT_REF ||
+    (/https:\/\/([a-z0-9]+)\.supabase\.co/.exec(env.SUPABASE_URL ?? '')?.[1] ?? '');
   if (accessToken && projectRef) {
     try {
       const authConfig = await new SupabaseManagement(accessToken, projectRef).authConfig();
@@ -353,7 +359,8 @@ export async function runQa(env: Env, container: (adminEmails: string) => Contai
     createdUsers.push(made.data.user.id);
     const link = await admin.auth.admin.generateLink({ type: 'magiclink', email });
     const hash = link.data.properties?.hashed_token;
-    if (link.error || !hash) throw new Error(`QA magic link ${email}: ${link.error?.message ?? 'no token returned'}`);
+    if (link.error || !hash)
+      throw new Error(`QA magic link ${email}: ${link.error?.message ?? 'no token returned'}`);
     const s = await createClient(env.SUPABASE_URL!, env.VITE_SUPABASE_PUBLISHABLE_KEY!, {
       auth: { persistSession: false },
     }).auth.verifyOtp({ token_hash: hash, type: 'magiclink' });
@@ -376,12 +383,14 @@ export async function runQa(env: Env, container: (adminEmails: string) => Contai
       index.json?.branches?.length === 6,
       `${index.json?.batches?.length ?? 0} batch drawers`,
     );
-    const programmeSubjects = ((
-      await svc.from('programme_subjects').select('programme_slug, subject_code')
-    ).data ?? []) as { programme_slug: string; subject_code: string }[];
+    const programmeSubjects = ((await svc.from('programme_subjects').select('programme_slug, subject_code'))
+      .data ?? []) as { programme_slug: string; subject_code: string }[];
     const curriculum = new Map<string, Set<string>>();
     for (const row of programmeSubjects)
-      curriculum.set(row.programme_slug, (curriculum.get(row.programme_slug) ?? new Set()).add(row.subject_code));
+      curriculum.set(
+        row.programme_slug,
+        (curriculum.get(row.programme_slug) ?? new Set()).add(row.subject_code),
+      );
     const live = courses.filter(
       (course) =>
         course.status === 'live' &&
@@ -398,7 +407,9 @@ export async function runQa(env: Env, container: (adminEmails: string) => Contai
       const hiddenEverywhere = await Promise.all(
         unmappedLive.map(async (course) => {
           const drawers = await Promise.all(
-            branches.map((branch) => pub.call('GET', `/catalogue/drawer?batch=${course.batch_year}&branch=${branch}`)),
+            branches.map((branch) =>
+              pub.call('GET', `/catalogue/drawer?batch=${course.batch_year}&branch=${branch}`),
+            ),
           );
           return drawers.every((drawer) => !(drawer.json ?? []).some((card: any) => card.id === course.id));
         }),
@@ -712,7 +723,7 @@ export async function runQa(env: Env, container: (adminEmails: string) => Contai
             `${open.json?.pageCount ?? '?'} pages`,
           );
           const vt = open.json?.viewerToken;
-          const p1 = await new Http(base).call('GET', `/reader/pages/${file.id}/1`, undefined, {
+          const p1 = await new Http(base, stu.token).call('GET', `/reader/pages/${file.id}/1`, undefined, {
             [VIEWER_TOKEN_HEADER]: vt,
           });
           t(
@@ -729,16 +740,25 @@ export async function runQa(env: Env, container: (adminEmails: string) => Contai
               'security',
               'a viewer token only opens its own file',
               (
-                await new Http(base).call('GET', `/reader/pages/${other.id}/1`, undefined, {
+                await new Http(base, stu.token).call('GET', `/reader/pages/${other.id}/1`, undefined, {
                   [VIEWER_TOKEN_HEADER]: vt,
                 })
               ).status >= 400,
             );
           t(
             'security',
-            'a tampered viewer token is refused',
+            'a viewer token is useless without its owner’s sign-in',
             (
               await new Http(base).call('GET', `/reader/pages/${file.id}/1`, undefined, {
+                [VIEWER_TOKEN_HEADER]: vt,
+              })
+            ).status === 401,
+          );
+          t(
+            'security',
+            'a tampered viewer token is refused',
+            (
+              await new Http(base, stu.token).call('GET', `/reader/pages/${file.id}/1`, undefined, {
                 [VIEWER_TOKEN_HEADER]: `${vt}x`,
               })
             ).status >= 400,

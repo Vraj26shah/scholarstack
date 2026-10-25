@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { useSession } from '../../lib/session';
-import { StackWord } from '../../shared/ui/brand';
+import { Hl, StackWord } from '../../shared/ui/brand';
 import { Button, LinkButton } from '../../shared/ui/button';
 import { Check, Mail } from '../../shared/ui/icons';
 import { Reveal } from '../../shared/ui/motion';
@@ -17,13 +17,21 @@ export function NotifyMe({ feature }: { feature: FeatureDto }) {
   if (status !== 'ready' || !me)
     return (
       <LinkButton to={`/sign-in?next=${encodeURIComponent(feature.path)}`} variant="outline">
-        <Mail size={16} /> Sign in to get an email when it's out
+        <Mail size={16} /> Notify me when it’s out
       </LinkButton>
     );
   if (me.emailOptIn)
     return (
-      <span className="inline-flex items-center gap-2 text-sm font-semibold text-teal-text">
-        <Check size={16} /> We'll email {me.email} when it's out
+      <span className="flex items-start gap-2 min-w-0 text-sm font-semibold text-teal-text">
+        <Check size={16} className="flex-none mt-0.5" />
+        <span className="min-w-0 [overflow-wrap:anywhere]">
+          We'll email{' '}
+          <span>
+            {me.email.split('@')[0]}
+            <wbr />@{me.email.split('@')[1]}
+          </span>{' '}
+          when it's out
+        </span>
       </span>
     );
   return (
@@ -40,28 +48,25 @@ function ToolCard({ f, i }: { f: FeatureDto; i: number }) {
   const live = f.status === 'live';
   return (
     <Reveal index={i}>
+      {/* A catalogue card from the drawer: call number, ruled lines, a rubber stamp. */}
       <div
-        className={`relative h-full rounded-[24px] p-6 flex flex-col gap-4 border ${
-          live ? 'bg-surface border-teal shadow-[0_20px_40px_-28px_var(--shadow)]' : 'bg-surface border-line'
-        }`}
+        className="ruled relative h-full rounded-[14px] px-5 pt-4 pb-11 flex flex-col gap-3 shadow-[0_18px_34px_-24px_var(--shadow),0_0_0_1px_var(--line)]"
+        style={{ backgroundPosition: '0 46px' }}
       >
-        <div className="flex items-start justify-between gap-3">
-          <span
-            className={`w-14 h-14 rounded-2xl inline-flex items-center justify-center ${
-              live ? 'bg-teal text-white' : 'bg-sunk text-ink2'
-            }`}
-          >
-            <ToolIcon toolKey={f.key} />
-          </span>
-          <span
-            className={`inline-flex items-center h-7 px-3 rounded-full font-mono text-[11px] font-semibold tracking-[0.1em] ${
-              live ? 'bg-mist text-on-mist' : 'bg-marigold-soft text-marigold-text'
-            }`}
-          >
-            {live ? 'FREE · NO SIGN-IN' : 'COMING SOON'}
-          </span>
+        <div className="flex justify-between gap-3 font-mono text-[11px] text-ink2 pb-2 border-b-2 border-card-head">
+          <span>TOOL · {String(i + 1).padStart(2, '0')}</span>
+          <span>{live ? 'ON THE SHELF' : 'ON ORDER'}</span>
         </div>
-        <div className="flex flex-col gap-1.5">
+        <span
+          aria-hidden="true"
+          className={`absolute right-4 top-11 rotate-[-7deg] rounded-md border-2 px-2 py-0.5 font-mono text-[11.5px] font-semibold tracking-[0.06em] ${
+            live ? 'border-teal-text text-teal-text' : 'border-marigold-text text-marigold-text'
+          }`}
+        >
+          {live ? 'FREE · NO SIGN-IN' : 'COMING SOON'}
+        </span>
+        <div className="flex flex-col gap-1.5 pt-6">
+          <span className="sr-only">{live ? 'Free, no sign-in.' : 'Coming soon.'}</span>
           <span className="font-display font-extrabold text-[26px] leading-none tracking-[-0.035em]">
             {f.title}
           </span>
@@ -76,6 +81,7 @@ function ToolCard({ f, i }: { f: FeatureDto; i: number }) {
             <NotifyMe feature={f} />
           )}
         </div>
+        <span aria-hidden="true" className="punch-hole" />
       </div>
     </Reveal>
   );
@@ -94,9 +100,7 @@ export function Toolbox() {
     >
       <div className="flex flex-wrap items-end justify-between gap-5 mb-10">
         <div>
-          <p className="font-mono text-[13px] tracking-[0.14em] text-teal-text m-0 mb-3.5">
-            04 — THE TOOLBOX
-          </p>
+          <p className="font-mono text-[13px] tracking-[0.14em] text-teal-text m-0 mb-3.5">The toolbox</p>
           <h2
             id="toolbox-title"
             className="m-0 font-display font-extrabold text-[clamp(44px,6vw,76px)] leading-[0.95] tracking-[-0.05em]"
@@ -105,7 +109,7 @@ export function Toolbox() {
           </h2>
         </div>
         <p className="m-0 text-[17px] leading-relaxed text-ink2 max-w-[400px]">
-          Small tools for the rest of the semester. No sign-in, no payment. More on the way:{' '}
+          Small tools for the rest of the semester. <Hl>No sign-in, no payment.</Hl> More on the way:{' '}
           <Link to="/contact" className="text-teal-text">
             tell us what you need
           </Link>

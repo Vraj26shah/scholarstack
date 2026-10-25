@@ -13,6 +13,27 @@ export default defineConfig({
   build: {
     sourcemap: false,
     target: 'es2022',
+    rollupOptions: {
+      output: {
+        // Libraries change rarely: keep them in their own long-cached files, so a site update
+        // only re-downloads the app code.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('@supabase')) return 'vendor-auth';
+          if (
+            id.includes('react-router') ||
+            id.includes('/react-dom/') ||
+            id.includes('/react/') ||
+            id.includes('scheduler')
+          )
+            return 'vendor-react';
+          if (id.includes('@tanstack') || id.includes('zustand')) return 'vendor-data';
+          if (id.includes('@radix-ui')) return 'vendor-ui';
+          if (id.includes('/zod/')) return 'vendor-zod';
+          return 'vendor';
+        },
+      },
+    },
   },
   test: {
     environment: 'jsdom',

@@ -17,7 +17,12 @@ demoRoutes.post('/dev/login', async (c) => {
   if (!demo) throw fail.notFound('That endpoint');
   const { email } = z.object({ email: z.string().email() }).parse(await c.req.json());
   const normalized = email.toLowerCase();
-  if (!isCollegeEmail(normalized, c.get('container').config.allowedDomain)) throw fail.notCollege();
+  const container = c.get('container');
+  if (
+    !isCollegeEmail(normalized, container.config.allowedDomain) &&
+    !(await container.admins.isAdmin(normalized))
+  )
+    throw fail.notCollege();
   let userId = users.get(normalized);
   if (!userId) {
     userId = demo.newId();

@@ -11,12 +11,13 @@
  *   pnpm ops serve                       the real site on http://localhost:8787 against live data
  *   pnpm ops qa [--out file.json]        live QA: database, security, admin, purchase and reader
  *   pnpm ops broken > broken.csv         files whose R2 copy is a web page / empty: re-upload these
+ *   pnpm ops admins:sync                 copy ADMIN_EMAILS into the database admin list (sign-up check)
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { serve } from '@hono/node-server';
 import type { AdminCourseDto, ImportFolderDto } from '@ss/contracts';
-import { BRANCH_CATALOG } from '@ss/contracts';
+import { BRANCH_CATALOG, isWellFormedEmail, normaliseEmail } from '@ss/contracts';
 import { createClient } from '@supabase/supabase-js';
 import { Hono } from 'hono';
 import { type SupabaseEnv, supabaseCatalogue, supabaseContainer } from '../composition/supabase-container';
@@ -68,11 +69,22 @@ function management(): SupabaseManagement | null {
  */
 function container(inline = false) {
   const s = store();
-  const converter = new LocalConverter(s, supabaseCatalogue(env as never), env.TILE_SEED_SECRET!);
-  return supabaseContainer(env as unknown as SupabaseEnv, {
+  // Late-bound: the converter reports through the same AdminService checks as the HTTPS
+  // callbacks, so local conversions update the admin progress bars live.
+  let built: ReturnType<typeof supabaseContainer> | null = null;
+  const converter = new LocalConverter(s, supabaseCatalogue(env as never), env.TILE_SEED_SECRET!, () =>
+    built
+      ? {
+          report: (r) => built!.admin.applyConversion(r),
+          progress: (p) => built!.admin.recordConversionProgress(p),
+        }
+      : null,
+  );
+  built = supabaseContainer(env as unknown as SupabaseEnv, {
     store: s,
     queue: inline ? new LocalConversionQueue(converter) : { enqueue: async () => {} },
   });
+  return built;
 }
 
 // ── check ──
@@ -96,11 +108,7 @@ async function check() {
   ];
   for (const k of required)
     (isPlaceholder(env[k]) ? bad : ok)(`${k}${isPlaceholder(env[k]) ? ' — not set' : ''}`);
-  for (const k of [
-    'RAZORPAY_WEBHOOK_SECRET',
-    'BREVO_API_KEY',
-    'VITE_TURNSTILE_SITE_KEY',
-  ])
+  for (const k of ['RAZORPAY_WEBHOOK_SECRET', 'BREVO_API_KEY', 'VITE_TURNSTILE_SITE_KEY'])
     (isPlaceholder(env[k]) ? warn : ok)(
       `${k}${isPlaceholder(env[k]) ? ' — not set (optional for now)' : ''}`,
     );
@@ -216,6 +224,8 @@ async function configureAuth(mgmt: SupabaseManagement) {
       },
     ],
     ['1-hour access tokens', { jwt_exp: 3600 }],
+    // A new address must click its emailed link (or come from Google) before it can sign in.
+    ['confirm email before sign-in', { mailer_autoconfirm: false }],
     [
       'refresh-token rotation',
       { refresh_token_rotation_enabled: true, security_refresh_token_reuse_interval: 10 },
@@ -272,7 +282,9 @@ async function importBatch() {
     `${subjects.length} subject folders in ${batchName} (${fresh.length} new mapped, ${mappedSubjects.length - fresh.length} already imported, ${unmappedSubjects.length} unmapped${allSections ? '; including the unmapped folders in this import' : ''}).`,
   );
   if (unmappedSubjects.length)
-    console.log(`  Unmapped folders left out of the public catalogue: ${unmappedSubjects.map((f) => f.name).join(', ')}`);
+    console.log(
+      `  Unmapped folders left out of the public catalogue: ${unmappedSubjects.map((f) => f.name).join(', ')}`,
+    );
   const inputs = selected.map((f) => ({
     prefix: f.prefix,
     title: f.suggested.title,
@@ -360,7 +372,8 @@ async function publish() {
   const chosen = (await c.admin.listCourses()).filter(
     (x) =>
       x.status === 'draft' &&
-      (!only || only.some((code) => x.courseCode?.toUpperCase() === code || x.r2Prefix.toUpperCase().includes(code))),
+      (!only ||
+        only.some((code) => x.courseCode?.toUpperCase() === code || x.r2Prefix.toUpperCase().includes(code))),
   );
   const drafts = chosen.filter((x) => x.branchSlugs.length > 0);
   for (const course of chosen.filter((x) => x.branchSlugs.length === 0)) {
@@ -427,7 +440,9 @@ async function syncCurriculum() {
 async function status() {
   const db = createClient(env.SUPABASE_URL!, env.SUPABASE_SECRET_KEY!, { auth: { persistSession: false } });
   const rows = (await db.from('course_overview').select('*').order('batch_year').order('title')).data ?? [];
-  console.log(`${'COURSE'.padEnd(52)} ${'STATUS'.padEnd(8)} FILES  PAGES  PREVIEWS  PENDING  HIDDEN  BUYERS  PROGRAMMES`);
+  console.log(
+    `${'COURSE'.padEnd(52)} ${'STATUS'.padEnd(8)} FILES  PAGES  PREVIEWS  PENDING  HIDDEN  BUYERS  PROGRAMMES`,
+  );
   for (const r of rows) {
     console.log(
       `${`${r.subject_code ?? ''} ${r.title}`.slice(0, 52).padEnd(52)} ${String(r.status).padEnd(8)} ${String(r.visible_files).padStart(5)}  ${String(r.pages).padStart(5)}  ${String(r.previews).padStart(8)}  ${String(r.pending_files).padStart(7)}  ${String(r.hidden_units).padStart(6)}  ${String(r.buyers).padStart(6)}  ${Array.isArray(r.programmes) ? r.programmes.join(',') : ''}`,
@@ -522,7 +537,46 @@ async function broken() {
   );
 }
 
+// ── admins ──
+
+/**
+ * Make the database admin list match ADMIN_EMAILS. The live site reads admins from this list
+ * (within a minute), and so does the sign-up check, so this is all a change needs. Addresses
+ * added by hand in the database (source = 'manual') are left alone.
+ */
+async function adminsSync() {
+  const list = [
+    ...new Set(
+      (env.ADMIN_EMAILS ?? '')
+        .split(/[\s,;]+/)
+        .map(normaliseEmail)
+        .filter(Boolean),
+    ),
+  ];
+  const bad = list.filter((e) => !isWellFormedEmail(e));
+  if (bad.length) throw new Error(`ADMIN_EMAILS has addresses that are not valid: ${bad.join(', ')}`);
+  if (list.length === 0) throw new Error('ADMIN_EMAILS is empty: add at least one admin before syncing.');
+  const db = createClient(env.SUPABASE_URL!, env.SUPABASE_SECRET_KEY!, { auth: { persistSession: false } });
+  const up = await db.from('admin_emails').upsert(
+    list.map((email) => ({ email, source: 'github' })),
+    { onConflict: 'email' },
+  );
+  if (up.error)
+    throw new Error(`Could not update the admin list: ${up.error.message} (run pnpm ops db:apply first)`);
+  const gone = await db
+    .from('admin_emails')
+    .delete()
+    .eq('source', 'github')
+    .not('email', 'in', `(${list.map((e) => `"${e}"`).join(',')})`)
+    .select('email');
+  if (gone.error) throw new Error(`Could not remove old admins: ${gone.error.message}`);
+  console.log('\nAdmin list');
+  for (const e of list) ok(e);
+  for (const r of gone.data ?? []) warn(`removed ${r.email}`);
+}
+
 const commands: Record<string, () => Promise<void> | void> = {
+  'admins:sync': adminsSync,
   broken,
   qa,
   check,

@@ -17,6 +17,7 @@ const STATUS: Record<ErrorCode, number> = {
   PAYMENT_INVALID: 400,
   NOT_READY: 409,
   SYNC_FAILED: 502,
+  PAYMENTS_UNAVAILABLE: 503,
   INTERNAL: 500,
 };
 
@@ -54,4 +55,9 @@ export const fail = {
   paymentInvalid: () => new AppError(ErrorCode.PaymentInvalid, 'We could not verify that payment.'),
   notReady: (message = 'This file is still being prepared.') => new AppError(ErrorCode.NotReady, message),
   syncFailed: (message: string) => new AppError(ErrorCode.SyncFailed, message),
+  paymentsUnavailable: () =>
+    new AppError(
+      ErrorCode.PaymentsUnavailable,
+      "Payments can't start right now. Nothing was charged. Please try again in a few minutes.",
+    ),
 };

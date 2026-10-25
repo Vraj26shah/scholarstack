@@ -5,11 +5,21 @@
  */
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ConversionReport } from '@ss/contracts';
+import type { ConversionProgressReport, ConversionReport } from '@ss/contracts';
 import { CliRasterizer, ConvertPages } from '@ss/converter/pipeline';
 import { recordConversion } from '../application/conversion';
 import type { CatalogueWriter, ConversionJob, ConversionQueue } from '../domain/ports';
 import type { S3ObjectStore } from '../infrastructure/s3';
+
+/**
+ * Where results and live progress go. The local live server binds this to the AdminService
+ * (same checks as the HTTPS callbacks the GitHub Actions converter uses), so the admin
+ * progress bars move in local mode too. CLI runs fall back to writing results directly.
+ */
+export interface ConversionSink {
+  report(report: ConversionReport): Promise<void>;
+  progress?(progress: ConversionProgressReport): Promise<void>;
+}
 
 export class LocalConverter {
   private readonly pipeline: ConvertPages;
@@ -17,11 +27,17 @@ export class LocalConverter {
     store: S3ObjectStore,
     catalogue: Pick<CatalogueWriter, 'applyConversion' | 'setFileHidden'>,
     seedSecret: string,
+    sink: () => ConversionSink | null = () => null,
   ) {
     this.pipeline = new ConvertPages(
       store,
       new CliRasterizer(150),
-      { report: (r: ConversionReport) => recordConversion(catalogue, r) },
+      {
+        report: (r: ConversionReport) => sink()?.report(r) ?? recordConversion(catalogue, r),
+        progress: async (p: ConversionProgressReport) => {
+          await sink()?.progress?.(p);
+        },
+      },
       seedSecret,
       join(tmpdir(), 'ss-convert'),
     );

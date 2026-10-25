@@ -240,13 +240,96 @@ describe('ConvertPages', () => {
           'saving_manifest',
         ]),
       );
-      expect(progressReports.find((report) => report.stage === 'writing_pages')).toMatchObject({
-        current: 1,
-        total: 1,
-      });
+      expect([...progressReports].reverse().find((report) => report.stage === 'writing_pages')).toMatchObject(
+        {
+          current: 1,
+          total: 1,
+        },
+      );
     },
     180_000,
   );
+
+  it('renders long documents in small chunks and reports every written page', async () => {
+    const storage = new MapStorage();
+    const page = await renderDemoPage({
+      courseTitle: 'T',
+      unitTitle: 'Module 1',
+      fileName: 'long.pdf',
+      pageNo: 1,
+      pageCount: 20,
+    });
+    storage.objects.set('drive-imports/course/long.pdf', Buffer.from('%PDF-1.7 fake'));
+    const ranges: [number, number][] = [];
+    const progressReports: ConversionProgressReport[] = [];
+    const convert = new ConvertPages(
+      storage,
+      {
+        open: async () => ({
+          pageCount: 20,
+          renderRange: async (from, to) => {
+            ranges.push([from, to]);
+            return Array.from({ length: to - from + 1 }, () => page);
+          },
+        }),
+      },
+      { report: async () => {}, progress: async (r) => void progressReports.push(r) },
+      'secret-secret-secret',
+      mkdtempSync(join(tmpdir(), 'ss-chunks-')),
+      2,
+      8,
+      0,
+    );
+    const result = await convert.run({
+      fileId: 'long-file',
+      sourceKey: 'drive-imports/course/long.pdf',
+      queueId: '8f05b90a-221e-47cf-a2de-110d50f2aa53',
+      queuePosition: 1,
+      queueTotal: 1,
+    });
+    expect(result.status).toBe('ready');
+    expect(result.pages.map((p) => p.pageNo)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+    expect(ranges).toEqual([
+      [1, 8],
+      [9, 16],
+      [17, 20],
+    ]);
+    const written = progressReports.filter((r) => r.stage === 'writing_pages').map((r) => r.current);
+    expect(written).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+    expect(progressReports.every((r) => r.stage !== 'writing_pages' || r.total === 20)).toBe(true);
+  });
+
+  it('keeps converting when a progress callback fails', async () => {
+    const storage = new MapStorage();
+    const page = await renderDemoPage({
+      courseTitle: 'T',
+      unitTitle: 'Module 1',
+      fileName: 'scan.png',
+      pageNo: 1,
+      pageCount: 1,
+    });
+    storage.objects.set('drive-imports/course/scan.png', page);
+    const convert = new ConvertPages(
+      storage,
+      { toPages: async () => [page] },
+      {
+        report: async () => {},
+        progress: async () => {
+          throw new Error('API asleep');
+        },
+      },
+      'secret-secret-secret',
+      mkdtempSync(join(tmpdir(), 'ss-progress-fail-')),
+    );
+    const result = await convert.run({
+      fileId: 'resilient',
+      sourceKey: 'drive-imports/course/scan.png',
+      queueId: '8f05b90a-221e-47cf-a2de-110d50f2aa53',
+      queuePosition: 1,
+      queueTotal: 1,
+    });
+    expect(result.status).toBe('ready');
+  });
 
   it('reports a failure instead of crashing on unsupported files', async () => {
     const storage = new MapStorage();

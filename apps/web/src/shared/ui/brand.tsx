@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useId } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 /**
@@ -43,7 +43,7 @@ export function Wordmark({ onDark = false, size = 'md' }: { onDark?: boolean; si
         <LogoMark size={size === 'sm' ? 28 : 34} onDark={onDark} />
       </span>
       <span
-        className={`font-display font-extrabold tracking-[-0.045em] leading-none whitespace-nowrap min-w-0 ${
+        className={`font-brand font-extrabold tracking-[-0.045em] leading-none whitespace-nowrap min-w-0 ${
           size === 'sm' ? 'text-xl' : 'text-[16px] min-[380px]:text-[18px] sm:text-[25px]'
         } ${onDark ? 'text-white' : 'text-ink'}`}
       >
@@ -54,9 +54,31 @@ export function Wordmark({ onDark = false, size = 'md' }: { onDark?: boolean; si
   );
 }
 
+/** True once the element has been on screen (so a marker stroke draws when it's seen). */
+function useShown<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return setShown(true);
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setShown(true);
+          io.disconnect();
+        }
+      },
+      { threshold: 0.6 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return [ref, shown] as const;
+}
+
 /**
- * The signature word ("stacked.", "drawer."): one soft sheet offset behind the letters, so it
- * reads clearly on any background. With `animate`, the letters rise in one after another.
+ * The signature word ("stacked.", "drawer."): an italic serif with a slow light passing through
+ * it. With `animate`, it wipes in softly the first time the page loads.
  */
 export function StackWord({
   children,
@@ -69,21 +91,15 @@ export function StackWord({
   onDark?: boolean;
   animate?: boolean;
 }) {
+  // The marker stroke draws itself when the word comes into view, not while it's off-screen.
+  const [ref, shown] = useShown<HTMLSpanElement>();
   return (
-    <span className={`stack-word ${onDark ? 'on-dark' : ''} ${animate ? 'animate' : ''} ${className}`}>
-      {animate ? (
-        <>
-          <span className="sr-only">{children}</span>
-          {[...children].map((ch, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: letters of a fixed word
-            <span key={i} aria-hidden="true" className="letter" style={{ ['--i' as string]: i }}>
-              {ch === ' ' ? ' ' : ch}
-            </span>
-          ))}
-        </>
-      ) : (
-        children
-      )}
+    <span
+      ref={ref}
+      data-shown={shown ? '' : undefined}
+      className={`stack-word ${onDark ? 'on-dark' : ''} ${animate ? 'animate' : ''} ${className}`}
+    >
+      {children}
     </span>
   );
 }
@@ -187,5 +203,18 @@ export function Stamp({
         {label}
       </text>
     </svg>
+  );
+}
+
+/**
+ * A key phrase in body copy: slightly bolder, underlined with the same hand-drawn marker stroke as
+ * the accent words. Wraps cleanly across lines. Use one or two per block, for what a student must know.
+ */
+export function Hl({ children, onDark = false }: { children: React.ReactNode; onDark?: boolean }) {
+  const [ref, shown] = useShown<HTMLElement>();
+  return (
+    <mark ref={ref} data-shown={shown ? '' : undefined} className={`hl ${onDark ? 'on-dark' : ''}`}>
+      {children}
+    </mark>
   );
 }

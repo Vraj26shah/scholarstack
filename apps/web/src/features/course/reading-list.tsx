@@ -15,7 +15,7 @@ export function ReadingList({ items }: { items: ReadingItemDto[] }) {
         >
           Recommended books
         </h3>
-        <span className="font-mono text-[12px] text-ink2">NOT INCLUDED · FIND A COPY</span>
+        <span className="text-sm text-ink2">Not included · find a copy</span>
       </div>
       <p className="m-0 mb-4 text-sm leading-relaxed text-ink2 max-w-[640px]">
         Seniors kept these books alongside their notes. They are published textbooks, so they are not part of

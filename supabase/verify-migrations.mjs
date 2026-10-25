@@ -92,6 +92,26 @@ const hook = async (email) =>
 check('hook allows college email', JSON.stringify(await hook('rahul.k@vitbhopal.ac.in')) === '{}');
 check('hook blocks gmail', (await hook('rahul@gmail.com')).error?.http_code === 403);
 check('hook blocks look-alike domain', (await hook('a@vitbhopal.ac.in.evil.com')).error?.http_code === 403);
+check(
+  'hook allows the listed admin Gmail exactly',
+  JSON.stringify(await hook('VitbSmashers@Gmail.com')) === '{}',
+);
+for (const trick of [
+  'vit.bsmashers@gmail.com',
+  'vitbsmashers+x@gmail.com',
+  'vitbsmashers@gmail.com.evil.in',
+  'rahul+2@vitbhopal.ac.in',
+  'rahul..k@vitbhopal.ac.in',
+  'rahul.@vitbhopal.ac.in',
+  'rаhul@vitbhopal.ac.in',
+]) {
+  check(`hook blocks ${trick}`, (await hook(trick)).error?.http_code === 403);
+}
+check(
+  'students cannot read the admin list',
+  (await one(`select has_table_privilege('authenticated', 'public.admin_emails', 'select') as ok`)).ok ===
+    false,
+);
 const uid = '11111111-1111-1111-1111-111111111111';
 await db.query(`insert into auth.users (id, email) values ($1, 'Rahul.K@vitbhopal.ac.in')`, [uid]);
 const profile = await one('select email, email_opt_in from public.profiles where id = $1', [uid]);
@@ -248,6 +268,149 @@ check(
 await db.query(`select public.revoke_by_payment('pay_B1')`);
 check('lost dispute on a bundle revokes every course', (await active()) === 0);
 
+// ── Access periods ──
+await db.query(`update public.courses set access_until = now() + interval '30 days' where id = $1`, [os.id]);
+await db.query(`select public.create_order($1, $2, null, array[$2]::uuid[], 9900, 'order_T2')`, [uid, os.id]);
+await db.query(`select public.grant_order('order_T2', 'pay_T2')`);
+const term = await one(
+  'select expires_at, revoked_at, revoke_reason from public.entitlements where user_id = $1 and course_id = $2',
+  [uid, os.id],
+);
+check(
+  'buying again after a dispute renews access with the course term end',
+  term.revoked_at === null && term.expires_at !== null && term.revoke_reason === null,
+);
+await db.query(
+  `update public.entitlements set expires_at = now() - interval '1 day' where user_id = $1 and course_id = $2`,
+  [uid, os.id],
+);
+await db.query('update public.courses set access_until = null where id = $1', [os.id]);
+await db.query(`select public.create_order($1, $2, null, array[$2]::uuid[], 9900, 'order_T3')`, [uid, os.id]);
+await db.query(`select public.grant_order('order_T3', 'pay_T3')`);
+{
+  const renewed = (
+    await one(
+      `select extract(epoch from (expires_at - (now() + interval '3 months')))::int as off
+         from public.entitlements where user_id = $1 and course_id = $2`,
+      [uid, os.id],
+    )
+  ).off;
+  check('an expired purchase is renewed by buying again, for 3 months from today', Math.abs(renewed) < 60);
+}
+await db.query('delete from public.entitlements where user_id = $1 and course_id = $2', [uid, maths.id]);
+check(
+  'an admin gift needs no order but must say which admin gave it',
+  (await throws(`insert into public.entitlements (user_id, course_id, granted_by) values ($1, $2, 'admin')`, [
+    uid,
+    maths.id,
+  ])) &&
+    !(await throws(
+      `insert into public.entitlements (user_id, course_id, granted_by, granted_by_admin) values ($1, $2, 'admin', 'vitbsmashers@gmail.com')`,
+      [uid, maths.id],
+    )),
+);
+check(
+  'a purchase still always has an order',
+  await throws('insert into public.entitlements (user_id, course_id) values ($1, $2)', [uid, course.id]),
+);
+await db.query(
+  `update public.entitlements set expires_at = now() - interval '1 day' where user_id = $1 and course_id = $2`,
+  [uid, maths.id],
+);
+await db.query(`select public.create_order($1, $2, null, array[$2]::uuid[], 9900, 'order_T4')`, [
+  uid,
+  maths.id,
+]);
+await db.query(`select public.grant_order('order_T4', 'pay_T4')`);
+check(
+  'buying a course after an ended gift records it as a purchase',
+  (
+    await one(
+      'select granted_by, granted_by_admin from public.entitlements where user_id = $1 and course_id = $2',
+      [uid, maths.id],
+    )
+  ).granted_by === 'purchase',
+);
+await db.query(
+  "update public.entitlements set end_notified_at = now(), expires_at = now() - interval '1 hour' where user_id = $1 and course_id = $2",
+  [uid, maths.id],
+);
+await db.query(`select public.create_order($1, $2, null, array[$2]::uuid[], 9900, 'order_T5')`, [
+  uid,
+  maths.id,
+]);
+await db.query(`select public.grant_order('order_T5', 'pay_T5')`);
+check(
+  'buying again clears the "access ended" email mark, so a later end is emailed again',
+  (
+    await one('select end_notified_at from public.entitlements where user_id = $1 and course_id = $2', [
+      uid,
+      maths.id,
+    ])
+  ).end_notified_at === null,
+);
+check(
+  'a disputed purchase keeps its reason',
+  (await one(`select count(*)::int as n from public.entitlements where revoke_reason = 'dispute'`)).n >= 1,
+);
+
+// ── Problems log and storage map ──
+await db.query(`select public.record_problem('fp1', 'browser', 'image', 'preview failed', '/c/x', '', 'ua')`);
+await db.query(`select public.record_problem('fp1', 'browser', 'image', 'preview failed', '/c/x', '', 'ua')`);
+check(
+  'a repeated problem is one row with a count',
+  (await one(`select count from public.problem_reports where fingerprint = 'fp1'`)).count === 2,
+);
+check(
+  'the storage map lists tables with sizes',
+  (await db.query('select * from public.storage_tables()')).rows.length > 10,
+);
+await db.query(`select public.create_order($1, $2, null, array[$2]::uuid[], 9900, 'order_OLD')`, [
+  uid,
+  maths.id,
+]);
+await db.query(
+  `update public.orders set created_at = now() - interval '40 days' where gateway_order_id = 'order_OLD'`,
+);
+const paidBefore = (await one(`select count(*)::int as n from public.orders where status = 'paid'`)).n;
+const cleaned = (await one('select public.clean_abandoned_orders(30) as n')).n;
+check(
+  'old unpaid checkouts are cleaned',
+  cleaned >= 1 &&
+    !(await db.query(`select 1 from public.orders where gateway_order_id = 'order_OLD'`)).rows.length,
+);
+check(
+  'paid orders are never cleaned',
+  (await one(`select count(*)::int as n from public.orders where status = 'paid'`)).n === paidBefore,
+);
+
+// ── Moving a course folder ──
+{
+  const f = (await db.query('select id, course_id, source_key from public.course_files limit 1')).rows[0];
+  const c = f && (await one('select id, r2_prefix from public.courses where id = $1', [f.course_id]));
+  check('there is a course file to move', Boolean(f));
+  if (f) {
+    const newKey = `drive-imports/moved/${f.source_key.split('/').pop()}`;
+    await db.query(`select public.move_course_source($1, 'drive-imports/moved/', $2::jsonb)`, [
+      c.id,
+      JSON.stringify([{ file_id: f.id, source_key: newKey, source_etag: 'e1' }]),
+    ]);
+    const after = await one('select source_key, source_etag from public.course_files where id = $1', [f.id]);
+    check(
+      'moving a course folder updates the course and its files together',
+      after.source_key === newKey &&
+        after.source_etag === 'e1' &&
+        (await one('select r2_prefix from public.courses where id = $1', [c.id])).r2_prefix ===
+          'drive-imports/moved/',
+    );
+    await db.query('select public.move_course_source($1, $2, $3::jsonb)', [
+      c.id,
+      c.r2_prefix,
+      JSON.stringify([{ file_id: f.id, source_key: f.source_key, source_etag: '' }]),
+    ]);
+  }
+}
+
 // ── Reading ──
 await db.query(`select public.log_pages($1, $2, 5, 'h', 'ua')`, [uid, file.id]);
 check(
@@ -270,8 +433,9 @@ check(
   (await one(`select public.add_email_quota('2026-10-20', 2) as n`)).n === 42,
 );
 check(
-  'toolbox seeded with CGPA calculator and timetable maker',
-  (await all('select key from public.features order by sort')).map((r) => r.key).join() === 'cgpa,timetable',
+  'toolbox seeded with CGPA calculator, attendance and timetable maker',
+  (await all('select key from public.features order by sort')).map((r) => r.key).join() ===
+    'cgpa,attendance,timetable',
 );
 await db.query(`update public.features set status = 'live' where key = 'cgpa'`);
 check(
@@ -360,7 +524,7 @@ check(
 );
 check(
   'RLS: anyone can read the toolbox',
-  (await asUser('someone@gmail.com', 'select key from public.features')).length === 2,
+  (await asUser('someone@gmail.com', 'select key from public.features')).length === 3,
 );
 check(
   'RLS: outsider sees no courses',
@@ -369,6 +533,313 @@ check(
 check(
   'RLS: nobody reads tile seeds from the browser',
   (await asUser(student, 'select * from public.file_pages')).length === 0,
+);
+
+// ── Contributions ──
+await db.query(
+  `insert into public.contributions (user_id, title, kind, files, total_bytes) values ($1, 'DBMS unit 2', 'notes', '[{"index":1}]', 1200)`,
+  [uid],
+);
+check(
+  'contributions start pending, and uploads start open',
+  (await one('select status from public.contributions limit 1')).status === 'pending' &&
+    (await one(`select value from public.site_settings where key = 'contributions_open'`)).value === true,
+);
+check(
+  'a contribution must have a real title and a known kind',
+  (await throws(`insert into public.contributions (user_id, title, kind) values ('${uid}', 'x', 'notes')`)) &&
+    (await throws(
+      `insert into public.contributions (user_id, title, kind) values ('${uid}', 'Fine title', 'exe')`,
+    )),
+);
+check(
+  'students are not blocked from sharing by default',
+  (await one('select contribution_blocked from public.profiles where id = $1', [uid]))
+    .contribution_blocked === false,
+);
+// ── Earnings & royalties ──
+await db.query(`select public.create_order($1, null, $2, array[$3, $4]::uuid[], 15000, 'order_SPLIT')`, [
+  uid,
+  bundle.id,
+  course.id,
+  os.id,
+]);
+await db.query(`select public.grant_order('order_SPLIT', 'pay_SPLIT')`);
+const split = await all(
+  `select l.course_id, l.amount_paise, c.price_paise from public.sale_lines() l join public.courses c on c.id = l.course_id
+    join public.orders o on o.id = l.order_id where o.gateway_order_id = 'order_SPLIT'`,
+);
+check(
+  'a bundle payment is split across its courses by price, to the rupee',
+  split.length === 2 &&
+    split.reduce((t, r) => t + Number(r.amount_paise), 0) === 15000 &&
+    split.every(
+      (r) =>
+        Math.abs(
+          Number(r.amount_paise) -
+            Math.round((15000 * r.price_paise) / split.reduce((t, x) => t + x.price_paise, 0)),
+        ) <= 1,
+    ),
+);
+const paidSum = async () =>
+  Number((await one(`select sum(amount_paise)::int s from public.orders where status = 'paid'`)).s);
+check(
+  'paid orders get paid_at, and every paid rupee appears once in sale_lines()',
+  (await one(`select count(*)::int n from public.orders where status = 'paid' and paid_at is null`)).n ===
+    0 &&
+    Number((await one('select sum(amount_paise)::int s from public.sale_lines()')).s) === (await paidSum()),
+);
+const sold = (
+  await one(`select course_id from public.orders where status = 'paid' and course_id is not null limit 1`)
+).course_id;
+const earn0 = await one('select * from public.course_earnings() where course_id = $1', [sold]);
+check(
+  'course_earnings adds up to every paid rupee, and leaves out disputed sales',
+  earn0.sales >= 1 &&
+    earn0.buyers === 1 &&
+    Number((await one('select sum(revenue_paise)::int s from public.course_earnings()')).s) ===
+      (await paidSum()),
+);
+await db.query(
+  `insert into public.course_royalties (course_id, user_id, share_percent, since) values ($1, $2, 50, now() + interval '1 second')`,
+  [sold, uid],
+);
+check(
+  'a royalty only counts sales after it starts',
+  (await one('select royalty_sales from public.course_earnings() where course_id = $1', [sold]))
+    .royalty_sales === 0,
+);
+await db.query(`update public.course_royalties set since = now() - interval '1 day' where course_id = $1`, [
+  sold,
+]);
+await db.query(
+  `insert into public.royalty_payouts (course_id, user_id, amount_paise, note) values ($1, $2, 1000, 'UPI')`,
+  [sold, uid],
+);
+const earn1 = await one('select * from public.course_earnings() where course_id = $1', [sold]);
+check(
+  'royalty sales and payouts add up',
+  earn1.royalty_sales === earn0.sales &&
+    Number(earn1.royalty_revenue_paise) === Number(earn0.revenue_paise) &&
+    Number(earn1.paid_out_paise) === 1000,
+);
+check(
+  'a royalty share is between 1% and 90%',
+  await throws(`update public.course_royalties set share_percent = 95 where course_id = '${sold}'`),
+);
+const totals = await one('select * from public.paid_totals()');
+check('paid_totals counts paid orders and buyers', totals.orders >= 1 && totals.buyers === 1);
+
+// ── Help desk ──
+const sq = await one(
+  `insert into public.support_queries (user_id, topic, subject) values ($1, 'feature', 'PNG is blank') returning id, status`,
+  [uid],
+);
+await db.query(`insert into public.support_messages (query_id, body) values ($1, 'It downloads empty')`, [
+  sq.id,
+]);
+check('a new query starts open with its first message', sq.status === 'open');
+check(
+  'a query needs a known topic',
+  await throws(
+    `insert into public.support_queries (user_id, topic, subject) values ('${uid}', 'hack', 'Hello there')`,
+  ),
+);
+
+// ── Storage tree, years, suggestions ──
+check(
+  'suggestions are a help-desk topic',
+  !(await throws(
+    `insert into public.support_queries (user_id, topic, subject) values ('${uid}', 'suggestion', 'Dark mode please')`,
+  )),
+);
+const fileRow = await one('select id, course_id, unit_id from public.course_files limit 1');
+if (fileRow) {
+  const unitFiles = (
+    await one('select count(*)::int n from public.course_files where unit_id = $1', [fileRow.unit_id])
+  ).n;
+  const removed = (await one('select public.delete_course_files(array[$1]::uuid[]) as n', [fileRow.id])).n;
+  const unitLeft = (
+    await one('select count(*)::int n from public.course_units where id = $1', [fileRow.unit_id])
+  ).n;
+  check(
+    'delete_course_files removes the file, and its unit once empty',
+    removed === 1 && unitLeft === (unitFiles > 1 ? 1 : 0),
+  );
+}
+const yearBefore = (await one('select count(*)::int n from public.courses where batch_year = $1', [2023])).n;
+const movedN = (await one('select public.move_batch_courses(2023, 2031, null) as n')).n;
+check(
+  'move_batch_courses re-files a whole year (and adds the new year)',
+  movedN === yearBefore &&
+    (await one('select count(*)::int n from public.courses where batch_year = 2031')).n === yearBefore &&
+    (await one('select count(*)::int n from public.batches where year = 2031')).n === 1,
+);
+await db.query('select public.move_batch_courses(2031, 2023, null)');
+check(
+  'a batch year can be hidden',
+  !(await throws('update public.batches set is_visible = false where year = 2031')),
+);
+
+// ── Deliveries, admin sources, term reminders ──
+await db.query('update public.profiles set email_opt_in = true where id = $1', [uid]);
+const ann = await one(
+  `insert into public.announcements (subject, heading, body) values ('Hello there', 'Hi', 'Body') returning id`,
+);
+const annBefore = await one('select * from public.announcement_progress($1)', [ann.id]);
+const pendingRows = await all('select * from public.announcement_pending($1, 10)', [ann.id]);
+await db.query('insert into public.announcement_deliveries (announcement_id, user_id) values ($1, $2)', [
+  ann.id,
+  uid,
+]);
+const annAfter = await one('select * from public.announcement_progress($1)', [ann.id]);
+check(
+  'announcement deliveries: pending until sent, then counted once',
+  annBefore.waiting >= 1 &&
+    pendingRows.some((r) => r.id === uid) &&
+    annAfter.sent === 1 &&
+    annAfter.waiting === annBefore.waiting - 1,
+);
+check(
+  'a student can get an announcement only once',
+  await throws('insert into public.announcement_deliveries (announcement_id, user_id) values ($1, $2)', [
+    ann.id,
+    uid,
+  ]),
+);
+check(
+  'admin addresses remember where they came from',
+  (await one('select source from public.admin_emails limit 1')).source === 'github',
+);
+const entRow = await one(
+  'select course_id from public.entitlements where user_id = $1 and revoked_at is null limit 1',
+  [uid],
+);
+if (entRow) {
+  await db.query(
+    `update public.entitlements set expires_at = now() + interval '3 days', ending_notified_at = null where user_id = $1 and course_id = $2`,
+    [uid, entRow.course_id],
+  );
+  await db.query(`update public.courses set term_label = 'Sem 5 · Dec 2026' where id = $1`, [
+    entRow.course_id,
+  ]);
+  const soon = await all(`select * from public.access_ending_soon(now() + interval '7 days', 50)`);
+  check(
+    'access_ending_soon lists accesses ending within the week, with the term name',
+    soon.some((r) => r.user_id === uid && r.term_label === 'Sem 5 · Dec 2026'),
+  );
+}
+
+// ── 3-month window, pending grants, course updates, batches ──
+check('access lasts 3 months by default', (await one('select public.access_months() as n')).n === 3);
+await db.query(
+  `insert into public.pending_grants (email, course_id, granted_by_admin) values ('new.24bai10002@vitbhopal.ac.in', $1, 'admin@x')`,
+  [os.id],
+);
+const newUid = '22222222-2222-2222-2222-222222222222';
+await db.query(`insert into auth.users (id, email) values ($1, 'New.24BAI10002@vitbhopal.ac.in')`, [newUid]);
+check(
+  'a course given to an email before sign-up is on the shelf when the account is made',
+  (
+    await one('select count(*)::int n from public.entitlements where user_id = $1 and course_id = $2', [
+      newUid,
+      os.id,
+    ])
+  ).n === 1 && (await one('select count(*)::int n from public.pending_grants')).n === 0,
+);
+const courseAnn = await one(
+  `insert into public.announcements (subject, heading, body, course_id) values ('New notes', 'Hi', 'Body', $1) returning id`,
+  [os.id],
+);
+const aud = await all('select id from public.announcement_audience($1)', [courseAnn.id]);
+check(
+  'a course announcement goes only to students who have the course',
+  aud.some((r) => r.id === newUid) && aud.every((r) => r.id === newUid || r.id === uid),
+);
+const batches = await all('select * from public.announcement_batches($1)', [courseAnn.id]);
+check(
+  'announcement counts are split by batch year',
+  batches.some((b) => b.batch === '2024' && b.waiting >= 1),
+);
+await db.query("update public.courses set files_notified_at = now() - interval '1 day' where id = $1", [
+  course.id,
+]);
+await db.query(
+  `update public.course_files set conversion_status = 'ready', converted_at = now() where course_id = $1 and not is_hidden`,
+  [course.id],
+);
+check(
+  'courses_with_new_files lists a live course with new readable notes',
+  (await all('select course_id from public.courses_with_new_files()')).some((r) => r.course_id === course.id),
+);
+
+// ── Sign-in guard ──
+let blockedAt = null;
+for (let i = 0; i < 5; i++) blockedAt = (await one(`select public.signin_strike('net1', 5, 24) as b`)).b;
+const fourth = (await one(`select public.signin_strike('net2', 5, 24) as b`)).b;
+check('5 refused sign-ins from one network block it for 24 hours', blockedAt !== null && fourth === null);
+
+// ── Rewards and the yearly bonus ──
+const earnRows = await all(`select * from public.royalty_earnings_since(now() - interval '365 days')`);
+check(
+  'royalty_earnings_since counts royalty sales in the last year',
+  earnRows.some((r) => r.user_id === uid && r.sales >= 1),
+);
+await db.query(
+  `insert into public.contributor_bonuses (user_id, year, amount_paise) values ($1, 2026, 100)`,
+  [uid],
+);
+check(
+  'the yearly bonus can be paid only once per year',
+  await throws(
+    `insert into public.contributor_bonuses (user_id, year, amount_paise) values ($1, 2026, 100)`,
+    [uid],
+  ),
+);
+
+async function denied(sql) {
+  try {
+    return (await asUser(student, sql)).length === 0;
+  } catch {
+    await db.exec('rollback').catch(() => {});
+    return true;
+  }
+}
+check(
+  'RLS: students cannot read contributions from the browser',
+  await denied('select * from public.contributions'),
+);
+check(
+  'RLS: students cannot read site settings from the browser',
+  await denied('select * from public.site_settings'),
+);
+check(
+  'RLS: students cannot read sales or royalties',
+  (await denied('select * from public.sale_lines()')) &&
+    (await denied('select * from public.course_royalties')) &&
+    (await denied('select * from public.royalty_payouts')),
+);
+check(
+  'RLS: students cannot read the help desk from the browser',
+  (await denied('select * from public.support_queries')) &&
+    (await denied('select * from public.support_messages')),
+);
+check('RLS: students cannot run the earnings report', await denied('select * from public.course_earnings()'));
+check(
+  'RLS: students cannot read who got which email',
+  (await denied('select * from public.announcement_deliveries')) &&
+    (await denied(`select * from public.announcement_pending('00000000-0000-0000-0000-000000000000', 5)`)),
+);
+check(
+  'RLS: students cannot read pending grants, sign-in strikes or bonuses',
+  (await denied('select * from public.pending_grants')) &&
+    (await denied('select * from public.signin_strikes')) &&
+    (await denied('select * from public.contributor_bonuses')),
+);
+check(
+  'RLS: students cannot delete files or move years',
+  (await denied(`select public.delete_course_files('{}'::uuid[])`)) &&
+    (await denied('select public.move_batch_courses(2023, 2024, null)')),
 );
 void draft;
 

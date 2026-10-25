@@ -3,6 +3,7 @@
  * The Worker uses the native R2 binding (cloudflare.ts) instead; both satisfy ObjectStore.
  */
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
@@ -12,7 +13,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import type { StoredObject } from '../domain/entities';
-import type { ObjectStore } from '../domain/ports';
+import type { ObjectStore, UploadStore } from '../domain/ports';
 
 export interface R2Credentials {
   accountId: string;
@@ -21,7 +22,7 @@ export interface R2Credentials {
   bucket: string;
 }
 
-export class S3ObjectStore implements ObjectStore {
+export class S3ObjectStore implements ObjectStore, UploadStore {
   private readonly s3: S3Client;
   constructor(private readonly creds: R2Credentials) {
     this.s3 = new S3Client({
@@ -85,10 +86,28 @@ export class S3ObjectStore implements ObjectStore {
     }
   }
 
+  async copy(fromKey: string, toKey: string) {
+    await this.s3.send(
+      new CopyObjectCommand({
+        Bucket: this.creds.bucket,
+        Key: toKey,
+        CopySource: `${this.creds.bucket}/${fromKey.split('/').map(encodeURIComponent).join('/')}`,
+      }),
+    );
+    const head = await this.s3.send(new HeadObjectCommand({ Bucket: this.creds.bucket, Key: toKey }));
+    return { etag: (head.ETag ?? '').replace(/"/g, ''), size: head.ContentLength ?? 0 };
+  }
+
   // ── converter Storage ──
   async download(key: string): Promise<Buffer> {
     const res = await this.s3.send(new GetObjectCommand({ Bucket: this.creds.bucket, Key: key }));
     return Buffer.from(await res.Body!.transformToByteArray());
+  }
+
+  async save(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    await this.s3.send(
+      new PutObjectCommand({ Bucket: this.creds.bucket, Key: key, Body: bytes, ContentType: contentType }),
+    );
   }
 
   async upload(key: string, body: Buffer, contentType: string): Promise<void> {

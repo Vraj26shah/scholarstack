@@ -1,16 +1,35 @@
 import type {
+  AcademicDto,
+  AccessChangeInput,
+  AccessGrantInput,
   AdminBundleDto,
+  AdminContributionDto,
+  AdminCourseAccessDto,
   AdminCourseDto,
-  AdminUnitDto,
+  AdminGrantResultDto,
+  AdminOverviewDto,
+  AdminSupportQueryDto,
   AdminSyncHealthDto,
+  AdminUnitDto,
   AnnouncementDto,
   ApiErrorBody,
+  BranchSaveInput,
   BundleCardDto,
   BundleDetailDto,
   CatalogueIndexDto,
+  CatalogueSearchDto,
+  ContributionMetaInput,
+  ContributionReviewInput,
+  ContributionStatusDto,
+  ConversionBoardDto,
+  ConvertScopeInput,
+  ConvertScopeResultDto,
   CourseCardDto,
   CourseDetailDto,
   CourseInventoryDto,
+  DeleteCourseResultDto,
+  DeliveryDto,
+  EarningsDto,
   EmailStatusDto,
   ErrorCode,
   FeatureDto,
@@ -19,12 +38,27 @@ import type {
   ImportCourseInput,
   ImportTreeDto,
   MeDto,
+  MoveCourseFolderInput,
+  MoveCourseFolderResultDto,
+  MyContributionDto,
+  MySupportDto,
   OpenReaderDto,
   OrderDto,
+  ProblemDto,
+  RoyaltyPayoutDto,
   ShelfItemDto,
   StartCheckoutDto,
   StorageAuditDto,
+  StorageCleanInput,
+  StorageCleanResultDto,
+  StorageCompareDto,
+  StorageDeletePreviewDto,
+  StorageDeleteResultDto,
   StorageInventoryPageDto,
+  StorageMapDto,
+  StorageTreeDto,
+  SupportCreateInput,
+  SupportQueryDto,
   SyncResultDto,
 } from '@ss/contracts';
 import { TILE_SEED_HEADER, VIEWER_TOKEN_HEADER } from '@ss/contracts';
@@ -132,6 +166,8 @@ export class ApiClient {
     );
   course = (idOrSlug: string) =>
     this.request<CourseDetailDto>('GET', `/courses/${encodeURIComponent(idOrSlug)}`);
+  search = (q: string) =>
+    this.request<CatalogueSearchDto>('GET', `/catalogue/search?q=${encodeURIComponent(q)}`);
   bundles = (batch?: number) =>
     this.request<BundleCardDto[]>('GET', `/bundles${batch ? `?batch=${batch}` : ''}`);
   bundle = (idOrSlug: string) =>
@@ -144,6 +180,8 @@ export class ApiClient {
   unsubscribe = (token: string) => this.request<{ ok: true }>('POST', '/email/unsubscribe', { token });
 
   // Account
+  checkSignInEmail = (email: string) =>
+    this.request<{ ok: true; admin: boolean }>('POST', '/auth/check-email', { email });
   claim = (label: string) => this.request<MeDto>('POST', '/session/claim', { label });
   me = () => this.request<MeDto>('GET', '/me');
   updateName = (fullName: string) => this.request<MeDto>('PATCH', '/me', { fullName });
@@ -169,8 +207,13 @@ export class ApiClient {
 
   /** Fetches one scrambled page image and its tile seed. */
   async page(viewerToken: string, fileId: string, page: number): Promise<{ blob: Blob; seed: string }> {
+    // The viewer token says which file; the sign-in token proves who is reading it.
+    const access = await this.tokenSource();
     const res = await fetch(`${this.base}/reader/pages/${fileId}/${page}`, {
-      headers: { [VIEWER_TOKEN_HEADER]: viewerToken },
+      headers: {
+        [VIEWER_TOKEN_HEADER]: viewerToken,
+        ...(access ? { authorization: `Bearer ${access}` } : {}),
+      },
       cache: 'no-store',
     });
     if (!res.ok) {
@@ -184,9 +227,166 @@ export class ApiClient {
     return { blob: await res.blob(), seed: res.headers.get(TILE_SEED_HEADER) ?? '' };
   }
 
+  // Contributions
+  contributionStatus = () => this.request<ContributionStatusDto>('GET', '/contributions/me');
+  withdrawContribution = (id: string) => this.request<{ ok: true }>('DELETE', `/contributions/${id}`);
+
+  /** Send a JSON `meta` field and files, with upload progress (fetch can't report it, so XHR). */
+  private async sendForm<T>(
+    path: string,
+    meta: unknown,
+    files: File[],
+    onProgress: (fraction: number) => void = () => {},
+  ): Promise<T> {
+    const token = await this.tokenSource();
+    const form = new FormData();
+    form.set('meta', JSON.stringify(meta));
+    for (const f of files) form.append('files', f, f.name);
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.base}${path}`);
+      if (token) xhr.setRequestHeader('authorization', `Bearer ${token}`);
+      xhr.withCredentials = true;
+      xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+      xhr.onerror = () =>
+        reject(new ApiError(0, 'NETWORK', 'The upload stopped. Check your connection and try again.'));
+      xhr.onabort = () => reject(new ApiError(0, 'NETWORK', 'Upload cancelled.'));
+      xhr.onload = () => {
+        let body: unknown = null;
+        try {
+          body = JSON.parse(xhr.responseText);
+        } catch {}
+        if (xhr.status >= 200 && xhr.status < 300) return resolve(body as T);
+        const err = (body as { error?: { code?: ErrorCode; message?: string } } | null)?.error;
+        reject(new ApiError(xhr.status, err?.code ?? 'INTERNAL', err?.message ?? 'The upload failed.'));
+      };
+      xhr.send(form);
+    });
+  }
+
+  /** Save a protected file (it needs the sign-in token, so it can't be a plain link). */
+  private async download(path: string, name: string) {
+    const token = await this.tokenSource();
+    const res = await fetch(`${this.base}${path}`, {
+      credentials: 'same-origin',
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'INTERNAL', 'Could not download that file.');
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  }
+
+  uploadContribution = (meta: ContributionMetaInput, files: File[], onProgress: (f: number) => void) =>
+    this.sendForm<MyContributionDto>('/contributions', meta, files, onProgress);
+
+  // Help desk
+  mySupport = () => this.request<MySupportDto>('GET', '/support');
+  askSupport = (meta: SupportCreateInput, files: File[], onProgress?: (f: number) => void) =>
+    this.sendForm<SupportQueryDto>('/support', meta, files, onProgress);
+  replySupport = (id: string, body: string) =>
+    this.request<SupportQueryDto>('POST', `/support/${id}/reply`, { body });
+  closeSupport = (id: string) => this.request<SupportQueryDto>('POST', `/support/${id}/close`, {});
+  downloadMySupportFile = (id: string, index: number, name: string) =>
+    this.download(`/support/${id}/files/${index}`, name);
+
   // Admin
+  adminContributions = (status: 'pending' | 'approved' | 'rejected' | 'all') =>
+    this.request<{ open: boolean; items: AdminContributionDto[] }>(
+      'GET',
+      `/admin/contributions?status=${status}`,
+    );
+  adminReviewContribution = (id: string, body: ContributionReviewInput) =>
+    this.request<AdminContributionDto>('POST', `/admin/contributions/${id}/review`, body);
+  adminCopyContribution = (id: string, folder: string) =>
+    this.request<{ copied: string[] }>('POST', `/admin/contributions/${id}/copy`, { folder });
+  adminDeleteContribution = (id: string) =>
+    this.request<{ ok: true }>('DELETE', `/admin/contributions/${id}`);
+  adminSetContributionsOpen = (open: boolean) =>
+    this.request<{ open: boolean }>('POST', '/admin/contributions-settings', { open });
+  adminBlockContributor = (userId: string, blocked: boolean) =>
+    this.request<{ userId: string; blocked: boolean }>('POST', '/admin/contributors/block', {
+      userId,
+      blocked,
+    });
+  adminDownloadContribution = (id: string, index: number, name: string) =>
+    this.download(`/admin/contributions/${id}/files/${index}`, name);
+
+  adminRewardPaid = (contributionId: string, note: string) =>
+    this.request<{ ok: true }>('POST', `/admin/contributions/${contributionId}/reward-paid`, { note });
+  adminRecordBonus = (body: { userId: string; year: number; amountRupees: number; note: string }) =>
+    this.request<{ ok: true }>('POST', '/admin/royalties/bonus', body);
+  adminEarnings = () => this.request<EarningsDto>('GET', '/admin/earnings');
+  adminSetRoyalty = (body: { courseId: string; email: string; sharePercent: number }) =>
+    this.request<{ ok: true }>('POST', '/admin/royalties', body);
+  adminRemoveRoyalty = (courseId: string) =>
+    this.request<{ ok: true }>('DELETE', `/admin/royalties/${courseId}`);
+  adminRecordPayout = (body: { courseId: string; amountRupees: number; note: string }) =>
+    this.request<RoyaltyPayoutDto>('POST', '/admin/royalties/payouts', body);
+
+  adminSupport = (status: 'open' | 'answered' | 'closed' | 'all') =>
+    this.request<{ counts: Record<'open' | 'answered' | 'closed', number>; items: AdminSupportQueryDto[] }>(
+      'GET',
+      `/admin/support?status=${status}`,
+    );
+  adminReplySupport = (id: string, body: { body: string; close: boolean; notify: boolean }) =>
+    this.request<AdminSupportQueryDto>('POST', `/admin/support/${id}/reply`, body);
+  adminSetSupportStatus = (id: string, status: 'open' | 'answered' | 'closed') =>
+    this.request<{ ok: true }>('POST', `/admin/support/${id}/status`, { status });
+  adminDeleteSupport = (id: string) => this.request<{ ok: true }>('DELETE', `/admin/support/${id}`);
+  adminDownloadSupportFile = (id: string, index: number, name: string) =>
+    this.download(`/admin/support/${id}/files/${index}`, name);
+
   adminCourses = () => this.request<AdminCourseDto[]>('GET', '/admin/courses');
+  adminCourseAccess = (courseId: string) =>
+    this.request<AdminCourseAccessDto>('GET', `/admin/access?courseId=${encodeURIComponent(courseId)}`);
+  adminChangeAccess = (body: AccessChangeInput) =>
+    this.request<AdminCourseAccessDto & { changed: number }>('POST', '/admin/access/change', body);
+  adminGrantAccess = (body: AccessGrantInput) =>
+    this.request<AdminGrantResultDto>('POST', '/admin/access/grant', body);
   adminSyncHealth = () => this.request<AdminSyncHealthDto>('GET', '/admin/sync-health');
+  adminDeleteCourse = (courseId: string, deleteNotes: boolean) =>
+    this.request<DeleteCourseResultDto>('POST', `/admin/courses/${courseId}/delete`, { deleteNotes });
+  adminProblems = () => this.request<ProblemDto[]>('GET', '/admin/problems');
+  adminClearProblems = (fingerprints?: string[]) =>
+    this.request<{ cleared: number }>('POST', '/admin/problems/clear', { fingerprints });
+  adminStorageTree = () => this.request<StorageTreeDto>('GET', '/admin/storage-tree');
+  adminStoragePreview = (path: string) =>
+    this.request<StorageDeletePreviewDto>('POST', '/admin/storage-tree/preview', { path });
+  adminStorageDelete = (path: string) =>
+    this.request<StorageDeleteResultDto>('POST', '/admin/storage-tree/delete', { path, confirm: 'DELETE' });
+  adminAcademic = () => this.request<AcademicDto>('GET', '/admin/academic');
+  adminAddYear = (year: number) => this.request<AcademicDto>('POST', '/admin/academic/years', { year });
+  adminSetYearVisible = (year: number, visible: boolean) =>
+    this.request<AcademicDto>('PUT', `/admin/academic/years/${year}`, { visible });
+  adminDeleteYear = (year: number) => this.request<AcademicDto>('DELETE', `/admin/academic/years/${year}`);
+  adminSaveBranch = (body: BranchSaveInput) =>
+    this.request<AcademicDto>('POST', '/admin/academic/branches', body);
+  adminMoveYear = (body: { fromYear: number; toYear: number; branchSlug?: string }) =>
+    this.request<AcademicDto & { moved: number }>('POST', '/admin/academic/move-year', body);
+  adminStorageMap = () => this.request<StorageMapDto>('GET', '/admin/storage-map');
+  adminMoveCourseFolder = (input: MoveCourseFolderInput) =>
+    this.request<MoveCourseFolderResultDto>('POST', '/admin/storage-map/move-course', input);
+  adminStorageClean = (input: StorageCleanInput) =>
+    this.request<StorageCleanResultDto>('POST', '/admin/storage-map/clean', input);
+  adminOverview = () => this.request<AdminOverviewDto>('GET', '/admin/overview');
+  adminStorageCompare = () => this.request<StorageCompareDto>('GET', '/admin/storage-compare');
+  adminConversions = (courseId?: string) =>
+    this.request<ConversionBoardDto>(
+      'GET',
+      `/admin/conversions${courseId ? `?courseId=${encodeURIComponent(courseId)}` : ''}`,
+    );
+  adminCompareScopes = (scopes: string[]) =>
+    this.request<StorageCompareDto>('POST', '/admin/storage-compare', { scopes });
+  adminConversionsFor = (scopes: string[]) =>
+    this.request<ConversionBoardDto>('POST', '/admin/conversions/query', { scopes });
+  adminConvertSelection = (scopes: string[], include: 'waiting' | 'failed' | 'both') =>
+    this.request<ConvertScopeResultDto>('POST', '/admin/convert-selection', { scopes, include });
+  adminConvert = (input: Partial<ConvertScopeInput> & { courseId: string }) =>
+    this.request<ConvertScopeResultDto>('POST', '/admin/convert', input);
   adminStorageAudit = (courseId: string) =>
     this.request<StorageAuditDto>('GET', `/admin/storage-audit?courseId=${encodeURIComponent(courseId)}`);
   adminStorageInventoryPage = (cursor?: string, prefix = '') => {
@@ -250,6 +450,7 @@ export class ApiClient {
     this.request<FeatureDto>('POST', '/admin/features', f);
   adminLaunchFeature = (key: string) =>
     this.request<AnnouncementDto>('POST', `/admin/features/${key}/launch`);
+  adminDeliveries = (id: string) => this.request<DeliveryDto>('GET', `/admin/announcements/${id}/deliveries`);
   adminEmailStatus = () => this.request<EmailStatusDto>('GET', '/admin/email');
   adminAnnouncements = () => this.request<AnnouncementDto[]>('GET', '/admin/announcements');
   adminSaveAnnouncement = (a: {
@@ -260,6 +461,7 @@ export class ApiClient {
     ctaLabel: string;
     ctaUrl: string;
     featureKey: string | null;
+    courseId: string | null;
   }) => this.request<AnnouncementDto>('POST', '/admin/announcements', a);
   adminPreviewAnnouncement = (id: string) =>
     this.request<{ subject: string; html: string }>('GET', `/admin/announcements/${id}/preview`);
@@ -287,14 +489,24 @@ export function friendly(error: unknown): string {
       case 'NOT_COLLEGE_EMAIL':
         return `Only @${env.domain} accounts can sign in.`;
       case 'RATE_LIMITED':
+        // A blocked network is told until when; ordinary speed limits get the calm line.
+        if (/network/i.test(error.message)) return error.message;
         return "You're going a bit fast. Take a breath and try again in a minute.";
       case 'NOT_PURCHASED':
         return 'Buy this course to open its files.';
       case 'NOT_READY':
+        // Admins get the server's exact reason (which file, what to do); students the calm version.
+        if (globalThis.location?.pathname.startsWith('/admin')) return error.message;
         return 'This file is still being prepared. Check back in a few minutes.';
       case 'SYNC_FAILED':
+      case 'PAYMENTS_UNAVAILABLE':
         return error.message;
+      case 'NETWORK':
+        return 'We couldn’t reach Scholars Stack. Check your connection, then try again.';
       default:
+        // Server-side failures: students get a calm, human sentence; admins keep the real detail.
+        if (error.status >= 500 && !globalThis.location?.pathname.startsWith('/admin'))
+          return 'The library is having a moment on our side. Nothing is lost. Try again in a minute.';
         return error.message;
     }
   }

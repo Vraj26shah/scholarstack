@@ -21,13 +21,18 @@ try {
 } catch {
   parsedAppUrl = null;
 }
-if (!parsedAppUrl || parsedAppUrl.protocol !== 'https:' || /^(localhost|127\.0\.0\.1)$/.test(parsedAppUrl.hostname)) {
-  console.error(`Set APP_URL_${environmentKey} (or APP_URL) to the deployed https site URL before pushing ${target} secrets.`);
+if (
+  !parsedAppUrl ||
+  parsedAppUrl.protocol !== 'https:' ||
+  /^(localhost|127\.0\.0\.1)$/.test(parsedAppUrl.hostname)
+) {
+  console.error(
+    `Set APP_URL_${environmentKey} (or APP_URL) to the deployed https site URL before pushing ${target} secrets.`,
+  );
   process.exit(1);
 }
 const callbackUrl =
-  env.get(`CONVERTER_CALLBACK_URL_${environmentKey}`) ??
-  `${parsedAppUrl.origin}/api/internal/conversion`;
+  env.get(`CONVERTER_CALLBACK_URL_${environmentKey}`) ?? `${parsedAppUrl.origin}/api/internal/conversion`;
 let parsedCallbackUrl;
 try {
   parsedCallbackUrl = new URL(callbackUrl);
@@ -39,7 +44,9 @@ if (
   parsedCallbackUrl.protocol !== 'https:' ||
   /^(localhost|127\.0\.0\.1)$/.test(parsedCallbackUrl.hostname)
 ) {
-  console.error(`Set CONVERTER_CALLBACK_URL_${environmentKey} to the deployed https callback URL before pushing ${target} secrets.`);
+  console.error(
+    `Set CONVERTER_CALLBACK_URL_${environmentKey} to the deployed https callback URL before pushing ${target} secrets.`,
+  );
   process.exit(1);
 }
 let pushed = 0;
@@ -47,12 +54,7 @@ const skipped = [];
 for (const key of WORKER_SECRETS) {
   // Keep the local auth callback on localhost while giving each deployed environment
   // its real public origin for payment returns and server-generated links.
-  const value =
-    key === 'APP_URL'
-      ? appUrl
-      : key === 'CONVERTER_CALLBACK_URL'
-        ? callbackUrl
-        : env.get(key);
+  const value = key === 'APP_URL' ? appUrl : key === 'CONVERTER_CALLBACK_URL' ? callbackUrl : env.get(key);
   if (!value || PLACEHOLDER.test(value)) {
     skipped.push(key);
     continue;

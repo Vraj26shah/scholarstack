@@ -27,6 +27,7 @@ export interface WorkerEnv {
   EMAIL_FROM?: string;
   EMAIL_FROM_NAME?: string;
   EMAIL_DAILY_LIMIT?: string;
+  EMAIL_RESERVE?: string;
   NOTES: R2Bucket;
   PAGE_LIMITER?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   ASSETS?: Fetcher;
@@ -51,10 +52,15 @@ export function buildConfig(env: Partial<Record<keyof WorkerEnv, unknown>>, now 
   const s = (k: keyof WorkerEnv) => (typeof env[k] === 'string' ? (env[k] as string) : undefined);
   return {
     allowedDomain: s('ALLOWED_EMAIL_DOMAIN') ?? 'vitbhopal.ac.in',
-    adminEmails: (s('ADMIN_EMAILS') ?? '')
-      .split(',')
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean),
+    // Several admins: separate addresses with commas (spaces, semicolons or new lines also work).
+    adminEmails: [
+      ...new Set(
+        (s('ADMIN_EMAILS') ?? '')
+          .split(/[\s,;]+/)
+          .map((e) => e.trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    ],
     currentIntakeYear: num(s('CURRENT_INTAKE_YEAR'), intakeYear(now)),
     maxDevices: num(s('MAX_DEVICES'), 2),
     viewerTokenTtlSeconds: num(s('VIEWER_TOKEN_TTL_SECONDS'), 120),
@@ -63,6 +69,8 @@ export function buildConfig(env: Partial<Record<keyof WorkerEnv, unknown>>, now 
     importRoot: normaliseRoot(s('IMPORT_ROOT') ?? 'drive-imports/'),
     appUrl: (s('APP_URL') ?? 'http://localhost:5173').replace(/\/+$/, ''),
     emailDailyLimit: num(s('EMAIL_DAILY_LIMIT'), 250),
+    // Room kept every day for receipts, answers and reminders, so news never crowds them out.
+    emailReserve: Math.min(num(s('EMAIL_RESERVE'), 20), Math.floor(num(s('EMAIL_DAILY_LIMIT'), 250) / 2)),
   };
 }
 
@@ -82,4 +90,9 @@ export function assertWorkerEnv(env: Partial<WorkerEnv>): void {
   const missing: string[] = required.filter((k) => !env[k]);
   if (!env.NOTES) missing.push('NOTES (R2 binding)');
   if (missing.length > 0) throw new Error(`Missing environment: ${missing.join(', ')}. See .env.example.`);
+  // Secrets we sign or compare with must be long enough that they cannot be guessed.
+  const weak = (
+    ['VIEWER_TOKEN_SECRET', 'DEVICE_COOKIE_SECRET', 'TILE_SEED_SECRET', 'CONVERTER_CALLBACK_SECRET'] as const
+  ).filter((k) => (env[k] ?? '').length < 32);
+  if (weak.length > 0) throw new Error(`Secrets too short (need 32+ characters): ${weak.join(', ')}.`);
 }

@@ -6,6 +6,7 @@ import { api, friendly } from '../../lib/api';
 import { Button } from '../../shared/ui/button';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { BranchPicker } from './branch-picker';
+import { DeleteCourse } from './delete-course';
 import { type R2FileSyncProgress, courseSourceKeys, syncR2Files } from './r2-file-sync';
 import { Field, Panel, SEMESTERS, StatusPill, input, plural, rupeesToPaise } from './ui';
 import { UnitsManager } from './units-manager';
@@ -154,27 +155,33 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
             <div className="text-blush-text">{c.failedFiles} failed (skipped from reader)</div>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-ink2">₹</span>
-          <input
-            aria-label={`Price in rupees for ${c.title}`}
-            className={`${input} w-20 font-mono`}
-            value={rupees}
-            maxLength={5}
-            inputMode="numeric"
-            onChange={(e) => setRupees(e.target.value.replace(/\D/g, ''))}
-          />
+        {/* Phones: a tidy two-column grid (price + main action, then pairs of buttons).
+            Wider screens: one row. */}
+        <div className="grid w-full grid-cols-2 items-center gap-2 sm:flex sm:w-auto sm:flex-wrap [&>button]:w-full sm:[&>button]:w-auto">
+          <label className="flex min-w-0 items-center gap-2">
+            <span className="text-ink2">₹</span>
+            <input
+              aria-label={`Price in rupees for ${c.title}`}
+              className={`${input} w-full min-w-0 font-mono sm:w-20`}
+              value={rupees}
+              maxLength={5}
+              inputMode="numeric"
+              onChange={(e) => setRupees(e.target.value.replace(/\D/g, ''))}
+            />
+          </label>
           {c.status === 'live' ? (
             <>
               <Button
                 variant="outline"
+                aria-label="Save price and unpublish"
                 disabled={!priceOk || save.isPending || rupeesToPaise(rupees) === c.pricePaise}
                 onClick={() => save.mutate({ pricePaise: rupeesToPaise(rupees) })}
               >
-                Save & unpublish
+                <span className="sm:hidden">Save price</span>
+                <span className="hidden sm:inline">Save & unpublish</span>
               </Button>
               <Button
-                variant="ghost"
+                variant="outline"
                 onClick={() => save.mutate({ status: 'draft' })}
                 disabled={save.isPending}
               >
@@ -191,7 +198,7 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
               Publish
             </Button>
           )}
-          <Button variant="ghost" onClick={() => setShowFiles(!showFiles)} aria-expanded={showFiles}>
+          <Button variant="outline" onClick={() => setShowFiles(!showFiles)} aria-expanded={showFiles}>
             {showFiles ? 'Close files' : 'Manage files'}
           </Button>
           <Button
@@ -201,7 +208,7 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
           >
             {showInventory ? 'Close audit' : 'R2 audit'}
           </Button>
-          <Button variant="ghost" onClick={() => setEditing(!editing)} aria-expanded={editing}>
+          <Button variant="outline" onClick={() => setEditing(!editing)} aria-expanded={editing}>
             Edit
           </Button>
         </div>
@@ -292,6 +299,7 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
                 Archive (hide for good)
               </Button>
             )}
+            {c.status === 'archived' && <DeleteCourse course={c} />}
           </div>
         </div>
       )}
@@ -369,7 +377,7 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
                   Current: {syncProgress.currentKey}
                 </p>
               )}
-              <details open={syncCourse.isPending}>
+              <details open>
                 <summary className="cursor-pointer text-xs text-ink2">Show all file results</summary>
                 <ul className="m-0 mt-2 max-h-40 overflow-y-auto list-none rounded-lg bg-sunk p-2 flex flex-col gap-1">
                   {syncProgress.outcomes.map((item) => (
@@ -379,7 +387,7 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
                       </span>
                       {' · '}
                       {item.key}
-                      {item.message ? ` — ${item.message}` : ''}
+                      {item.message ? `: ${item.message}` : ''}
                     </li>
                   ))}
                 </ul>
@@ -387,7 +395,7 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
             </div>
           )}
           {syncCourse.data?.summary.skipped.length ? (
-            <details className="rounded-xl border border-line bg-surface p-3 text-sm">
+            <details open className="rounded-xl border border-line bg-surface p-3 text-sm">
               <summary className="cursor-pointer font-semibold">
                 Why {syncCourse.data.summary.skipped.length} items were skipped
               </summary>

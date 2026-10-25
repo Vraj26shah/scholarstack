@@ -30,6 +30,11 @@ export async function authenticate(c: Ctx): Promise<Principal> {
   return principal;
 }
 
+/** Refuses a burst of the same action from one student or one address. */
+export async function throttle(c: Ctx, action: string, who: string): Promise<void> {
+  if (!(await c.get('container').limiter.allow(`${action}:${who}`))) throw fail.rateLimited();
+}
+
 export async function cookieDeviceId(c: Ctx): Promise<string | null> {
   return c.get('container').deviceCookie.open(getCookie(c, 'ss_device'));
 }
@@ -51,6 +56,13 @@ export async function setDeviceCookie(c: Ctx, deviceId: string) {
     path: '/api',
     maxAge: 400 * 24 * 60 * 60,
   });
+}
+
+/** A stable, one-way key for the caller's network (for blocks that must last across midnight). */
+export async function networkKey(c: Ctx) {
+  const ip =
+    c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local';
+  return (await sha256Hex(`net|${ip}`)).slice(0, 32);
 }
 
 export async function requestMeta(c: Ctx) {

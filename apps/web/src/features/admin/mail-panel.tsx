@@ -6,16 +6,36 @@ import { isDemo } from '../../lib/env';
 import { Button } from '../../shared/ui/button';
 import { ErrorState, Sheet, Skeleton } from '../../shared/ui/feedback';
 import { ToolIcon } from '../tools/tool-icon';
-import { Field, Panel, StatusPill, input, plural } from './ui';
+import { AnnouncementRow } from './announcement-row';
+import { Field, Note, Panel, StatusPill, U, input, plural } from './ui';
 
 type Draft = Omit<
   AnnouncementDto,
-  'status' | 'recipients' | 'sent' | 'error' | 'createdAt' | 'sentAt' | 'id'
+  | 'status'
+  | 'recipients'
+  | 'sent'
+  | 'waiting'
+  | 'finishesOn'
+  | 'error'
+  | 'createdAt'
+  | 'sentAt'
+  | 'id'
+  | 'course'
 > & {
   id?: string;
+  /** Only this course's students (null = everyone who opted in). */
+  courseId: string | null;
 };
 
-const blank: Draft = { subject: '', heading: '', body: '', ctaLabel: '', ctaUrl: '', featureKey: null };
+const blank: Draft = {
+  subject: '',
+  heading: '',
+  body: '',
+  ctaLabel: '',
+  ctaUrl: '',
+  featureKey: null,
+  courseId: null,
+};
 
 function FeatureRow({ f, onLaunched }: { f: FeatureDto; onLaunched: (a: AnnouncementDto) => void }) {
   const qc = useQueryClient();
@@ -65,16 +85,22 @@ function FeatureRow({ f, onLaunched }: { f: FeatureDto; onLaunched: (a: Announce
             <option value="hidden">Hidden</option>
           </select>
         </Field>
-        <div className="sm:col-span-2 md:col-span-3 flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs text-ink2 mr-auto">
+        <div className="sm:col-span-2 md:col-span-3 grid grid-cols-[auto_1fr] items-center gap-2 sm:flex sm:flex-wrap">
+          <span className="col-span-2 font-mono text-xs text-ink2 sm:col-span-1 sm:mr-auto">
             {f.path} · <StatusPill status={f.status} />
           </span>
           <Button variant="outline" onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
             Save
           </Button>
           {f.status !== 'live' && (
-            <Button variant="buy" onClick={() => launch.mutate()} disabled={launch.isPending}>
-              Launch & draft the email
+            <Button
+              variant="buy"
+              aria-label="Launch & draft the email"
+              onClick={() => launch.mutate()}
+              disabled={launch.isPending}
+            >
+              <span className="sm:hidden">Launch + email</span>
+              <span className="hidden sm:inline">Launch & draft the email</span>
             </Button>
           )}
         </div>
@@ -171,6 +197,8 @@ function Composer({
 }) {
   const qc = useQueryClient();
   const [d, setD] = useState<Draft>(initial);
+  const courses = useQuery({ queryKey: ['admin', 'courses'], queryFn: api.adminCourses });
+  const courseTitle = courses.data?.find((c) => c.id === d.courseId)?.title;
   const [preview, setPreview] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
   const refresh = () => {
@@ -236,13 +264,29 @@ function Composer({
         <Field label="Button link (/path or https://…)">
           <input className={input} value={d.ctaUrl} onChange={set('ctaUrl')} placeholder="/tools/cgpa" />
         </Field>
+        <Field label="Who gets it" className="sm:col-span-2">
+          <select
+            className={input}
+            value={d.courseId ?? ''}
+            onChange={(e) => setD({ ...d, courseId: e.target.value || null })}
+          >
+            <option value="">Everyone who opted in ({optedIn})</option>
+            {(courses.data ?? [])
+              .filter((c) => c.status === 'live')
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  Students who have {c.title}
+                </option>
+              ))}
+          </select>
+        </Field>
         <Field label="About a tool (optional)">
           <select
             className={input}
             value={d.featureKey ?? ''}
             onChange={(e) => setD({ ...d, featureKey: e.target.value || null })}
           >
-            <option value="">—</option>
+            <option value="">None</option>
             {features.map((f) => (
               <option key={f.key} value={f.key}>
                 {f.title}
@@ -269,7 +313,9 @@ function Composer({
           {test.isSuccess ? `Sent to ${test.data.to}` : 'Send me a test'}
         </Button>
         <Button variant="buy" className="ml-auto" onClick={() => setConfirm(true)} disabled={!ok}>
-          Send to {plural(optedIn, 'student')}
+          {d.courseId
+            ? `Send to ${courseTitle ?? 'the course'}'s students`
+            : `Send to ${plural(optedIn, 'student')}`}
         </Button>
       </div>
       {err && <p className="m-0 text-sm text-blush-text">{friendly(err)}</p>}
@@ -293,10 +339,17 @@ function Composer({
           />
         </div>
       )}
-      <Sheet open={confirm} onOpenChange={setConfirm} title="Send it to everyone?">
+      <Sheet
+        open={confirm}
+        onOpenChange={setConfirm}
+        title={d.courseId ? 'Send it to the course?' : 'Send it to everyone?'}
+      >
         <p className="m-0 text-ink2">
-          "{d.subject}" goes to {plural(optedIn, 'student')} who signed in and kept emails on. If the daily
-          limit is reached, the rest go out automatically over the next days.
+          "{d.subject}" goes to{' '}
+          {d.courseId
+            ? `every student who has ${courseTitle ?? 'this course'}`
+            : `${plural(optedIn, 'student')} who kept emails on`}
+          . Each student gets it once; past the daily limit, the rest go out by themselves over the next days.
         </p>
         <Button variant="buy" size="lg" onClick={() => send.mutate()} disabled={send.isPending}>
           {send.isPending ? 'Sending…' : 'Yes, send now'}
@@ -313,7 +366,7 @@ function DemoOutbox() {
   const q = useQuery({ queryKey: ['demo-outbox'], queryFn: api.demoOutbox, enabled: isDemo });
   if (!isDemo) return null;
   return (
-    <details className="rounded-[18px] border border-dashed border-line p-4">
+    <details open className="rounded-[18px] border border-dashed border-line p-4">
       <summary className="cursor-pointer font-semibold">Demo outbox ({q.data?.length ?? 0} emails)</summary>
       <ul className="list-none m-0 mt-3 p-0 flex flex-col gap-1.5 font-mono text-xs">
         {q.data?.map((m, i) => (
@@ -333,7 +386,7 @@ export function MailPanel() {
   const list = useQuery({
     queryKey: ['admin-announcements'],
     queryFn: api.adminAnnouncements,
-    refetchInterval: (q) => (q.state.data?.some((a) => a.status === 'sending') ? 5000 : false),
+    refetchInterval: (q) => (q.state.data?.some((a) => a.status === 'sending') ? 15_000 : false),
   });
   const [composing, setComposing] = useState<Draft | null>(null);
   const [adding, setAdding] = useState(false);
@@ -342,33 +395,7 @@ export function MailPanel() {
   return (
     <div className="flex flex-col gap-14">
       <Panel
-        title="Free tools"
-        aside={
-          !adding && (
-            <Button variant="outline" onClick={() => setAdding(true)}>
-              Add a tool
-            </Button>
-          )
-        }
-      >
-        <p className="m-0 text-sm text-ink2 max-w-[720px]">
-          The toolbox on the home page, open to everyone without signing in. Mark one "Coming soon" to show it
-          early; "Launch" makes it live and drafts an email to every student, ready for you to check and send.
-        </p>
-        {adding && <NewTool onDone={() => setAdding(false)} />}
-        {features.isLoading ? (
-          <Skeleton className="h-40" />
-        ) : (
-          <ul className="list-none m-0 p-0 flex flex-col gap-2.5">
-            {features.data?.map((f) => (
-              <FeatureRow key={f.key} f={f} onLaunched={(a) => setComposing({ ...a })} />
-            ))}
-          </ul>
-        )}
-      </Panel>
-
-      <Panel
-        title="Announcements"
+        title="Emails to students"
         aside={
           !composing && (
             <Button variant="brand" onClick={() => setComposing(blank)}>
@@ -378,18 +405,32 @@ export function MailPanel() {
         }
       >
         {s && (
-          <div className="flex flex-wrap gap-3 text-sm">
-            <span className="rounded-xl bg-sunk px-3 py-2">
-              Provider:{' '}
-              <strong>{s.provider === 'none' ? 'not set up (add BREVO_API_KEY)' : s.provider}</strong>
-            </span>
-            <span className="rounded-xl bg-sunk px-3 py-2">
-              Today: <strong>{s.usedToday}</strong> / {s.dailyLimit}
-            </span>
-            <span className="rounded-xl bg-sunk px-3 py-2">
-              Will receive it: <strong>{plural(s.optedIn, 'student')}</strong>
-            </span>
-          </div>
+          <Note>
+            {s.provider === 'none' ? (
+              <>
+                Email is <U>not set up</U>: add BREVO_API_KEY to the Worker secrets.
+              </>
+            ) : (
+              <>
+                Goes to <U>{plural(s.optedIn, 'student')}</U> who opted in. Today <U>{s.leftToday} more</U>{' '}
+                can go out ({s.usedToday} of {s.dailyLimit} used, {s.reserved} kept for receipts and replies)
+                {s.plan.length > 0 && (
+                  <>
+                    ; then{' '}
+                    {s.plan
+                      .filter((p) => p.date !== new Date().toISOString().slice(0, 10))
+                      .slice(0, 4)
+                      .map(
+                        (p) =>
+                          `${new Date(`${p.date}T12:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}: ${p.count}`,
+                      )
+                      .join(' · ')}
+                  </>
+                )}
+                .
+              </>
+            )}
+          </Note>
         )}
         {composing && features.data && (
           <Composer
@@ -403,46 +444,41 @@ export function MailPanel() {
         {list.isError && <ErrorState title="Couldn't load emails." message={friendly(list.error)} />}
         <ul className="list-none m-0 p-0 flex flex-col gap-2.5">
           {list.data?.map((a) => (
-            <li
+            <AnnouncementRow
               key={a.id}
-              className="rounded-[18px] border border-line bg-surface p-4 flex flex-wrap items-center gap-3"
-            >
-              <StatusPill status={a.status} />
-              <span className="flex-[1_1_240px] min-w-0">
-                <span className="block font-semibold truncate">{a.subject}</span>
-                <span className="block font-mono text-xs text-ink2">
-                  {a.status === 'draft'
-                    ? `draft · ${new Date(a.createdAt).toLocaleDateString()}`
-                    : `${a.sent} / ${a.recipients} sent${a.sentAt ? ` · ${new Date(a.sentAt).toLocaleString()}` : ''}`}
-                </span>
-                {a.error && <span className="block text-xs text-blush-text">{a.error}</span>}
-              </span>
-              {a.status === 'sending' && (
-                <span className="w-40 h-2 rounded-full bg-sunk overflow-hidden">
-                  <span
-                    className="block h-2 bg-teal transition-all"
-                    style={{ width: `${a.recipients ? (a.sent / a.recipients) * 100 : 0}%` }}
-                  />
-                </span>
-              )}
-              {a.status === 'draft' && (
-                <Button variant="outline" onClick={() => setComposing({ ...a })}>
-                  Open
-                </Button>
-              )}
-              {a.status === 'failed' && (
-                <Button
-                  variant="outline"
-                  onClick={() => api.adminSendAnnouncement(a.id).then(() => list.refetch())}
-                >
-                  Resume
-                </Button>
-              )}
-            </li>
+              a={a}
+              onOpen={() => setComposing({ ...a, courseId: a.course?.id ?? null })}
+              onSend={() => api.adminSendAnnouncement(a.id).then(() => list.refetch())}
+            />
           ))}
           {list.data?.length === 0 && <li className="text-ink2">Nothing sent yet.</li>}
         </ul>
         <DemoOutbox />
+      </Panel>
+      <Panel
+        title="Tools on the home page"
+        aside={
+          !adding && (
+            <Button variant="outline" onClick={() => setAdding(true)}>
+              Add a tool
+            </Button>
+          )
+        }
+      >
+        <Note>
+          <U>Coming soon</U> shows a tool early; <U>Launch</U> makes it live and drafts the email to every
+          student.
+        </Note>
+        {adding && <NewTool onDone={() => setAdding(false)} />}
+        {features.isLoading ? (
+          <Skeleton className="h-40" />
+        ) : (
+          <ul className="list-none m-0 p-0 flex flex-col gap-2.5">
+            {features.data?.map((f) => (
+              <FeatureRow key={f.key} f={f} onLaunched={(a) => setComposing({ ...a, courseId: null })} />
+            ))}
+          </ul>
+        )}
       </Panel>
     </div>
   );

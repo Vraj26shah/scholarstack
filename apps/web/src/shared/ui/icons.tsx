@@ -52,18 +52,13 @@ export const Lock = ({ size, ...p }: P) => (
   </svg>
 );
 export const Check = ({ size, ...p }: P) => (
-  <svg {...base(size)} {...p}>
-    <path d="M5 12l5 5 9-10" />
+  <svg {...base(size)} strokeWidth={1.75} {...p}>
+    <path d="M4.75 12.75 9.5 17.25 19.25 7" />
   </svg>
 );
 export const Cross = ({ size, ...p }: P) => (
   <svg {...base(size)} {...p}>
-    <path d="M6 6l12 12M18 6L6 18" />
-  </svg>
-);
-export const Shield = ({ size, ...p }: P) => (
-  <svg {...base(size)} {...p}>
-    <path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z" />
+    <path d="M7 7l10 10M17 7 7 17" strokeWidth={1.75} />
   </svg>
 );
 export const Devices = ({ size, ...p }: P) => (
@@ -148,5 +143,42 @@ export const ChevronDown = ({ size, ...p }: P) => (
 export const Sparkle = ({ size, ...p }: P) => (
   <svg {...base(size)} {...p}>
     <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" />
+  </svg>
+);
+export const SearchIcon = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M20 20l-3.6-3.6" />
+  </svg>
+);
+export const Toolbox = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M3 9h18v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" />
+    <path d="M8 9V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v3" />
+    <path d="M3 13h18M10 13v2h4v-2" />
+  </svg>
+);
+
+/** An arrow into a tray: "share your notes". */
+export const Upload = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M12 15V4M7.5 8.5 12 4l4.5 4.5" />
+    <path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+  </svg>
+);
+
+/** A page with a plus: "new files arrive in this course". */
+export const FilePlus = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5M12 11v6M9 14h6" />
+  </svg>
+);
+
+/** A speech bubble with a question mark: "ask about this page". */
+export const AskBubble = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
+    <path d="M10 9.5a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2V13M12 16h.01" />
   </svg>
 );

@@ -42,7 +42,7 @@
   },
   "overrides": [
     {
-      "include": ["**/test/**", "**/*.test.ts", "**/*.test.tsx", "**/e2e/**"],
+      "include": ["**/test/**", "**/*.test.ts", "**/*.test.tsx", "**/e2e/**", "apps/api/src/node/qa.ts"],
       "linter": {
         "rules": {
           "suspicious": {

@@ -5,11 +5,14 @@ import { AppError } from '../application/errors';
 import type { Container } from './container';
 import type { AppEnv } from './helpers';
 import { adminRoutes } from './routes/admin';
+import { authRoutes } from './routes/auth';
 import { catalogueRoutes } from './routes/catalogue';
 import { checkoutRoutes } from './routes/checkout';
+import { contributionRoutes } from './routes/contributions';
 import { demoRoutes } from './routes/demo';
 import { meRoutes } from './routes/me';
 import { readerRoutes } from './routes/reader';
+import { supportRoutes } from './routes/support';
 
 export type { AppEnv } from './helpers';
 
@@ -47,6 +50,15 @@ export function createApp(factory: ContainerFactory) {
       body = { error: { code: ErrorCode.BadRequest, message: 'That request was not valid.', requestId } };
     } else {
       console.error(JSON.stringify({ level: 'error', requestId, message: err.message, stack: err.stack }));
+      // Unexpected server errors go to the admin's Problems log too (never to the student).
+      try {
+        void c
+          .get('container')
+          ?.problems.fromServer(err, c.req.method, new URL(c.req.url).pathname)
+          .catch(() => {});
+      } catch {
+        // the log must never cause a second error
+      }
     }
     return c.json(body, status as 400);
   });
@@ -63,6 +75,9 @@ export function createApp(factory: ContainerFactory) {
   app.route('/', catalogueRoutes);
   app.route('/', meRoutes);
   app.route('/', checkoutRoutes);
+  app.route('/', contributionRoutes);
+  app.route('/', supportRoutes);
+  app.route('/', authRoutes);
   app.route('/', readerRoutes);
   app.route('/', adminRoutes);
   app.route('/', demoRoutes);

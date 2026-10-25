@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import { reportProblem } from '../../lib/problems';
 
 /**
  * A page-one preview from R2. While it loads (or if it fails, or the course has no preview
@@ -38,10 +39,26 @@ export function PagePreview({
     return () => clearTimeout(t);
   }, [state, attempt]);
 
-  const showImage = fileId && !(state === 'failed' && attempt > 0);
+  const gaveUp = Boolean(fileId) && state === 'failed' && attempt > 0;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: report once per file that gives up
+  useEffect(() => {
+    if (gaveUp) reportProblem('image', 'A page-one preview would not load', `file ${fileId}`);
+  }, [gaveUp]);
+  const showImage = fileId && !gaveUp;
   return (
     <div className={`relative overflow-hidden bg-sunk ${className}`}>
-      {state !== 'loaded' && <div className="skeleton absolute inset-0 rounded-none" aria-hidden="true" />}
+      {state !== 'loaded' && !gaveUp && (
+        <div className="skeleton absolute inset-0 rounded-none" aria-hidden="true" />
+      )}
+      {gaveUp && (
+        <div className="absolute inset-0 grid place-items-center p-3 text-center text-xs text-ink2 bg-sunk">
+          <span>
+            Preview isn’t available right now.
+            <br />
+            The full file opens in the reader.
+          </span>
+        </div>
+      )}
       {showImage && (
         <img
           key={`${fileId}-${attempt}`}

@@ -3,13 +3,15 @@ import { Link, useParams } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { formatRupees } from '../../lib/format';
 import { useSession } from '../../lib/session';
+import { Ambient } from '../../shared/ui/ambient';
 import { Stamp } from '../../shared/ui/brand';
 import { Button, LinkButton } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { ArrowRight, Box, Check } from '../../shared/ui/icons';
-import { PriceTag } from '../../shared/ui/index-card';
+import { PriceTag, Ribbon } from '../../shared/ui/index-card';
 import { Reveal } from '../../shared/ui/motion';
+import { PaymentProblem } from '../checkout/payment-problem';
 import { useBuy } from '../checkout/use-buy';
 
 export function BundlePage() {
@@ -56,18 +58,23 @@ export function BundlePage() {
           to={b.batchYear ? `/?batch=${b.batchYear}#catalogue` : '/#catalogue'}
           className="text-ink2 no-underline"
         >
-          {b.batchYear ? `DRAWER ${b.batchYear}` : 'CATALOGUE'}
+          {b.batchYear ? `Drawer ${b.batchYear}` : 'Catalogue'}
         </Link>
         <span aria-hidden="true">→</span>
-        <span className="text-ink">BUNDLE</span>
+        <span className="text-ink">Bundle</span>
       </nav>
 
       <section className="relative bg-brand text-white rounded-[32px] overflow-hidden p-6 sm:p-10">
-        <span aria-hidden="true" className="absolute inset-y-0 left-0 w-2 bg-marigold" />
-        <div className="relative pl-3 flex flex-wrap items-center gap-8 justify-between">
+        <Ambient tone="navy" />
+        <Ribbon className="ribbon-lg" />
+        <div className="relative pl-10 sm:pl-12 flex flex-wrap items-center gap-8 justify-between">
           <div className="flex-[1_1_480px] min-w-0 flex flex-col gap-4">
-            <span className="inline-flex items-center gap-2 self-start h-8 px-3.5 rounded-full bg-marigold text-on-marigold font-mono text-xs font-semibold tracking-[0.1em]">
-              <Box size={15} /> BUNDLE · {b.courseCount} COURSES · {b.pageCount} PAGES
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="inline-flex items-center gap-2 h-8 px-3.5 rounded-full bg-marigold text-on-marigold text-[13px] font-semibold whitespace-nowrap">
+                <Box size={15} /> Bundle · {b.courseCount} courses
+                <span className="hidden min-[400px]:inline">· {b.pageCount} pages</span>
+              </span>
+              <span className="font-mono text-xs text-on-brand2 min-[400px]:hidden">{b.pageCount} pages</span>
             </span>
             <h1 className="m-0 font-display font-extrabold text-[clamp(40px,6.4vw,80px)] leading-[0.92] tracking-[-0.055em]">
               {b.title}
@@ -102,7 +109,7 @@ export function BundlePage() {
               </div>
             </div>
             {b.ownedCount > 0 && !allOwned && (
-              <p className="m-0 text-sm rounded-xl bg-sunk px-3 py-2">
+              <p className="m-0 text-sm text-ink2">
                 You already own {b.ownedCount} of these, so your price is lower and you get the other{' '}
                 {b.courseCount - b.ownedCount}.
               </p>
@@ -121,10 +128,11 @@ export function BundlePage() {
               </Button>
             )}
             {buyState.error && (
-              <p role="alert" className="m-0 text-sm bg-blush text-blush-text rounded-xl px-3 py-2">
+              <p role="status" className="m-0 text-sm bg-blush text-blush-text rounded-xl px-3 py-2">
                 {buyState.error}
               </p>
             )}
+            <PaymentProblem problem={buyState.problem} onRetry={buyState.buy} onClose={buyState.dismiss} />
             <span className="text-[13px] leading-relaxed text-ink2">
               One payment, every course below on your shelf. All sales are final.
             </span>
@@ -140,7 +148,7 @@ export function BundlePage() {
           >
             In this bundle
           </h2>
-          <span className="font-mono text-[13px] text-ink2">OPEN A CARD TO PEEK AT EVERY UNIT</span>
+          <span className="text-sm text-ink2">Open a card to peek at every unit</span>
         </div>
         <ul className="list-none m-0 p-0 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
           {b.courses.map((c, i) => (

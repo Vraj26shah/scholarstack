@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isCollegeEmail } from './format';
+import { isCollegeEmail, isListedEmail } from './format';
 import { scrambleMoves, tilePermutation, unscrambleMoves } from './tiles';
 
 describe('tilePermutation', () => {
@@ -38,7 +38,40 @@ describe('isCollegeEmail', () => {
     ['rahul@vitbhopal.ac.in.evil.com', false],
     ['rahul@sub.vitbhopal.ac.in', false],
     ['@vitbhopal.ac.in', false],
+    ['asha.23bce10001@vitbhopal.ac.in', true],
+    ['  Asha.23BCE10001@VITBHOPAL.AC.IN  ', true],
+    // One inbox must not become many accounts.
+    ['rahul+2@vitbhopal.ac.in', false],
+    ['rahul%x@vitbhopal.ac.in', false],
+    ['rahul..k@vitbhopal.ac.in', false],
+    ['.rahul@vitbhopal.ac.in', false],
+    ['rahul.@vitbhopal.ac.in', false],
+    // Look-alike letters and hidden characters.
+    ['rаhul@vitbhopal.ac.in', false],
+    ['rahul\u200b@vitbhopal.ac.in', false],
+    ['rahul@vitbhopal.ac.in\n', true],
+    ['rahul@vitbhopal.ac.in x', false],
+    ['rahul@vitbhopal.ac.in@gmail.com', false],
+    ['vitbsmashers@gmail.com', false],
   ])('%s → %s', (email, expected) => {
     expect(isCollegeEmail(email)).toBe(expected);
+  });
+});
+
+describe('isListedEmail (admin list)', () => {
+  const admins = ['vitbsmashers@gmail.com'];
+  it.each([
+    ['vitbsmashers@gmail.com', true],
+    ['  VitbSmashers@Gmail.COM ', true],
+    ['vit.bsmashers@gmail.com', false],
+    ['vitbsmashers+admin@gmail.com', false],
+    ['vitbsmashers@gmail.com.evil.in', false],
+    ['vitbsmashers@gmai1.com', false],
+    ['vitbsmashers@gmаil.com', false],
+    ['vitbsmashers@gmail.com\u0000', false],
+    ['xvitbsmashers@gmail.com', false],
+    ['', false],
+  ])('%s → %s', (email, expected) => {
+    expect(isListedEmail(email, admins)).toBe(expected);
   });
 });

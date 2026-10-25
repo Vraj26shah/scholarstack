@@ -1,10 +1,15 @@
-import type { ComponentType } from 'react';
+import { attendanceTool } from './attendance';
+import { cgpaTool } from './cgpa';
+import type { ToolModule } from './core/types';
+import { timetableTool } from './timetable';
 
 /**
- * Where each free tool's screen lives. A tool can be listed and announced before its screen
- * exists; until it is added here, its page shows "coming soon".
- *
- * To add one: build it under features/tools/<key>/, then (with `import { lazy } from 'react'`):
- *   cgpa: lazy(() => import('./cgpa/cgpa-tool')),
+ * The tools this site has screens for. To add one, build its folder (see README.md) and add it
+ * here; nothing else in the site changes. A tool listed in the admin panel without a module here
+ * shows "coming soon".
  */
-export const TOOL_SCREENS: Record<string, ComponentType> = {};
+const MODULES: ToolModule[] = [cgpaTool, attendanceTool, timetableTool];
+
+const BY_KEY = new Map(MODULES.map((m) => [m.key, m]));
+
+export const toolModule = (key: string): ToolModule | undefined => BY_KEY.get(key);

@@ -10,7 +10,7 @@ export function Field({
 }: { label: string; children: ReactNode; className?: string }) {
   return (
     // biome-ignore lint/a11y/noLabelWithoutControl: the control is passed in as children
-    <label className={`flex flex-col gap-1.5 text-sm ${className}`}>
+    <label className={`flex min-w-0 flex-col gap-1.5 text-sm ${className}`}>
       <span className="font-semibold text-ink2">{label}</span>
       {children}
     </label>
@@ -76,3 +76,17 @@ export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' :
 export const rupeesToPaise = (r: string) => Math.round(Number(r) * 100);
 
 export const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+/** The key words of a one-line note, underlined in teal instead of boxed. */
+export function U({ children }: { children: ReactNode }) {
+  return (
+    <span className="text-ink font-semibold underline decoration-teal decoration-2 underline-offset-[5px]">
+      {children}
+    </span>
+  );
+}
+
+/** One short line that explains a screen. No boxes. */
+export function Note({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <p className={`m-0 text-[14px] leading-relaxed text-ink2 max-w-[760px] ${className}`}>{children}</p>;
+}

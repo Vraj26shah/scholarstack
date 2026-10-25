@@ -80,11 +80,15 @@ function DraftForm({
   branches,
   bundles,
   onChange,
+  pickedCount,
+  onApplyToAll,
 }: {
   draft: Draft;
   branches: BranchDto[];
   bundles: AdminBundleDto[];
   onChange: (d: Draft) => void;
+  pickedCount: number;
+  onApplyToAll: () => void;
 }) {
   const set = (k: keyof Draft) => (e: { target: { value: string } }) =>
     onChange({ ...draft, [k]: e.target.value });
@@ -198,6 +202,16 @@ function DraftForm({
             ))}
         </select>
       </Field>
+      {pickedCount > 1 && (
+        <div className="sm:col-span-2 md:col-span-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+          <span className="text-[13px] text-ink2">
+            Same batch, programmes, semester and price for the other picked folders?
+          </span>
+          <Button variant="outline" onClick={onApplyToAll}>
+            Use these for all {pickedCount} folders
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -212,6 +226,7 @@ function FolderRow({
   bundles,
   toggle,
   setDraft,
+  applyFrom,
 }: {
   folder: ImportFolderDto;
   depth: number;
@@ -222,6 +237,7 @@ function FolderRow({
   bundles: AdminBundleDto[];
   toggle: (f: ImportFolderDto, year: number | null) => void;
   setDraft: (prefix: string, d: Draft) => void;
+  applyFrom: (prefix: string) => void;
 }) {
   const [open, setOpen] = useState(depth === 0);
   const year = folder.suggested.batchYear ?? fallbackYear;
@@ -306,7 +322,7 @@ function FolderRow({
       )}
       {depth > 0 && folder.childNames.length > 0 && (
         <div className="flex flex-wrap gap-1.5 px-4 pb-3" style={{ paddingLeft: 16 + depth * 22 + 30 }}>
-          {folder.childNames.slice(0, 8).map((n) => (
+          {folder.childNames.map((n) => (
             <span key={n} className="inline-flex items-center h-6 px-2 rounded-md bg-sunk text-ink2 text-xs">
               {n}
             </span>
@@ -328,6 +344,8 @@ function FolderRow({
             branches={branches}
             bundles={bundles}
             onChange={(d) => setDraft(folder.prefix, d)}
+            pickedCount={picked.size}
+            onApplyToAll={() => applyFrom(folder.prefix)}
           />
         </div>
       )}
@@ -345,6 +363,7 @@ function FolderRow({
               bundles={bundles}
               toggle={toggle}
               setDraft={setDraft}
+              applyFrom={applyFrom}
             />
           ))}
         </ul>
@@ -361,7 +380,7 @@ function ResultCard({ r, title }: { r: SyncResultDto; title: string }) {
         {r.filesChanged} changed · {r.conversionQueued} queued for conversion
       </div>
       {r.skipped.length > 0 && (
-        <details>
+        <details open>
           <summary className="cursor-pointer text-sm text-blush-text">
             {plural(r.skipped.length, 'file')} skipped
           </summary>
@@ -402,7 +421,6 @@ export function ImportPanel() {
   const bundles = bundleQuery.data ?? [];
   const [drafts, setDrafts] = useState(new Map<string, Draft>());
   const picked = useMemo(() => new Set(drafts.keys()), [drafts]);
-  const [bulk, setBulk] = useState({ batchYear: '', branchSlugs: [] as string[], semester: '', rupees: '' });
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ['admin-import'] });
@@ -480,21 +498,25 @@ export function ImportPanel() {
       return next;
     });
   const setDraft = (prefix: string, d: Draft) => setDrafts((m) => new Map(m).set(prefix, d));
-  const applyBulk = () =>
+  /** Copy one folder's batch, programmes, semester and price to every other picked folder. */
+  const applyFrom = (source: string) =>
     setDrafts((m) => {
+      const from = m.get(source);
+      if (!from) return m;
       const next = new Map<string, Draft>();
       for (const [k, d] of m)
         next.set(k, {
           ...d,
-          batchYear: bulk.batchYear || d.batchYear,
-          branchSlugs: bulk.branchSlugs.length ? bulk.branchSlugs : d.branchSlugs,
-          semester: bulk.semester || d.semester,
-          rupees: bulk.rupees || d.rupees,
+          batchYear: from.batchYear,
+          branchSlugs: from.branchSlugs,
+          semester: from.semester,
+          rupees: from.rupees,
         });
       return next;
     });
 
   const ready = drafts.size > 0 && [...drafts.values()].every(valid);
+  const missing = [...drafts.values()].filter((d) => !valid(d)).map((d) => d.title || 'untitled');
 
   return (
     <Panel
@@ -520,8 +542,8 @@ export function ImportPanel() {
         loose files go under "Notes". New folders are checked every 30 seconds. Course-code matches preselect
         the programmes from your branch map. Before importing, review the title, course code, programme, batch
         year, semester, price and optional draft bundle. Imports and changed R2 files stay private until an
-        admin reviews and publishes them after conversion.
-        {' '}Sync checks each file in its own request; complete page maps stay as they are, and failures are listed by file.
+        admin reviews and publishes them after conversion. Sync checks each file in its own request; complete
+        page maps stay as they are, and failures are listed by file.
       </p>
       {run.data && <ResultCard r={run.data} title="Imported" />}
       {rescan.data && <ResultCard r={rescan.data.summary} title="R2 sync" />}
@@ -555,7 +577,7 @@ export function ImportPanel() {
           {rescanProgress.currentKey && (
             <p className="m-0 break-all font-mono text-xs text-ink2">Current: {rescanProgress.currentKey}</p>
           )}
-          <details open={rescan.isPending}>
+          <details open>
             <summary className="cursor-pointer text-sm text-ink2">
               View {rescanProgress.outcomes.length} file statuses
             </summary>
@@ -579,7 +601,7 @@ export function ImportPanel() {
                     title={`${item.courseTitle} · ${item.key}`}
                   >
                     {item.courseTitle} · {item.key}
-                    {item.message ? ` — ${item.message}` : ''}
+                    {item.message ? `: ${item.message}` : ''}
                   </span>
                 </li>
               ))}
@@ -655,6 +677,7 @@ export function ImportPanel() {
                 bundles={bundles}
                 toggle={toggle}
                 setDraft={setDraft}
+                applyFrom={applyFrom}
               />
             ))}
           </ul>
@@ -662,59 +685,17 @@ export function ImportPanel() {
       )}
 
       {drafts.size > 0 && (
-        <div className="rounded-[22px] bg-brand text-white p-4 sm:p-5 grid grid-cols-2 lg:grid-cols-[minmax(130px,1fr)_110px_minmax(230px,1.5fr)_120px_120px_auto_auto] items-end gap-3 shadow-lg">
-          <span className="col-span-2 lg:col-span-1 font-semibold self-center">
-            {plural(drafts.size, 'folder')} picked
-          </span>
-          <Field label="Batch year for all" className="min-w-0 [&>span]:text-on-brand2">
-            <input
-              aria-label="Batch year for all"
-              className={`${input} w-full`}
-              value={bulk.batchYear}
-              inputMode="numeric"
-              maxLength={4}
-              onChange={(e) => setBulk({ ...bulk, batchYear: e.target.value.replace(/\D/g, '') })}
-            />
-          </Field>
-          <Field label="Programmes for all" className="min-w-0 [&>span]:text-on-brand2">
-            <BranchPicker
-              branches={branches}
-              selected={bulk.branchSlugs}
-              onChange={(branchSlugs) => setBulk({ ...bulk, branchSlugs })}
-              label="Branches for all selected courses"
-              compact
-            />
-          </Field>
-          <Field label="Semester" className="min-w-0 [&>span]:text-on-brand2">
-            <select
-              aria-label="Semester for all"
-              className={input}
-              value={bulk.semester}
-              onChange={(e) => setBulk({ ...bulk, semester: e.target.value })}
-            >
-              <option value="">—</option>
-              {SEMESTERS.map((n) => (
-                <option key={n} value={n}>
-                  Sem {n}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Price ₹" className="min-w-0 [&>span]:text-on-brand2">
-            <input
-              aria-label="Price for all"
-              className={`${input} w-full`}
-              value={bulk.rupees}
-              inputMode="numeric"
-              onChange={(e) => setBulk({ ...bulk, rupees: e.target.value.replace(/\D/g, '') })}
-            />
-          </Field>
-          <Button variant="outline-light" className="w-full lg:w-auto" onClick={applyBulk}>
-            Apply to all
-          </Button>
+        <div className="sticky bottom-[calc(72px+env(safe-area-inset-bottom))] md:bottom-3 z-20 rounded-[22px] bg-brand text-white px-4 py-3 sm:px-5 flex flex-wrap items-center gap-3 shadow-lg">
+          <span className="font-semibold">{plural(drafts.size, 'folder')} picked</span>
+          {!ready && (
+            <span className="text-[13px] text-on-brand2">
+              {plural(missing.length, 'folder')} still {missing.length === 1 ? 'needs' : 'need'} a title,
+              batch year, programme, semester or price: {missing.join(', ')}.
+            </span>
+          )}
           <Button
             variant="buy"
-            className="col-span-2 w-full lg:col-span-1 lg:w-auto"
+            className="ml-auto"
             onClick={() =>
               run.mutate([...drafts.entries()].map(([prefix, draft]) => importInput(prefix, draft)))
             }
@@ -722,11 +703,6 @@ export function ImportPanel() {
           >
             {run.isPending ? 'Importing…' : `Import ${plural(drafts.size, 'course')}`}
           </Button>
-          {!ready && (
-            <span className="basis-full text-xs text-on-brand2">
-              Fill in title, year, at least one branch, semester and price for each.
-            </span>
-          )}
         </div>
       )}
     </Panel>

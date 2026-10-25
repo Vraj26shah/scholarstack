@@ -1,6 +1,7 @@
 import type { DeviceDto, MeDto } from '@ss/contracts';
 import { type Device, DeviceLimitReached, type Principal } from '../domain/entities';
 import type { DeviceRepository, ProfileRepository, SessionRegistry } from '../domain/ports';
+import type { AdminAccess } from './admin-access';
 import type { AppConfig } from './config';
 import { fail } from './errors';
 
@@ -19,10 +20,11 @@ export class AccountService {
     private readonly devices: DeviceRepository,
     private readonly sessions: SessionRegistry,
     private readonly config: AppConfig,
+    private readonly admins: Pick<AdminAccess, 'isAdmin'>,
   ) {}
 
-  isAdmin(principal: Principal): boolean {
-    return this.config.adminEmails.includes(principal.email.toLowerCase());
+  isAdmin(principal: Principal): Promise<boolean> {
+    return this.admins.isAdmin(principal.email);
   }
 
   /** Called after sign-in. Refreshes this device's session without displacing other devices. */
@@ -103,7 +105,7 @@ export class AccountService {
       id: profile.id,
       email: profile.email,
       fullName: profile.fullName,
-      isAdmin: this.isAdmin(principal),
+      isAdmin: await this.isAdmin(principal),
       emailOptIn: profile.emailOptIn,
       devices: devices.map((d) => toDeviceDto(d, currentDeviceId)),
     };

@@ -5,7 +5,7 @@ export interface AuthGateway {
   token(): Promise<string | null>;
   email(): Promise<string | null>;
   startEmail(email: string, captchaToken?: string): Promise<void>;
-  startGoogle(): Promise<void>;
+  startGoogle(admin?: boolean): Promise<void>;
   /** Called on /auth/callback after Supabase redirects back. */
   completeRedirect(): Promise<boolean>;
   signOut(): Promise<void>;

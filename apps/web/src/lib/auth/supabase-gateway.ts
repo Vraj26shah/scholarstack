@@ -86,12 +86,16 @@ export class SupabaseAuthGateway implements AuthGateway {
     }
   }
 
-  async startGoogle() {
+  async startGoogle(admin = false) {
+    // No hosted-domain lock: an admin may sign in with a Gmail. Students still need their college
+    // account; any other address is refused by the sign-up check unless it is on the admin list.
+    void admin;
+    const queryParams: Record<string, string> = { prompt: 'select_account' };
     const { error } = await (await this.client).auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
-        queryParams: { hd: env.domain, prompt: 'select_account' },
+        queryParams,
       },
     });
     if (error) throw new Error('Google sign-in could not start. Try the email code instead.');

@@ -72,7 +72,7 @@ Dashboard menu names below can move around between releases. If a label doesn't 
 - [ ] Sign up and start **KYC** (PAN, bank account, website URL). Approval can take a few days, so start early. Your site needs visible **Terms**, **Privacy**, **Contact** and **"All sales are final"** wording; the pages ship with the code.
 - [ ] In **Test mode**: Account & Settings → **API Keys** → generate.
   → `VITE_RAZORPAY_KEY_ID`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`
-- [ ] **Webhooks** → add `https://YOUR-DOMAIN/api/webhooks/razorpay` (use a tunnel URL while testing locally; README explains). Events: `payment.captured`, `payment.failed`, `payment.dispute.lost`. Type a long random secret.
+- [ ] **Webhooks** → add `https://YOUR-DOMAIN/api/webhooks/razorpay` (use a tunnel URL while testing locally; README explains). Events: `payment.authorized`, `payment.captured`, `order.paid`, `payment.failed`, `payment.dispute.lost`. Also turn on **Settings → Payment Capture → Automatic** (the site captures authorised netbanking/UPI payments itself as a backup). Type a long random secret.
   → `RAZORPAY_WEBHOOK_SECRET`
 - [ ] When KYC clears, generate **Live** keys and swap them into production only.
 

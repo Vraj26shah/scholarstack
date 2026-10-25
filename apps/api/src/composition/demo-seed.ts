@@ -196,6 +196,28 @@ const formatOf = (name: string): CourseFile['format'] => {
   return 'pdf';
 };
 
+function sourceFixture(name: string): { bytes: Uint8Array; contentType: string } {
+  const extension = name.split('.').at(-1)?.toLowerCase() ?? '';
+  const signatures: Record<string, { bytes: number[]; contentType: string }> = {
+    pdf: { bytes: [...new TextEncoder().encode('%PDF-1.7\n')], contentType: 'application/pdf' },
+    pptx: {
+      bytes: [0x50, 0x4b, 0x03, 0x04],
+      contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    },
+    docx: {
+      bytes: [0x50, 0x4b, 0x03, 0x04],
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    },
+    jpg: { bytes: [0xff, 0xd8, 0xff, 0x00], contentType: 'image/jpeg' },
+    jpeg: { bytes: [0xff, 0xd8, 0xff, 0x00], contentType: 'image/jpeg' },
+    png: { bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], contentType: 'image/png' },
+  };
+  const signature = signatures[extension];
+  const bytes = new Uint8Array(64);
+  if (signature) bytes.set(signature.bytes);
+  return { bytes, contentType: signature?.contentType ?? 'application/octet-stream' };
+}
+
 export const DEMO_IMPORT_ROOT = 'drive-imports/';
 
 /** "unit-3" + "Normalisation" → the Drive folder name a student would have made. */
@@ -238,7 +260,7 @@ const IMPORTABLE: [path: string, bytes: number][] = [
   ['25 Batch/Network Security/Unit 2 - Firewalls/notes.pdf', 1_500_000],
 ];
 
-export function seedDemo(db: MemoryDb, sources?: MemoryObjectStore): void {
+export function seedDemo(db: MemoryDb, sources?: MemoryObjectStore, pageAssets?: MemoryObjectStore): void {
   db.batches = [2023, 2024, 2025, 2026].map((year) => ({ year }));
   db.branches = DEMO_BRANCHES.map((b) => ({ ...b }));
   const seqByDrawer = new Map<string, number>();
@@ -301,18 +323,24 @@ export function seedDemo(db: MemoryDb, sources?: MemoryObjectStore): void {
         previewKey: `pages/${id}/preview.webp`,
       };
       db.files.set(file.id, file);
-      sources?.put(sourceKey, new Uint8Array(8), 'application/pdf', 'seed');
+      const pageManifest = Array.from({ length: pages }, (_, index) => ({
+        imageKey: `pages/${id}/${index + 1}.webp`,
+        tileSeed: `seed-${id}-${index + 1}`,
+      }));
+      db.pages.set(file.id, pageManifest);
+      for (const [index, page] of pageManifest.entries()) {
+        pageAssets?.put(page.imageKey, new Uint8Array([1, index + 1, 3]), 'image/webp');
+      }
+      if (file.previewKey) pageAssets?.put(file.previewKey, new Uint8Array([1, 1, 3]), 'image/webp');
+      const source = sourceFixture(name);
+      sources?.put(sourceKey, source.bytes, source.contentType, 'seed', file.sizeBytes);
     });
   }
 
   if (sources) {
     for (const [path, bytes] of IMPORTABLE) {
-      sources.put(
-        `${DEMO_IMPORT_ROOT}${path}`,
-        new Uint8Array(Math.min(bytes, 64)),
-        'application/octet-stream',
-        `v1-${bytes}`,
-      );
+      const source = sourceFixture(path.split('/').at(-1) ?? path);
+      sources.put(`${DEMO_IMPORT_ROOT}${path}`, source.bytes, source.contentType, `v1-${bytes}`, bytes);
     }
   }
 
@@ -358,6 +386,11 @@ export function seedDemo(db: MemoryDb, sources?: MemoryObjectStore): void {
       'cgpa',
       'CGPA calculator',
       'Add your grades and credits, see your CGPA and what you need next semester.',
+    ],
+    [
+      'attendance',
+      'Attendance calculator',
+      'See if you can sit the exam, how many classes you can miss, and your attendance marks.',
     ],
     ['timetable', 'Timetable maker', 'Pick your slots and get a clash-free weekly timetable you can save.'],
   ].entries()) {

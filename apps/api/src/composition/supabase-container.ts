@@ -1,4 +1,4 @@
-import type { ConversionQueue, ObjectStore, RateLimiter } from '../domain/ports';
+import type { ConversionQueue, ObjectStore, RateLimiter, UploadStore } from '../domain/ports';
 import type { Container } from '../http/container';
 import { SupabaseJwtVerifier } from '../infrastructure/auth';
 import { MemoryRateLimiter } from '../infrastructure/cloudflare';
@@ -15,23 +15,38 @@ import {
   SupabaseAnnouncements,
   SupabaseBundles,
   SupabaseCatalogue,
+  SupabaseContributions,
   SupabaseDevices,
   SupabaseFeatures,
+  SupabaseHousekeeping,
   SupabaseLeases,
   SupabaseOrders,
+  SupabaseProblems,
   SupabaseProfiles,
   SupabaseQuota,
   SupabaseReading,
   SupabaseRecipients,
   SupabaseSessions,
+  SupabaseSettings,
   supabaseClient,
 } from '../infrastructure/supabase';
+import {
+  SupabaseAcademic,
+  SupabaseAdmins,
+  SupabaseCourseUpdates,
+  SupabaseDeliveries,
+  SupabaseEarnings,
+  SupabasePeople,
+  SupabaseSignInStrikes,
+  SupabaseSupport,
+} from '../infrastructure/supabase-ledgers';
 import { type WorkerEnv, buildConfig } from './config';
 import { buildServices } from './services';
 
 /** What differs between the Cloudflare Worker and Node: where files live and how pages get converted. */
 export interface RuntimeAdapters {
-  store: ObjectStore;
+  /** The R2 bucket: read by the catalogue, written for student uploads. */
+  store: ObjectStore & UploadStore;
   queue: ConversionQueue;
   limiter?: RateLimiter;
 }
@@ -61,6 +76,19 @@ export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): C
           })
         : new NoMailer(),
       emailQuota: new SupabaseQuota(db),
+      problems: new SupabaseProblems(db),
+      contributions: new SupabaseContributions(db),
+      settings: new SupabaseSettings(db),
+      earnings: new SupabaseEarnings(db),
+      deliveries: new SupabaseDeliveries(db),
+      courseUpdates: new SupabaseCourseUpdates(db),
+      signInStrikes: new SupabaseSignInStrikes(db),
+      admins: new SupabaseAdmins(db),
+      academic: new SupabaseAcademic(db),
+      people: new SupabasePeople(db),
+      support: new SupabaseSupport(db),
+      uploads: runtime.store,
+      housekeeping: new SupabaseHousekeeping(db),
       unsubscribeSigner: new HmacTokenSigner(`${env.VIEWER_TOKEN_SECRET}:unsubscribe`, clock),
       profiles: new SupabaseProfiles(db),
       devices: new SupabaseDevices(db),
@@ -88,6 +116,7 @@ export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): C
       env.SUPABASE_URL,
       env.SUPABASE_LEGACY_JWT_SECRET ?? '',
       config.allowedDomain,
+      (email) => services.admins.isAdmin(email),
     ),
     deviceCookie: new DeviceCookie(env.DEVICE_COOKIE_SECRET),
     secureCookies: env.APP_ENV !== 'development',

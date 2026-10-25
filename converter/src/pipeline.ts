@@ -32,9 +32,30 @@ export interface Storage {
   deletePrefix(prefix: string): Promise<void>;
 }
 
+/** An opened document whose pages can be rendered a few at a time. */
+export interface PageSource {
+  pageCount: number;
+  /** PNG buffers for pages from..to (1-based, inclusive), in order. */
+  renderRange(from: number, to: number): Promise<Buffer[]>;
+}
+
 export interface Rasterizer {
-  /** Returns PNG buffers, one per page, in order. */
-  toPages(source: Buffer, fileName: string, workDir: string): Promise<Buffer[]>;
+  /** Preferred: open once, then render small page ranges so memory stays flat. */
+  open?(source: Buffer, fileName: string, workDir: string): Promise<PageSource>;
+  /** Legacy whole-document render, still accepted (test doubles, simple adapters). */
+  toPages?(source: Buffer, fileName: string, workDir: string): Promise<Buffer[]>;
+}
+
+async function openPages(
+  rasterizer: Rasterizer,
+  source: Buffer,
+  fileName: string,
+  workDir: string,
+): Promise<PageSource> {
+  if (rasterizer.open) return rasterizer.open(source, fileName, workDir);
+  if (!rasterizer.toPages) throw new Error('Rasterizer cannot render pages.');
+  const pages = await rasterizer.toPages(source, fileName, workDir);
+  return { pageCount: pages.length, renderRange: async (from, to) => pages.slice(from - 1, to) };
 }
 
 export interface Reporter {
@@ -77,11 +98,11 @@ const IMAGE = new Set(['.jpg', '.jpeg', '.png']);
 export class CliRasterizer implements Rasterizer {
   constructor(private readonly dpi = 150) {}
 
-  async toPages(source: Buffer, fileName: string, workDir: string): Promise<Buffer[]> {
+  async open(source: Buffer, fileName: string, workDir: string): Promise<PageSource> {
     const ext = extname(fileName).toLowerCase();
     const extensionlessPdf = !ext && source.subarray(0, 5).toString('latin1') === '%PDF-';
     await mkdir(workDir, { recursive: true });
-    if (IMAGE.has(ext)) return [source];
+    if (IMAGE.has(ext)) return { pageCount: 1, renderRange: async () => [source] };
 
     let pdfPath = join(workDir, 'input.pdf');
     if (OFFICE.has(ext)) {
@@ -92,6 +113,7 @@ export class CliRasterizer implements Rasterizer {
       await run('soffice', [profile, '--headless', '--convert-to', 'pdf', '--outdir', workDir, officePath], {
         timeout: 180_000,
       });
+      await rm(officePath, { force: true });
       pdfPath = join(workDir, `${basename(officePath, ext)}.pdf`);
     } else if (ext === '.pdf' || extensionlessPdf) {
       await writeFile(pdfPath, source);
@@ -99,28 +121,50 @@ export class CliRasterizer implements Rasterizer {
       throw new Error(`Unsupported file type ${ext}`);
     }
 
-    // Do not publish a partial render as a ready file. Read the source PDF's page count
-    // independently, then compare it with the complete set of rasterized pages.
+    // Read the page count independently so a partial render can never be published as ready.
     const { stdout: pdfInfo } = await run('pdfinfo', [pdfPath], { timeout: 30_000 });
-    const pageCount = /^Pages:\s+(\d+)\s*$/im.exec(pdfInfo)?.[1];
-    const expectedPages = Number(pageCount);
+    const expectedPages = Number(/^Pages:\s+(\d+)\s*$/im.exec(pdfInfo)?.[1]);
     if (!Number.isInteger(expectedPages) || expectedPages < 1) {
       throw new Error('Could not verify the source document page count; conversion was not published.');
     }
 
-    await run('pdftoppm', ['-r', String(this.dpi), '-png', pdfPath, join(workDir, 'page')], {
-      timeout: 300_000,
-    });
-    const pages = (await readdir(workDir)).filter((f) => /^page-\d+\.png$/.test(f));
-    pages.sort((a, b) => Number(a.match(/\d+/)![0]) - Number(b.match(/\d+/)![0]));
-    const pageNumbers = pages.map((file) => Number(/page-(\d+)\.png$/.exec(file)![1]));
-    const completeSequence = pageNumbers.every((pageNo, index) => pageNo === index + 1);
-    if (pages.length !== expectedPages || !completeSequence) {
-      throw new Error(
-        `Page verification failed: source has ${expectedPages} pages but rendered pages are ${pageNumbers.join(', ') || 'none'}.`,
-      );
-    }
-    return Promise.all(pages.map((p) => readFile(join(workDir, p))));
+    const dpi = this.dpi;
+    return {
+      pageCount: expectedPages,
+      async renderRange(from: number, to: number): Promise<Buffer[]> {
+        const chunkDir = join(workDir, `chunk-${from}`);
+        await mkdir(chunkDir, { recursive: true });
+        try {
+          await run(
+            'pdftoppm',
+            [
+              '-r',
+              String(dpi),
+              '-png',
+              '-f',
+              String(from),
+              '-l',
+              String(to),
+              pdfPath,
+              join(chunkDir, 'page'),
+            ],
+            { timeout: 300_000 },
+          );
+          const files = (await readdir(chunkDir)).filter((f) => /^page-\d+\.png$/.test(f));
+          const numbers = files.map((f) => Number(/page-(\d+)\.png$/.exec(f)![1])).sort((a, b) => a - b);
+          const want = Array.from({ length: to - from + 1 }, (_, i) => from + i);
+          if (numbers.length !== want.length || numbers.some((n, i) => n !== want[i])) {
+            throw new Error(
+              `Page verification failed: expected pages ${from}-${to} of ${expectedPages} but rendered ${numbers.join(', ') || 'none'}.`,
+            );
+          }
+          const byNumber = new Map(files.map((f) => [Number(/page-(\d+)\.png$/.exec(f)![1]), f]));
+          return await Promise.all(want.map((n) => readFile(join(chunkDir, byNumber.get(n)!))));
+        } finally {
+          await rm(chunkDir, { recursive: true, force: true });
+        }
+      },
+    };
   }
 }
 
@@ -162,17 +206,29 @@ export class ConvertPages {
     private readonly reporter: Reporter,
     private readonly seedSecret: string,
     private readonly workRoot: string,
-    private readonly pageConcurrency = 6,
+    private readonly pageConcurrency = 4,
+    /** Pages rendered per pdftoppm call; bounds memory to roughly this many PNGs. */
+    private readonly chunkSize = 8,
+    private readonly progressIntervalMs = 1000,
   ) {}
 
   async run(job: Job): Promise<ConversionReport> {
     const workDir = join(this.workRoot, job.fileId);
     let activeStage: NonNullable<ConversionReport['errorStage']> = 'downloading_source';
     let progressWrites: Promise<void> = Promise.resolve();
+    let lastSentAt = 0;
+    let lastSentStage: ConversionStage | null = null;
     const progress = (stage: ConversionStage, current = 0, total = 0) => {
       activeStage = stage as NonNullable<ConversionReport['errorStage']>;
       if (!job.queueId || !job.queuePosition || !job.queueTotal || !this.reporter.progress)
         return progressWrites;
+      // One callback per page would hammer the API on long documents: send stage changes,
+      // the final count, and otherwise at most one update per interval.
+      const now = Date.now();
+      const due = stage !== lastSentStage || current === total || now - lastSentAt >= this.progressIntervalMs;
+      if (!due) return progressWrites;
+      lastSentAt = now;
+      lastSentStage = stage;
       const report: ConversionProgressReport = {
         fileId: job.fileId,
         queueId: job.queueId,
@@ -182,8 +238,12 @@ export class ConvertPages {
         current,
         total,
       };
-      // Keep page-count updates ordered even while R2 writes run concurrently.
-      progressWrites = progressWrites.then(() => this.reporter.progress!(report));
+      // Ordered, and best-effort: a dropped progress update must never fail the conversion.
+      progressWrites = progressWrites
+        .then(() => this.reporter.progress!(report))
+        .catch((error: unknown) => {
+          console.warn(`progress update skipped for ${job.fileId}: ${(error as Error).message}`);
+        });
       return progressWrites;
     };
     try {
@@ -191,41 +251,53 @@ export class ConvertPages {
       const source = await this.storage.download(job.sourceKey);
       await progress('validating_source');
       sniff(source, basename(job.sourceKey));
-      await progress('rendering_pages');
-      const pngs = await this.rasterizer.toPages(source, basename(job.sourceKey), workDir);
-      if (pngs.length === 0) throw new Error('No pages produced');
+      await progress('rendering_pages', 0, 0);
+      const doc = await openPages(this.rasterizer, source, basename(job.sourceKey), workDir);
+      const total = doc.pageCount;
+      if (total === 0) throw new Error('No pages produced');
+      await progress('rendering_pages', 0, total);
       const pages: ConversionReport['pages'] = [];
       const previewKey = `pages/${job.fileId}/preview.webp`;
       await progress('clearing_previous_pages');
       await this.storage.deletePrefix(`pages/${job.fileId}/`);
-      await progress('writing_preview', 0, 1);
-      await this.storage.upload(previewKey, await renderPreview(pngs[0]!), 'image/webp');
-      await progress('writing_preview', 1, 1);
-      await progress('writing_pages', 0, pngs.length);
-      // Page writes are network-bound; the serial progress callback reports verified completions.
-      let next = 0;
+
+      // Render a few pages, ship them to R2, drop them from memory, repeat.
       let written = 0;
-      let workerError: unknown;
-      const worker = async () => {
-        try {
-          while (!workerError && next < pngs.length) {
-            const i = next++;
-            const pageNo = i + 1;
-            const seed = tileSeed(this.seedSecret, job.fileId, pageNo);
-            const imageKey = `pages/${job.fileId}/${pageNo}.webp`;
-            await this.storage.upload(imageKey, await scramblePage(pngs[i]!, seed), 'image/webp');
-            pages[i] = { pageNo, imageKey, tileSeed: seed };
-            written++;
-            if (written === pngs.length || written % 5 === 0) {
-              await progress('writing_pages', written, pngs.length);
-            }
-          }
-        } catch (error) {
-          workerError ??= error;
+      for (let from = 1; from <= total; from += this.chunkSize) {
+        const to = Math.min(total, from + this.chunkSize - 1);
+        activeStage = 'rendering_pages';
+        const pngs = await doc.renderRange(from, to);
+        if (pngs.length !== to - from + 1) {
+          throw new Error(`Page verification failed: expected ${to - from + 1} pages for ${from}-${to}.`);
         }
-      };
-      await Promise.all(Array.from({ length: Math.min(this.pageConcurrency, pngs.length) }, worker));
-      if (workerError) throw workerError;
+        if (from === 1) {
+          await progress('writing_preview', 0, 1);
+          await this.storage.upload(previewKey, await renderPreview(pngs[0]!), 'image/webp');
+          await progress('writing_preview', 1, 1);
+        }
+        let next = 0;
+        let workerError: unknown;
+        const worker = async () => {
+          try {
+            while (!workerError && next < pngs.length) {
+              const i = next++;
+              const pageNo = from + i;
+              const seed = tileSeed(this.seedSecret, job.fileId, pageNo);
+              const imageKey = `pages/${job.fileId}/${pageNo}.webp`;
+              await this.storage.upload(imageKey, await scramblePage(pngs[i]!, seed), 'image/webp');
+              pngs[i] = Buffer.alloc(0);
+              pages[pageNo - 1] = { pageNo, imageKey, tileSeed: seed };
+              written++;
+              await progress('writing_pages', written, total);
+            }
+          } catch (error) {
+            workerError ??= error;
+          }
+        };
+        activeStage = 'writing_pages';
+        await Promise.all(Array.from({ length: Math.min(this.pageConcurrency, pngs.length) }, worker));
+        if (workerError) throw workerError;
+      }
       await progress('verifying_r2', 0, pages.length + 1);
       const keys = [previewKey, ...pages.map((page) => page.imageKey)];
       let verified = 0;

@@ -18,7 +18,7 @@ enable_signup = true
 
 [auth.email]
 enable_signup = true
-enable_confirmations = false
+enable_confirmations = true
 otp_length = 6
 otp_expiry = 600
 

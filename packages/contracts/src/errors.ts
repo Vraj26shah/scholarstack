@@ -19,6 +19,7 @@ export const ErrorCode = {
   PaymentInvalid: 'PAYMENT_INVALID',
   NotReady: 'NOT_READY',
   SyncFailed: 'SYNC_FAILED',
+  PaymentsUnavailable: 'PAYMENTS_UNAVAILABLE',
   Internal: 'INTERNAL',
 } as const;
 

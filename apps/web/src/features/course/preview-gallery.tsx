@@ -62,8 +62,8 @@ export function PreviewGallery({
         >
           Peek at page one
         </h2>
-        <span className="font-mono text-[13px] text-ink2">
-          THE FIRST PAGE OF EVERY {peeks.length > 1 ? `UNIT · ${peeks.length} PAGES` : 'UNIT'}
+        <span className="text-sm text-ink2">
+          The first page of every {peeks.length > 1 ? `unit · ${peeks.length} pages` : 'unit'}
         </span>
       </div>
       <ul className="list-none m-0 p-0 flex gap-5 overflow-x-auto pb-6 pt-2 px-1 snap-x">

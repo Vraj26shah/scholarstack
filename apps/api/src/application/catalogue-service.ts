@@ -1,14 +1,16 @@
+import { ACCESS_MONTHS } from '@ss/contracts';
 import {
   type BundleCardDto,
   type BundleDetailDto,
   type CatalogueIndexDto,
+  type CatalogueSearchDto,
   type CourseCardDto,
   type CourseDetailDto,
   type ReadingItemDto,
   semesterRange,
   yearLabel,
 } from '@ss/contracts';
-import type { CourseFile } from '../domain/entities';
+import { type CourseFile, accessState } from '../domain/entities';
 import type { BundleRepository, CatalogueReader, EntitlementRepository, ObjectStore } from '../domain/ports';
 import type { AppConfig } from './config';
 import { fail } from './errors';
@@ -16,7 +18,14 @@ import { bookTitle, looksLikeTextbook } from './folders';
 import { isPreviewFile, toBundleCard, toCard, toUnits } from './mappers';
 import { bundlePricing } from './pricing';
 
-const explicitlySharedCourseCodes = new Set(['ENG2005', 'MAT1001', 'MAT2001', 'HUM1002', 'CHY1005', 'CSE1021']);
+const explicitlySharedCourseCodes = new Set([
+  'ENG2005',
+  'MAT1001',
+  'MAT2001',
+  'HUM1002',
+  'CHY1005',
+  'CSE1021',
+]);
 
 /** Browsing the catalogue: drawers (batches), tabs (branches), cards (courses), bundles and previews. */
 export class CatalogueService {
@@ -28,13 +37,42 @@ export class CatalogueService {
     private readonly config: AppConfig,
   ) {}
 
+  private statsCache: { at: number; value: NonNullable<CatalogueIndexDto['stats']> } | null = null;
+
+  /** Totals across every live course, cached briefly: the home page asks on every visit. */
+  private async stats(
+    batches: { year: number }[],
+    branches: { slug: string }[],
+  ): Promise<NonNullable<CatalogueIndexDto['stats']>> {
+    if (this.statsCache && Date.now() - this.statsCache.at < 5 * 60_000) return this.statsCache.value;
+    const lists = await Promise.all(
+      batches.flatMap((batch) =>
+        branches.map((branch) => this.catalogue.listLiveCourses(batch.year, branch.slug)),
+      ),
+    );
+    const courses = [...new Map(lists.flat().map((course) => [course.id, course])).values()];
+    const files = (await this.catalogue.listFiles(courses.map((course) => course.id))).filter(
+      (file) => file.conversionStatus === 'ready' && file.pageCount > 0,
+    );
+    const value = {
+      courses: courses.length,
+      files: files.length,
+      pages: files.reduce((sum, file) => sum + file.pageCount, 0),
+      subjects: [...new Set(courses.map((course) => course.title))].sort().slice(0, 40),
+    };
+    this.statsCache = { at: Date.now(), value };
+    return value;
+  }
+
   async index(): Promise<CatalogueIndexDto> {
     const [batches, branches] = await Promise.all([
       this.catalogue.listBatches(),
       this.catalogue.listBranches(),
     ]);
     const intake = this.config.currentIntakeYear;
+    const stats = await this.stats(batches, branches).catch(() => undefined);
     return {
+      ...(stats ? { stats } : {}),
       batches: batches
         .filter((b) => b.year <= intake && intake - b.year < 4)
         .sort((a, b) => b.year - a.year)
@@ -59,34 +97,106 @@ export class CatalogueService {
   }
 
   /** Courses in one drawer + tab. Courses filed under the shared ("All branches") branch show in every tab. */
+  private searchCache: { at: number; courses: { card: CourseCardDto; text: string }[] } | null = null;
+
+  /** Every live, readable course once, with the words it can be found by. Cached briefly. */
+  private async searchable() {
+    if (this.searchCache && Date.now() - this.searchCache.at < 30_000) return this.searchCache.courses;
+    const [batches, branches] = await Promise.all([
+      this.catalogue.listBatches(),
+      this.catalogue.listBranches(),
+    ]);
+    const lists = await Promise.all(
+      batches.flatMap((batch) =>
+        branches.map((branch) => this.catalogue.listLiveCourses(batch.year, branch.slug)),
+      ),
+    );
+    const courses = [...new Map(lists.flat().map((course) => [course.id, course])).values()];
+    const files = await this.catalogue.listFiles(courses.map((course) => course.id));
+    const readable = new Set(
+      files
+        .filter((file) => file.conversionStatus === 'ready' && file.pageCount > 0)
+        .map((file) => file.courseId),
+    );
+    const bySlug = new Map(branches.map((b) => [b.slug, b]));
+    const out = courses
+      .filter((course) => readable.has(course.id))
+      .sort((a, b) => b.batchYear - a.batchYear || a.semester - b.semester || a.title.localeCompare(b.title))
+      .map((course) => {
+        const branch = bySlug.get(course.branchSlug);
+        const programmes = branches.filter(
+          (b) =>
+            b.slug === course.branchSlug || (course.courseCode && b.courseCodes.includes(course.courseCode)),
+        );
+        const text = [
+          course.title,
+          course.courseCode ?? '',
+          String(course.batchYear),
+          `${String(course.batchYear).slice(2)} batch`,
+          `s${course.semester} sem ${course.semester} semester ${course.semester}`,
+          ...programmes.flatMap((b) => [b.name, b.code, b.shortName]),
+          course.description,
+        ]
+          .join(' ')
+          .toLowerCase();
+        return { card: toCard(course, files, branch), text };
+      });
+    this.searchCache = { at: Date.now(), courses: out };
+    return out;
+  }
+
+  /** Search the whole live catalogue: every word typed must appear (title, code, sem, year, programme). */
+  async search(query: string): Promise<CatalogueSearchDto> {
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 8);
+    const matches = (text: string) => words.every((w) => text.includes(w));
+    const [courses, bundles] = await Promise.all([this.searchable(), this.bundleCards()]);
+    return {
+      query,
+      courses: courses
+        .filter((c) => matches(c.text))
+        .map((c) => c.card)
+        .slice(0, 120),
+      bundles: bundles
+        .filter((b) => matches(`${b.title} ${b.description} ${b.batchYear ?? ''}`.toLowerCase()))
+        .slice(0, 24),
+    };
+  }
+
   async drawer(batchYear: number, branchSlug: string): Promise<CourseCardDto[]> {
     const branches = await this.catalogue.listBranches();
     const selectedBranch = branches.find((b) => b.slug === branchSlug);
     if (!selectedBranch) throw fail.notFound('That programme');
     const common = branches.filter((b) => b.isCommon).map((b) => b.slug);
     const byBranch = await Promise.all(
-      branches.map(async (branch) => [branch.slug, await this.catalogue.listLiveCourses(batchYear, branch.slug)] as const),
+      branches.map(
+        async (branch) =>
+          [branch.slug, await this.catalogue.listLiveCourses(batchYear, branch.slug)] as const,
+      ),
     );
     const assignments = new Map<string, Set<string>>();
     for (const [slug, rows] of byBranch)
-      for (const course of rows) assignments.set(course.id, (assignments.get(course.id) ?? new Set()).add(slug));
+      for (const course of rows)
+        assignments.set(course.id, (assignments.get(course.id) ?? new Set()).add(slug));
     const candidates = byBranch
       .filter(([slug]) => slug === branchSlug || common.includes(slug))
       .flatMap(([, rows]) => rows);
-    const courses = [...new Map(candidates.map((course) => [course.id, course])).values()].filter((course) => {
-      const curriculumSlugs = branches
-        .filter((branch) => course.courseCode !== null && branch.courseCodes.includes(course.courseCode))
-        .map((branch) => branch.slug);
-      if (course.courseCode && explicitlySharedCourseCodes.has(course.courseCode))
-        return (assignments.get(course.id) ?? new Set<string>()).has(branchSlug);
-      if (curriculumSlugs.length) return curriculumSlugs.includes(branchSlug);
-      // Preserve deliberate, limited cross-listing from the admin panel. Hide
-      // only orphaned imports that were accidentally assigned to every branch.
-      const assigned = assignments.get(course.id) ?? new Set<string>();
-      const programmeCount = branches.filter((branch) => !branch.isCommon).length;
-      const sharedFirstYear = course.batchYear === this.config.currentIntakeYear && assigned.size === programmeCount;
-      return common.some((slug) => assigned.has(slug)) || assigned.size < programmeCount || sharedFirstYear;
-    });
+    const courses = [...new Map(candidates.map((course) => [course.id, course])).values()].filter(
+      (course) => {
+        const curriculumSlugs = branches
+          .filter((branch) => course.courseCode !== null && branch.courseCodes.includes(course.courseCode))
+          .map((branch) => branch.slug);
+        if (course.courseCode && explicitlySharedCourseCodes.has(course.courseCode))
+          return (assignments.get(course.id) ?? new Set<string>()).has(branchSlug);
+        if (curriculumSlugs.length) return curriculumSlugs.includes(branchSlug);
+        // Preserve deliberate, limited cross-listing from the admin panel. Hide
+        // only orphaned imports that were accidentally assigned to every branch.
+        const assigned = assignments.get(course.id) ?? new Set<string>();
+        const programmeCount = branches.filter((branch) => !branch.isCommon).length;
+        const sharedFirstYear =
+          course.batchYear === this.config.currentIntakeYear && assigned.size === programmeCount;
+        return common.some((slug) => assigned.has(slug)) || assigned.size < programmeCount || sharedFirstYear;
+      },
+    );
     const files = await this.catalogue.listFiles(courses.map((c) => c.id));
     const bySlug = new Map(branches.map((b) => [b.slug, b]));
     const readableCourseIds = new Set(
@@ -107,9 +217,14 @@ export class CatalogueService {
       this.catalogue.listFiles([course.id]),
       this.catalogue.listHiddenFiles([course.id]),
       this.catalogue.listBranches(),
-      userId ? this.entitlements.has(userId, course.id) : Promise.resolve(false),
+      userId
+        ? this.entitlements
+            .listForUser(userId)
+            .then((all) => all.find((r) => r.courseId === course.id) ?? null)
+        : Promise.resolve(null),
       this.liveBundleCards((b) => b.courseIds.includes(course.id)),
     ]);
+    const mine = owned && accessState(owned, new Date()) === 'active' ? owned : null;
     if (!isAdmin && !files.some((file) => file.conversionStatus === 'ready' && file.pageCount > 0))
       throw fail.notFound('That course');
     const branch = branches.find((b) => b.slug === course.branchSlug);
@@ -119,7 +234,12 @@ export class CatalogueService {
       branchName: branch?.name ?? course.branchSlug,
       units: toUnits(files),
       readingList: readingList(hidden),
-      owned: owned || isAdmin,
+      owned: !!mine || isAdmin,
+      // Every purchase lasts ACCESS_MONTHS from the day it's bought; there is no course-wide date.
+      accessUntil: null,
+      termLabel: '',
+      accessMonths: ACCESS_MONTHS,
+      yourAccessUntil: mine?.expiresAt ? mine.expiresAt.toISOString() : null,
       bundles: bundles.filter((b) => b.courseCount > 1).sort((a, b) => b.savePercent - a.savePercent),
     };
   }
@@ -143,8 +263,7 @@ export class CatalogueService {
     ]);
     const readableCourses = courses.filter((course) =>
       files.some(
-        (file) =>
-          file.courseId === course.id && file.conversionStatus === 'ready' && file.pageCount > 0,
+        (file) => file.courseId === course.id && file.conversionStatus === 'ready' && file.pageCount > 0,
       ),
     );
     if (readableCourses.length === 0) throw fail.notFound('That bundle');
@@ -194,8 +313,7 @@ export class CatalogueService {
     const files = await this.catalogue.listFiles(courses.map((c) => c.id));
     const readableCourses = courses.filter((course) =>
       files.some(
-        (file) =>
-          file.courseId === course.id && file.conversionStatus === 'ready' && file.pageCount > 0,
+        (file) => file.courseId === course.id && file.conversionStatus === 'ready' && file.pageCount > 0,
       ),
     );
     return bundles.map((b) => toBundleCard(b, readableCourses, files));

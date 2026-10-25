@@ -44,7 +44,10 @@ export function AuthCallbackPage() {
         return;
       }
       await claim();
-      navigate('/shelf', { replace: true });
+      const target =
+        sessionStorage.getItem('auth_next') || (useSession.getState().me?.isAdmin ? '/admin' : '/shelf');
+      sessionStorage.removeItem('auth_next');
+      navigate(target, { replace: true });
     } catch {
       setCallbackError(true);
       setFailed(true);
@@ -55,11 +58,17 @@ export function AuthCallbackPage() {
     void (async () => {
       if (await authGateway.completeRedirect()) {
         await claim();
-        navigate('/shelf', { replace: true });
+        const target =
+          sessionStorage.getItem('auth_next') || (useSession.getState().me?.isAdmin ? '/admin' : '/shelf');
+        sessionStorage.removeItem('auth_next');
+        navigate(target, { replace: true });
       } else setFailed(true);
     })().catch((error: unknown) => {
       if (error instanceof ApiError && error.code === 'SESSION_REPLACED') {
-        navigate('/shelf', { replace: true });
+        const target =
+          sessionStorage.getItem('auth_next') || (useSession.getState().me?.isAdmin ? '/admin' : '/shelf');
+        sessionStorage.removeItem('auth_next');
+        navigate(target, { replace: true });
         return;
       }
       setCallbackError(true);

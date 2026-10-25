@@ -1,8 +1,8 @@
 import type { StoredObject } from '../domain/entities';
-import type { ConversionJob, ConversionQueue, ObjectStore, RateLimiter } from '../domain/ports';
+import type { ConversionJob, ConversionQueue, ObjectStore, RateLimiter, UploadStore } from '../domain/ports';
 
 /** Private R2 bucket, read through the Worker binding only. */
-export class R2ObjectStore implements ObjectStore {
+export class R2ObjectStore implements ObjectStore, UploadStore {
   constructor(private readonly bucket: R2Bucket) {}
 
   async list(prefix: string): Promise<StoredObject[]> {
@@ -43,6 +43,20 @@ export class R2ObjectStore implements ObjectStore {
       etag: obj.etag,
       size: obj.size,
     };
+  }
+
+  async copy(fromKey: string, toKey: string) {
+    const obj = await this.bucket.get(fromKey);
+    if (!obj) throw new Error(`R2 object not found: ${fromKey}`);
+    const put = await this.bucket.put(toKey, obj.body, {
+      httpMetadata: obj.httpMetadata,
+      customMetadata: obj.customMetadata,
+    });
+    return { etag: put.etag, size: put.size };
+  }
+
+  async save(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    await this.bucket.put(key, bytes, { httpMetadata: { contentType } });
   }
 
   async put(key: string, body: string): Promise<void> {

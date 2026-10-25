@@ -1,7 +1,8 @@
 {
   // One Worker serves the website (static assets) and the API under /api.
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "scholars-stack",
+  // Must match the live Worker: scholarstack.campusnotes.workers.dev → "scholarstack".
+  "name": "scholarstack",
   "main": "src/worker.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -15,6 +16,8 @@
   "ratelimits": [{ "name": "PAGE_LIMITER", "namespace_id": "1001", "simple": { "limit": 40, "period": 60 } }],
   "triggers": { "crons": ["17 * * * *"] },
   "observability": { "enabled": true },
+  // ADMIN_EMAILS, APP_URL and every key are Worker *secrets* (pnpm secrets:push). Never list them
+  // here too: Cloudflare refuses a deploy that has the same name as a variable and a secret.
   "vars": {
     "APP_ENV": "development",
     "ALLOWED_EMAIL_DOMAIN": "vitbhopal.ac.in",
@@ -22,11 +25,11 @@
     "VIEWER_TOKEN_TTL_SECONDS": "120",
     "PAGES_PER_DAY": "600",
     "IMPORT_ROOT": "drive-imports/",
-    "EMAIL_DAILY_LIMIT": "250"
+    "EMAIL_DAILY_LIMIT": "300"
   },
   "env": {
     "staging": {
-      "name": "scholars-stack-staging",
+      "name": "scholarstack-staging",
       "r2_buckets": [{ "binding": "NOTES", "bucket_name": "scholarstack" }],
       "ratelimits": [
         { "name": "PAGE_LIMITER", "namespace_id": "1002", "simple": { "limit": 40, "period": 60 } }
@@ -38,11 +41,11 @@
         "VIEWER_TOKEN_TTL_SECONDS": "120",
         "PAGES_PER_DAY": "600",
         "IMPORT_ROOT": "drive-imports/",
-        "EMAIL_DAILY_LIMIT": "250"
+        "EMAIL_DAILY_LIMIT": "300"
       }
     },
     "production": {
-      "name": "scholars-stack",
+      "name": "scholarstack",
       "r2_buckets": [{ "binding": "NOTES", "bucket_name": "scholarstack" }],
       "ratelimits": [
         { "name": "PAGE_LIMITER", "namespace_id": "1003", "simple": { "limit": 40, "period": 60 } }
@@ -55,7 +58,7 @@
         "VIEWER_TOKEN_TTL_SECONDS": "120",
         "PAGES_PER_DAY": "600",
         "IMPORT_ROOT": "drive-imports/",
-        "EMAIL_DAILY_LIMIT": "250"
+        "EMAIL_DAILY_LIMIT": "300"
       }
     }
   }

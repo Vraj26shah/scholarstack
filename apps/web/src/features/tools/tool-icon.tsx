@@ -1,7 +1,8 @@
-import { Calculator, Calendar, Sparkle } from '../../shared/ui/icons';
+import { Toolbox } from '../../shared/ui/icons';
+import { toolModule } from './registry';
 
+/** A tool's own icon from its module, or the toolbox for tools that aren't built yet. */
 export function ToolIcon({ toolKey, size = 26 }: { toolKey: string; size?: number }) {
-  if (toolKey === 'cgpa') return <Calculator size={size} />;
-  if (toolKey === 'timetable') return <Calendar size={size} />;
-  return <Sparkle size={size} />;
+  const Icon = toolModule(toolKey)?.icon ?? Toolbox;
+  return <Icon size={size} />;
 }

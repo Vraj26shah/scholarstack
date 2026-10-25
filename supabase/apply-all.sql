@@ -1099,3 +1099,1092 @@ comment on column public.course_files.source_missing_at is
 $m$;
   insert into supabase_migrations.schema_migrations (version, name) values ('20261023001300', 'r2_source_reconciliation');
 end $migration$;
+
+-- ═══ 20261024000100_admin_email_override ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261024000100') then
+    raise notice 'skip 20261024000100';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- 0001 · Allow admin emails (e.g. vitbsmashers@gmail.com) in before-user-created hook
+-- ════════════════════════════════════════════════════════════════════════════
+
+create or replace function public.hook_vit_only(event jsonb)
+returns jsonb language plpgsql as $$
+declare
+  email text := lower(coalesce(event -> 'user' ->> 'email', ''));
+begin
+  -- Admin emails bypass the college domain restriction
+  if email in ('vitbsmashers@gmail.com') then
+    return '{}'::jsonb;
+  end if;
+
+  if email !~ '^[a-z0-9._%+-]+@vitbhopal\.ac\.in$' then
+    return jsonb_build_object('error', jsonb_build_object(
+      'http_code', 403,
+      'message', 'Please sign in with your @vitbhopal.ac.in email.'));
+  end if;
+  return '{}'::jsonb;
+end $$;
+
+grant execute on function public.hook_vit_only(jsonb) to supabase_auth_admin;
+revoke execute on function public.hook_vit_only(jsonb) from authenticated, anon, public;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261024000100', 'admin_email_override');
+end $migration$;
+
+-- ═══ 20261024000200_admins_and_access_periods ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261024000200') then
+    raise notice 'skip 20261024000200';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Admin allowlist (replaces the hard-coded address) and course access periods.
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ── Who may sign up without a college address ───────────────────────────────
+-- Exact, lower-case addresses only. No policies: only the service role and the
+-- sign-up hook (security definer) can read it; students can't see or change it.
+create table if not exists public.admin_emails (
+  email      text primary key
+             check (email = lower(btrim(email))
+                    and octet_length(email) = char_length(email)        -- ASCII only
+                    and email ~ '^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$'),
+  added_at   timestamptz not null default now()
+);
+alter table public.admin_emails enable row level security;
+revoke all on public.admin_emails from anon, authenticated, public;
+comment on table public.admin_emails is
+  'Exact addresses allowed to sign up outside the college domain (admins). Keep in step with ADMIN_EMAILS.';
+
+insert into public.admin_emails (email) values ('vitbsmashers@gmail.com') on conflict do nothing;
+
+-- Sign-up gate. A college address must be exactly name@vitbhopal.ac.in: ASCII letters, digits,
+-- dots, hyphens, underscores; no "+tags", no leading, trailing or doubled dots (so one inbox
+-- can't become several accounts). Anything else must be on the admin list, exactly.
+create or replace function public.hook_vit_only(event jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_email text := lower(btrim(coalesce(event -> 'user' ->> 'email', '')));
+  college boolean :=
+    octet_length(v_email) = char_length(v_email)
+    and v_email ~ '^[a-z0-9][a-z0-9._-]*@vitbhopal\.ac\.in$'
+    and v_email !~ '\.\.'
+    and v_email !~ '\.@';
+begin
+  if college or exists (select 1 from public.admin_emails a where a.email = v_email) then
+    return '{}'::jsonb;
+  end if;
+  return jsonb_build_object('error', jsonb_build_object(
+    'http_code', 403,
+    'message', 'Please sign in with your @vitbhopal.ac.in email.'));
+end $$;
+
+grant execute on function public.hook_vit_only(jsonb) to supabase_auth_admin;
+revoke execute on function public.hook_vit_only(jsonb) from authenticated, anon, public;
+
+-- ── Access periods ──────────────────────────────────────────────────────────
+-- A course may have a term end. New purchases get access until then; null means no end.
+alter table public.courses add column if not exists access_until timestamptz;
+comment on column public.courses.access_until is
+  'Term end for this course. Purchases made while it is set get access until this moment.';
+
+-- Each purchase can end (expires_at) or be blocked by an admin (revoked_at + reason).
+alter table public.entitlements add column if not exists expires_at timestamptz;
+alter table public.entitlements add column if not exists revoke_reason text
+  check (revoke_reason is null or revoke_reason in ('admin', 'dispute'));
+create index if not exists entitlements_user_active_idx
+  on public.entitlements (user_id) where revoked_at is null;
+
+-- Disputes keep their reason so an admin "restore" never undoes a lost chargeback by accident.
+update public.entitlements set revoke_reason = 'dispute'
+ where revoked_at is not null and revoke_reason is null;
+
+-- Paying grants (or renews) access: an ended or blocked purchase becomes active again with the
+-- course's current term end. An active one is left alone, so the callback and webhook can both
+-- arrive safely.
+create or replace function public.grant_order(p_gateway_order_id text, p_gateway_payment_id text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  o public.orders;
+begin
+  select * into o from public.orders where gateway_order_id = p_gateway_order_id for update;
+  if not found then
+    raise exception 'order not found' using errcode = 'P0002';
+  end if;
+  if o.status <> 'paid' then
+    update public.orders set status = 'paid', gateway_payment_id = p_gateway_payment_id where id = o.id;
+  end if;
+  insert into public.entitlements (user_id, course_id, order_id, expires_at)
+  select o.user_id, i.course_id, o.id,
+         case when c.access_until > now() then c.access_until end
+    from public.order_items i join public.courses c on c.id = i.course_id
+   where i.order_id = o.id
+  on conflict (user_id, course_id) do update
+    set revoked_at = null, revoke_reason = null, order_id = excluded.order_id,
+        granted_at = now(), expires_at = excluded.expires_at
+    where public.entitlements.revoked_at is not null
+       or (public.entitlements.expires_at is not null and public.entitlements.expires_at <= now());
+  return o.id;
+end $$;
+
+create or replace function public.revoke_by_payment(p_gateway_payment_id text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  update public.orders set status = 'disputed' where gateway_payment_id = p_gateway_payment_id;
+  update public.entitlements e set revoked_at = now(), revoke_reason = 'dispute'
+    from public.orders o
+   where o.gateway_payment_id = p_gateway_payment_id and e.order_id = o.id and e.revoked_at is null;
+end $$;
+
+revoke execute on function public.grant_order(text, text) from public, anon, authenticated;
+revoke execute on function public.revoke_by_payment(text) from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261024000200', 'admins_and_access_periods');
+end $migration$;
+
+-- ═══ 20261024000300_admin_grants ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261024000300') then
+    raise notice 'skip 20261024000300';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- An admin can give a course to a student directly (no payment). Such access has no order,
+-- and records who gave it, so the history always says where every access came from.
+-- ════════════════════════════════════════════════════════════════════════════
+
+alter table public.entitlements alter column order_id drop not null;
+alter table public.entitlements add column if not exists granted_by text not null default 'purchase'
+  check (granted_by in ('purchase', 'admin'));
+alter table public.entitlements add column if not exists granted_by_admin text;
+alter table public.entitlements drop constraint if exists entitlements_source_chk;
+alter table public.entitlements add constraint entitlements_source_chk check (
+  (granted_by = 'purchase' and order_id is not null)
+  or (granted_by = 'admin' and granted_by_admin is not null)
+);
+comment on column public.entitlements.granted_by is 'purchase: paid order. admin: given by an admin (granted_by_admin).';
+
+-- A purchase (re)activates access and records that it was bought.
+create or replace function public.grant_order(p_gateway_order_id text, p_gateway_payment_id text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  o public.orders;
+begin
+  select * into o from public.orders where gateway_order_id = p_gateway_order_id for update;
+  if not found then
+    raise exception 'order not found' using errcode = 'P0002';
+  end if;
+  if o.status <> 'paid' then
+    update public.orders set status = 'paid', gateway_payment_id = p_gateway_payment_id where id = o.id;
+  end if;
+  insert into public.entitlements (user_id, course_id, order_id, expires_at, granted_by)
+  select o.user_id, i.course_id, o.id,
+         case when c.access_until > now() then c.access_until end, 'purchase'
+    from public.order_items i join public.courses c on c.id = i.course_id
+   where i.order_id = o.id
+  on conflict (user_id, course_id) do update
+    set revoked_at = null, revoke_reason = null, order_id = excluded.order_id,
+        granted_at = now(), expires_at = excluded.expires_at,
+        granted_by = 'purchase', granted_by_admin = null
+    where public.entitlements.revoked_at is not null
+       or (public.entitlements.expires_at is not null and public.entitlements.expires_at <= now());
+  return o.id;
+end $$;
+
+revoke execute on function public.grant_order(text, text) from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261024000300', 'admin_grants');
+end $migration$;
+
+-- ═══ 20261024000400_access_notices ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261024000400') then
+    raise notice 'skip 20261024000400';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- "Your access has ended" emails: each ended access is emailed once. Renewing access
+-- (buying again, an admin extending or giving it) clears the mark, so a later end is
+-- announced again.
+-- ════════════════════════════════════════════════════════════════════════════
+
+alter table public.entitlements add column if not exists end_notified_at timestamptz;
+create index if not exists entitlements_ended_unnotified_idx
+  on public.entitlements (expires_at)
+  where revoked_at is null and end_notified_at is null and expires_at is not null;
+
+create or replace function public.grant_order(p_gateway_order_id text, p_gateway_payment_id text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  o public.orders;
+begin
+  select * into o from public.orders where gateway_order_id = p_gateway_order_id for update;
+  if not found then
+    raise exception 'order not found' using errcode = 'P0002';
+  end if;
+  if o.status <> 'paid' then
+    update public.orders set status = 'paid', gateway_payment_id = p_gateway_payment_id where id = o.id;
+  end if;
+  insert into public.entitlements (user_id, course_id, order_id, expires_at, granted_by)
+  select o.user_id, i.course_id, o.id,
+         case when c.access_until > now() then c.access_until end, 'purchase'
+    from public.order_items i join public.courses c on c.id = i.course_id
+   where i.order_id = o.id
+  on conflict (user_id, course_id) do update
+    set revoked_at = null, revoke_reason = null, order_id = excluded.order_id,
+        granted_at = now(), expires_at = excluded.expires_at,
+        granted_by = 'purchase', granted_by_admin = null, end_notified_at = null
+    where public.entitlements.revoked_at is not null
+       or (public.entitlements.expires_at is not null and public.entitlements.expires_at <= now());
+  return o.id;
+end $$;
+
+revoke execute on function public.grant_order(text, text) from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261024000400', 'access_notices');
+end $migration$;
+
+-- ═══ 20261025000100_problem_reports ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261025000100') then
+    raise notice 'skip 20261025000100';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Problems the admin should know about: unexpected errors in students' browsers (a page that
+-- crashed, an image or page that would not load, a blocked script) and on the server. Grouped by
+-- a fingerprint so a repeating problem is one row with a count, not thousands of rows.
+-- Only the server (service role) reads or writes this table.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create table if not exists public.problem_reports (
+  fingerprint text primary key,
+  source text not null check (source in ('browser', 'server')),
+  kind text not null,
+  message text not null,
+  path text not null default '',
+  detail text not null default '',
+  user_agent text not null default '',
+  count integer not null default 1,
+  first_at timestamptz not null default now(),
+  last_at timestamptz not null default now()
+);
+create index if not exists problem_reports_last_idx on public.problem_reports (last_at desc);
+alter table public.problem_reports enable row level security;
+revoke all on public.problem_reports from anon, authenticated;
+
+create or replace function public.record_problem(
+  p_fingerprint text, p_source text, p_kind text, p_message text, p_path text, p_detail text, p_user_agent text
+) returns void language sql security definer set search_path = public as $$
+  insert into public.problem_reports (fingerprint, source, kind, message, path, detail, user_agent)
+  values (p_fingerprint, p_source, p_kind, left(p_message, 500), left(p_path, 300), left(p_detail, 2000), left(p_user_agent, 300))
+  on conflict (fingerprint) do update
+    set count = public.problem_reports.count + 1, last_at = now(),
+        path = excluded.path, detail = excluded.detail, user_agent = excluded.user_agent;
+  -- Keep the table small: at most 500 kinds of problem.
+  delete from public.problem_reports
+   where fingerprint in (select fingerprint from public.problem_reports order by last_at desc offset 500);
+$$;
+revoke execute on function public.record_problem(text, text, text, text, text, text, text) from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261025000100', 'problem_reports');
+end $migration$;
+
+-- ═══ 20261025000200_storage_map ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261025000200') then
+    raise notice 'skip 20261025000200';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Storage map for the admin: how big each table is, and a safe clean-up for checkouts that were
+-- started but never paid (no money moved; Razorpay keeps its own record either way).
+-- Both run only for the server (service role).
+-- ════════════════════════════════════════════════════════════════════════════
+
+create or replace function public.storage_tables()
+returns table (table_name text, row_count bigint, total_bytes bigint)
+language sql security definer set search_path = public, pg_catalog as $$
+  select c.relname::text,
+         greatest(c.reltuples, 0)::bigint,
+         pg_total_relation_size(c.oid)::bigint
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind = 'r'
+   order by 3 desc;
+$$;
+revoke execute on function public.storage_tables() from public, anon, authenticated;
+
+create or replace function public.clean_abandoned_orders(p_days integer)
+returns integer language plpgsql security definer set search_path = public as $$
+declare
+  n integer;
+begin
+  with gone as (
+    delete from public.orders o
+     where o.status in ('created', 'failed')
+       and o.gateway_payment_id is null
+       and o.created_at < now() - make_interval(days => greatest(p_days, 7))
+       and not exists (select 1 from public.entitlements e where e.order_id = o.id)
+    returning o.id
+  )
+  select count(*) into n from gone;
+  return n;
+end $$;
+revoke execute on function public.clean_abandoned_orders(integer) from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261025000200', 'storage_map');
+end $migration$;
+
+-- ═══ 20261025000300_delete_course ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261025000300') then
+    raise notice 'skip 20261025000300';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Delete a course for good (admin). Refused when anyone bought or was given it: those rows are
+-- the sales and access history. Checkouts that were started for it but never paid go with it.
+-- Units, files, the page index, branch listings and bundle entries are removed by cascade.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create or replace function public.delete_course(p_course_id uuid)
+returns text language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.courses where id = p_course_id) then
+    return 'not-found';
+  end if;
+  if exists (select 1 from public.entitlements where course_id = p_course_id)
+     or exists (
+       select 1 from public.order_items i join public.orders o on o.id = i.order_id
+        where i.course_id = p_course_id and (o.status = 'paid' or o.gateway_payment_id is not null))
+     or exists (
+       select 1 from public.orders o where o.course_id = p_course_id
+          and (o.status = 'paid' or o.gateway_payment_id is not null)) then
+    return 'sold';
+  end if;
+  delete from public.orders o
+   where o.course_id = p_course_id
+      or o.id in (select order_id from public.order_items where course_id = p_course_id);
+  delete from public.courses where id = p_course_id;
+  return 'deleted';
+end $$;
+revoke execute on function public.delete_course(uuid) from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261025000300', 'delete_course');
+end $migration$;
+
+-- ═══ 20261025000400_move_course_folder ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261025000400') then
+    raise notice 'skip 20261025000400';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Moving or renaming a course's folder in R2 from the admin panel. The files are copied first,
+-- then this updates the course folder and every file's R2 path in one go, so the site never
+-- points at a half-moved course. Generated pages are keyed by file id, so nothing is re-made.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create or replace function public.move_course_source(p_course_id uuid, p_prefix text, p_files jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if p_prefix !~ '/$' then
+    raise exception 'folder must end with /' using errcode = '22023';
+  end if;
+  update public.courses set r2_prefix = p_prefix where id = p_course_id;
+  if not found then
+    raise exception 'course not found' using errcode = 'P0002';
+  end if;
+  update public.course_files f
+     set source_key = x.source_key, source_etag = x.source_etag
+    from jsonb_to_recordset(p_files) as x(file_id uuid, source_key text, source_etag text)
+   where f.id = x.file_id and f.course_id = p_course_id;
+end $$;
+revoke execute on function public.move_course_source(uuid, text, jsonb) from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261025000400', 'move_course_folder');
+end $migration$;
+
+-- ═══ 20261025000500_attendance_tool ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261025000500') then
+    raise notice 'skip 20261025000500';
+    return;
+  end if;
+  execute $m$-- The attendance calculator joins the toolbox. It starts as "coming soon"; launch it from
+-- Admin → Features & email when you're ready (that also emails students who asked).
+insert into public.features (key, title, blurb, status, sort) values
+  ('attendance', 'Attendance calculator', 'See if you can sit the exam, how many classes you can miss, and your attendance marks.', 'soon', 2)
+on conflict (key) do nothing;
+update public.features set sort = 3 where key = 'timetable' and sort = 2;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261025000500', 'attendance_tool');
+end $migration$;
+
+-- ═══ 20261025000600_contributions ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261025000600') then
+    raise notice 'skip 20261025000600';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Contributions: students upload their own notes (PDF, slides, documents, zip, photos) for the
+-- admin to review. Files live in R2 under contributions/<user>/<id>/ and are never public; only
+-- the admin can download them. Approving can reward the student (a free course, cash paid
+-- outside the site, or a thank-you).
+-- Only the server (service role) reads or writes these tables.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create table if not exists public.contributions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  title text not null check (length(title) between 3 and 120),
+  course_hint text not null default '' check (length(course_hint) <= 120),
+  kind text not null check (kind in ('notes', 'pyq', 'slides', 'lab', 'other')),
+  description text not null default '' check (length(description) <= 1000),
+  files jsonb not null default '[]'::jsonb,
+  total_bytes bigint not null default 0,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  review_note text not null default '' check (length(review_note) <= 1000),
+  reward jsonb,
+  reviewed_by text,
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists contributions_user_idx on public.contributions (user_id, created_at desc);
+create index if not exists contributions_status_idx on public.contributions (status, created_at desc);
+alter table public.contributions enable row level security;
+revoke all on public.contributions from anon, authenticated;
+
+-- Admin switches (contributions open or paused, and later others).
+create table if not exists public.site_settings (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.site_settings enable row level security;
+revoke all on public.site_settings from anon, authenticated;
+insert into public.site_settings (key, value) values ('contributions_open', 'true'::jsonb)
+on conflict (key) do nothing;
+
+-- Someone who misuses uploads can be stopped from uploading without touching their courses.
+alter table public.profiles add column if not exists contribution_blocked boolean not null default false;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261025000600', 'contributions');
+end $migration$;
+
+-- ═══ 20261026000100_earnings_royalties ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261026000100') then
+    raise notice 'skip 20261026000100';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Earnings per course, and royalties for students whose notes became a course.
+--   • orders.paid_at: when the money arrived (royalties count sales from a date).
+--   • sale_lines(): one row per paid course sale. A bundle payment is split across its
+--     courses by their prices, so every rupee is counted once.
+--   • course_royalties: who earns a share of a course's sales, from when, and how much (50%).
+--   • royalty_payouts: what the admin has paid each contributor (paid outside the site).
+-- Only the server (service role) reads these.
+-- ════════════════════════════════════════════════════════════════════════════
+
+alter table public.orders add column if not exists paid_at timestamptz;
+update public.orders set paid_at = updated_at where status = 'paid' and paid_at is null;
+
+create or replace function public.stamp_paid_at() returns trigger language plpgsql as $$
+begin
+  if new.status = 'paid' and old.status is distinct from 'paid' then
+    new.paid_at := coalesce(new.paid_at, now());
+  end if;
+  return new;
+end $$;
+drop trigger if exists orders_paid_at on public.orders;
+create trigger orders_paid_at before update on public.orders
+  for each row execute function public.stamp_paid_at();
+
+create or replace function public.sale_lines()
+returns table (order_id uuid, user_id uuid, course_id uuid, paid_at timestamptz, amount_paise bigint)
+language sql stable security definer set search_path = public as $$
+  select
+    o.id,
+    o.user_id,
+    i.course_id,
+    coalesce(o.paid_at, o.updated_at),
+    case
+      when count(*) over (partition by o.id) = 1 then o.amount_paise::bigint
+      else round(
+        o.amount_paise::numeric * greatest(c.price_paise, 1)
+          / sum(greatest(c.price_paise, 1)) over (partition by o.id)
+      )::bigint
+    end
+  from public.orders o
+  join public.order_items i on i.order_id = o.id
+  join public.courses c on c.id = i.course_id
+  where o.status = 'paid';
+$$;
+revoke execute on function public.sale_lines() from public, anon, authenticated;
+
+create table if not exists public.course_royalties (
+  course_id uuid primary key references public.courses(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  share_percent int not null default 50 check (share_percent between 1 and 90),
+  since timestamptz not null default now(),
+  contribution_id uuid references public.contributions(id) on delete set null,
+  created_by text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists course_royalties_user_idx on public.course_royalties (user_id);
+alter table public.course_royalties enable row level security;
+revoke all on public.course_royalties from anon, authenticated;
+
+create table if not exists public.royalty_payouts (
+  id uuid primary key default gen_random_uuid(),
+  course_id uuid not null references public.courses(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  amount_paise int not null check (amount_paise > 0),
+  note text not null default '' check (length(note) <= 300),
+  paid_at timestamptz not null default now(),
+  recorded_by text not null default ''
+);
+create index if not exists royalty_payouts_course_idx on public.royalty_payouts (course_id, user_id);
+alter table public.royalty_payouts enable row level security;
+revoke all on public.royalty_payouts from anon, authenticated;
+
+-- Everything the Earnings screen needs, one row per course, in one query.
+create or replace function public.course_earnings()
+returns table (
+  course_id uuid,
+  sales int,
+  buyers int,
+  revenue_paise bigint,
+  last_sale_at timestamptz,
+  free_access int,
+  reading_now int,
+  royalty_sales int,
+  royalty_revenue_paise bigint,
+  paid_out_paise bigint
+) language sql stable security definer set search_path = public as $$
+  select
+    c.id,
+    coalesce(s.sales, 0)::int,
+    coalesce(s.buyers, 0)::int,
+    coalesce(s.revenue, 0)::bigint,
+    s.last_sale_at,
+    coalesce(e.free_access, 0)::int,
+    coalesce(e.reading_now, 0)::int,
+    coalesce(r.sales, 0)::int,
+    coalesce(r.revenue, 0)::bigint,
+    coalesce(p.paid, 0)::bigint
+  from public.courses c
+  left join (
+    select l.course_id, count(*) as sales, count(distinct l.user_id) as buyers,
+           sum(l.amount_paise) as revenue, max(l.paid_at) as last_sale_at
+      from public.sale_lines() l group by l.course_id
+  ) s on s.course_id = c.id
+  left join (
+    select en.course_id,
+           count(*) filter (where en.granted_by = 'admin' and en.revoked_at is null) as free_access,
+           count(*) filter (where en.revoked_at is null and (en.expires_at is null or en.expires_at > now())) as reading_now
+      from public.entitlements en group by en.course_id
+  ) e on e.course_id = c.id
+  left join public.course_royalties cr on cr.course_id = c.id
+  left join lateral (
+    select count(*) as sales, sum(l.amount_paise) as revenue
+      from public.sale_lines() l
+     where l.course_id = c.id and cr.course_id is not null and l.paid_at >= cr.since
+  ) r on true
+  left join lateral (
+    select sum(rp.amount_paise) as paid
+      from public.royalty_payouts rp
+     where rp.course_id = c.id and rp.user_id = cr.user_id
+  ) p on true;
+$$;
+revoke execute on function public.course_earnings() from public, anon, authenticated;
+
+create or replace function public.paid_totals()
+returns table (orders int, buyers int) language sql stable security definer set search_path = public as $$
+  select count(*)::int, count(distinct user_id)::int from public.orders where status = 'paid';
+$$;
+revoke execute on function public.paid_totals() from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261026000100', 'earnings_royalties');
+end $migration$;
+
+-- ═══ 20261026000200_support_queries ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261026000200') then
+    raise notice 'skip 20261026000200';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Help desk: students ask a question or report what's wrong (with screenshots), and the
+-- admin answers from Admin → Queries. Screenshots live in R2 under support/<user>/<id>/.
+-- Only the server (service role) reads or writes these tables.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create table if not exists public.support_queries (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  topic text not null check (topic in ('feature', 'notes', 'payment', 'contribute', 'account', 'other')),
+  subject text not null check (length(subject) between 3 and 140),
+  page text not null default '' check (length(page) <= 300),
+  status text not null default 'open' check (status in ('open', 'answered', 'closed')),
+  files jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists support_queries_user_idx on public.support_queries (user_id, created_at desc);
+create index if not exists support_queries_status_idx on public.support_queries (status, updated_at desc);
+alter table public.support_queries enable row level security;
+revoke all on public.support_queries from anon, authenticated;
+
+create table if not exists public.support_messages (
+  id uuid primary key default gen_random_uuid(),
+  query_id uuid not null references public.support_queries(id) on delete cascade,
+  from_admin boolean not null default false,
+  author text not null default '',
+  body text not null check (length(body) between 1 and 4000),
+  created_at timestamptz not null default now()
+);
+create index if not exists support_messages_query_idx on public.support_messages (query_id, created_at);
+alter table public.support_messages enable row level security;
+revoke all on public.support_messages from anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261026000200', 'support_queries');
+end $migration$;
+
+-- ═══ 20261026000300_storage_tree_and_suggestions ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261026000300') then
+    raise notice 'skip 20261026000300';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- 1. delete_course_files: remove notes files from the database for good (when their R2
+--    files are deleted from Admin → Storage). Their page index, reading progress and read
+--    counts go with them by cascade; units left with no files are removed too.
+-- 2. Suggestions: students can send ideas through the help desk.
+-- 3. Batch years can be hidden; 4. a whole year's courses move to another year in one step.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create or replace function public.delete_course_files(p_file_ids uuid[])
+returns int language plpgsql security definer set search_path = public as $$
+declare
+  n int;
+  affected uuid[];
+begin
+  select array_agg(distinct course_id) into affected from public.course_files where id = any(p_file_ids);
+  delete from public.course_files where id = any(p_file_ids);
+  get diagnostics n = row_count;
+  delete from public.course_units u
+   where u.course_id = any(coalesce(affected, '{}'))
+     and not exists (select 1 from public.course_files f where f.unit_id = u.id);
+  return n;
+end $$;
+revoke execute on function public.delete_course_files(uuid[]) from public, anon, authenticated;
+
+alter table public.support_queries drop constraint if exists support_queries_topic_check;
+alter table public.support_queries add constraint support_queries_topic_check
+  check (topic in ('feature', 'notes', 'payment', 'contribute', 'account', 'suggestion', 'other'));
+
+-- 3. Years you can hide from the catalogue without touching their courses.
+alter table public.batches add column if not exists is_visible boolean not null default true;
+
+-- 4. Move every course (and bundle) of one batch year to another in one step, optionally for
+--    one branch only. Returns how many courses moved.
+create or replace function public.move_batch_courses(p_from int, p_to int, p_programme text)
+returns int language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  insert into public.batches (year) values (p_to) on conflict (year) do nothing;
+  update public.courses c set batch_year = p_to
+   where c.batch_year = p_from
+     and (p_programme is null or c.primary_programme_slug = p_programme
+          or exists (select 1 from public.course_programmes cp where cp.course_id = c.id and cp.programme_slug = p_programme));
+  get diagnostics n = row_count;
+  if p_programme is null then
+    update public.bundles set batch_year = p_to where batch_year = p_from;
+  end if;
+  return n;
+end $$;
+revoke execute on function public.move_batch_courses(int, int, text) from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261026000300', 'storage_tree_and_suggestions');
+end $migration$;
+
+-- ═══ 20261026000400_deliveries_admins_terms ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261026000400') then
+    raise notice 'skip 20261026000400';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- 1. announcement_deliveries: who got each announcement, and when. With the daily email
+--    limit an announcement goes out over several days; this is how the admin sees exactly
+--    who has it and who is still waiting.
+-- 2. admin_emails.source: GitHub (synced from the ADMIN_EMAILS variable) or added in the
+--    database by hand. The Worker now reads admins from this table, so a change made in
+--    GitHub reaches production as soon as the sync runs, without a redeploy.
+-- 3. Terms students can see: a course's term has a name ("Sem 5 · Winter 2026"), and each
+--    access remembers whether its "ending soon" reminder went out.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create table if not exists public.announcement_deliveries (
+  announcement_id uuid not null references public.announcements(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  sent_at timestamptz not null default now(),
+  primary key (announcement_id, user_id)
+);
+create index if not exists announcement_deliveries_sent_idx on public.announcement_deliveries (sent_at);
+alter table public.announcement_deliveries enable row level security;
+revoke all on public.announcement_deliveries from anon, authenticated;
+
+alter table public.admin_emails add column if not exists source text not null default 'github'
+  check (source in ('github', 'manual'));
+
+alter table public.courses add column if not exists term_label text not null default ''
+  check (length(term_label) <= 60);
+comment on column public.courses.term_label is 'Name of the term access_until ends, shown to students (e.g. "Sem 5 · Winter 2026").';
+
+alter table public.entitlements add column if not exists ending_notified_at timestamptz;
+
+-- Opted-in students who haven't had this announcement yet, in a stable order. Students who opt
+-- in while an email is going out are included, wherever their id falls.
+create or replace function public.announcement_pending(p_announcement uuid, p_limit int)
+returns table (id uuid, email text, full_name text)
+language sql stable security definer set search_path = public as $$
+  select p.id, p.email, p.full_name from public.profiles p
+   where p.email_opt_in
+     and not exists (select 1 from public.announcement_deliveries d
+                      where d.announcement_id = p_announcement and d.user_id = p.id)
+   order by p.id
+   limit greatest(1, least(p_limit, 1000));
+$$;
+
+create or replace function public.announcement_progress(p_announcement uuid)
+returns table (sent int, waiting int)
+language sql stable security definer set search_path = public as $$
+  select
+    (select count(*)::int from public.announcement_deliveries d where d.announcement_id = p_announcement),
+    (select count(*)::int from public.profiles p
+      where p.email_opt_in
+        and not exists (select 1 from public.announcement_deliveries d
+                         where d.announcement_id = p_announcement and d.user_id = p.id));
+$$;
+
+-- Everyone who got it, then everyone still waiting (for the admin's list).
+create or replace function public.announcement_recipients(p_announcement uuid, p_limit int)
+returns table (id uuid, email text, full_name text, sent_at timestamptz)
+language sql stable security definer set search_path = public as $$
+  (select p.id, p.email, p.full_name, d.sent_at
+     from public.announcement_deliveries d join public.profiles p on p.id = d.user_id
+    where d.announcement_id = p_announcement)
+  union all
+  (select p.id, p.email, p.full_name, null::timestamptz
+     from public.profiles p
+    where p.email_opt_in
+      and not exists (select 1 from public.announcement_deliveries d
+                       where d.announcement_id = p_announcement and d.user_id = p.id))
+  order by sent_at nulls last, email
+  limit greatest(1, least(p_limit, 5000));
+$$;
+
+-- Accesses whose term ends within the window and whose reminder hasn't gone out yet.
+create or replace function public.access_ending_soon(p_before timestamptz, p_limit int)
+returns table (user_id uuid, email text, full_name text, course_id uuid, course_title text, course_slug text,
+               expires_at timestamptz, term_label text)
+language sql stable security definer set search_path = public as $$
+  select e.user_id, p.email, p.full_name, c.id, c.title, c.slug, e.expires_at, c.term_label
+    from public.entitlements e
+    join public.profiles p on p.id = e.user_id
+    join public.courses c on c.id = e.course_id
+   where e.revoked_at is null and e.ending_notified_at is null
+     and e.expires_at > now() and e.expires_at <= p_before
+   order by e.expires_at
+   limit greatest(1, least(p_limit, 1000));
+$$;
+
+revoke execute on function public.announcement_pending(uuid, int) from public, anon, authenticated;
+revoke execute on function public.announcement_progress(uuid) from public, anon, authenticated;
+revoke execute on function public.announcement_recipients(uuid, int) from public, anon, authenticated;
+revoke execute on function public.access_ending_soon(timestamptz, int) from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261026000400', 'deliveries_admins_terms');
+end $migration$;
+
+-- ═══ 20261026000500_access_window_pending_grants ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261026000500') then
+    raise notice 'skip 20261026000500';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- 1. Every purchase is a fixed window from the day it is bought (3 months, the
+--    'access_months' setting), not a date per course: the same course is bought by
+--    different branches on different timelines.
+-- 2. Pending grants: the admin can give a course to a college email that hasn't signed in
+--    yet; it lands on their shelf the moment their account is created.
+-- 3. Course update notices: students who have a course hear when new notes are added.
+-- 4. Announcement counts per batch (from the college email, e.g. name.23bce… = 2023).
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into public.site_settings (key, value) values ('access_months', '3'::jsonb)
+on conflict (key) do nothing;
+
+create or replace function public.access_months() returns int language sql stable
+security definer set search_path = public as $$
+  select coalesce((select (value #>> '{}')::int from public.site_settings where key = 'access_months'), 3);
+$$;
+
+create or replace function public.grant_order(p_gateway_order_id text, p_gateway_payment_id text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  o public.orders;
+  window_end timestamptz := now() + make_interval(months => public.access_months());
+begin
+  select * into o from public.orders where gateway_order_id = p_gateway_order_id for update;
+  if not found then
+    raise exception 'order not found' using errcode = 'P0002';
+  end if;
+  if o.status <> 'paid' then
+    update public.orders set status = 'paid', gateway_payment_id = p_gateway_payment_id where id = o.id;
+  end if;
+  insert into public.entitlements (user_id, course_id, order_id, expires_at, granted_by)
+  select o.user_id, i.course_id, o.id, window_end, 'purchase'
+    from public.order_items i
+   where i.order_id = o.id
+  on conflict (user_id, course_id) do update
+    set revoked_at = null, revoke_reason = null, order_id = excluded.order_id,
+        granted_at = now(), expires_at = excluded.expires_at,
+        granted_by = 'purchase', granted_by_admin = null, end_notified_at = null
+    where public.entitlements.revoked_at is not null
+       or (public.entitlements.expires_at is not null and public.entitlements.expires_at <= now());
+  return o.id;
+end $$;
+revoke execute on function public.grant_order(text, text) from public, anon, authenticated;
+
+create table if not exists public.pending_grants (
+  email text not null check (email = lower(btrim(email))),
+  course_id uuid not null references public.courses(id) on delete cascade,
+  expires_at timestamptz,
+  granted_by_admin text not null,
+  created_at timestamptz not null default now(),
+  primary key (email, course_id)
+);
+alter table public.pending_grants enable row level security;
+revoke all on public.pending_grants from anon, authenticated;
+
+-- When a student's account is created, anything an admin gave their email is waiting for them.
+create or replace function public.apply_pending_grants() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.entitlements (user_id, course_id, expires_at, granted_by, granted_by_admin)
+  select new.id, g.course_id, g.expires_at, 'admin', g.granted_by_admin
+    from public.pending_grants g where g.email = lower(new.email)
+  on conflict (user_id, course_id) do nothing;
+  delete from public.pending_grants where email = lower(new.email);
+  return new;
+end $$;
+drop trigger if exists profiles_pending_grants on public.profiles;
+create trigger profiles_pending_grants after insert on public.profiles
+  for each row execute function public.apply_pending_grants();
+
+alter table public.courses add column if not exists files_notified_at timestamptz;
+update public.courses set files_notified_at = now() where files_notified_at is null;
+
+-- An announcement can go to one course's students (e.g. "new notes in DBMS") instead of every
+-- opted-in student. Those are about something they bought, so they go even if news is off.
+alter table public.announcements add column if not exists course_id uuid references public.courses(id) on delete cascade;
+
+create or replace function public.announcement_audience(p_announcement uuid)
+returns table (id uuid, email text, full_name text)
+language sql stable security definer set search_path = public as $$
+  select p.id, p.email, p.full_name
+    from public.profiles p, public.announcements a
+   where a.id = p_announcement
+     and case when a.course_id is null then p.email_opt_in
+              else exists (select 1 from public.entitlements e
+                            where e.user_id = p.id and e.course_id = a.course_id and e.revoked_at is null
+                              and (e.expires_at is null or e.expires_at > now())) end;
+$$;
+
+create or replace function public.announcement_pending(p_announcement uuid, p_limit int)
+returns table (id uuid, email text, full_name text)
+language sql stable security definer set search_path = public as $$
+  select r.id, r.email, r.full_name from public.announcement_audience(p_announcement) r
+   where not exists (select 1 from public.announcement_deliveries d
+                      where d.announcement_id = p_announcement and d.user_id = r.id)
+   order by r.id
+   limit greatest(1, least(p_limit, 1000));
+$$;
+
+create or replace function public.announcement_progress(p_announcement uuid)
+returns table (sent int, waiting int)
+language sql stable security definer set search_path = public as $$
+  select
+    (select count(*)::int from public.announcement_deliveries d where d.announcement_id = p_announcement),
+    (select count(*)::int from public.announcement_audience(p_announcement) r
+      where not exists (select 1 from public.announcement_deliveries d
+                         where d.announcement_id = p_announcement and d.user_id = r.id));
+$$;
+
+create or replace function public.announcement_recipients(p_announcement uuid, p_limit int)
+returns table (id uuid, email text, full_name text, sent_at timestamptz)
+language sql stable security definer set search_path = public as $$
+  (select p.id, p.email, p.full_name, d.sent_at
+     from public.announcement_deliveries d join public.profiles p on p.id = d.user_id
+    where d.announcement_id = p_announcement)
+  union all
+  (select r.id, r.email, r.full_name, null::timestamptz
+     from public.announcement_audience(p_announcement) r
+    where not exists (select 1 from public.announcement_deliveries d
+                       where d.announcement_id = p_announcement and d.user_id = r.id))
+  order by sent_at nulls last, email
+  limit greatest(1, least(p_limit, 5000));
+$$;
+
+create or replace function public.announcement_batches(p_announcement uuid)
+returns table (batch text, sent int, waiting int)
+language sql stable security definer set search_path = public as $$
+  with people as (
+    select d.user_id as id, true as got from public.announcement_deliveries d
+     where d.announcement_id = p_announcement
+    union all
+    select r.id, false from public.announcement_audience(p_announcement) r
+     where not exists (select 1 from public.announcement_deliveries d
+                        where d.announcement_id = p_announcement and d.user_id = r.id)
+  )
+  select coalesce('20' || substring(p.email from '(\d{2})[a-z]{3}\d+@'), 'Other') as batch,
+         count(*) filter (where people.got)::int,
+         count(*) filter (where not people.got)::int
+    from people join public.profiles p on p.id = people.id
+   group by 1 order by 1 desc;
+$$;
+revoke execute on function public.announcement_batches(uuid) from public, anon, authenticated;
+revoke execute on function public.announcement_audience(uuid) from public, anon, authenticated;
+revoke execute on function public.announcement_pending(uuid, int) from public, anon, authenticated;
+revoke execute on function public.announcement_progress(uuid) from public, anon, authenticated;
+revoke execute on function public.announcement_recipients(uuid, int) from public, anon, authenticated;
+revoke execute on function public.access_months() from public, anon, authenticated;
+
+-- Live courses with notes made readable since their students were last told.
+create or replace function public.courses_with_new_files()
+returns table (course_id uuid, title text, slug text, file_names text[])
+language sql stable security definer set search_path = public as $$
+  select c.id, c.title, c.slug, array_agg(f.name order by f.name)
+    from public.courses c
+    join public.course_files f on f.course_id = c.id
+    join public.course_units u on u.id = f.unit_id
+   where c.status = 'live'
+     and f.conversion_status = 'ready' and not f.is_hidden and not u.is_hidden
+     and f.converted_at > coalesce(c.files_notified_at, c.created_at)
+   group by c.id, c.title, c.slug;
+$$;
+revoke execute on function public.courses_with_new_files() from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261026000500', 'access_window_pending_grants');
+end $migration$;
+
+-- ═══ 20261026000600_signin_guard ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261026000600') then
+    raise notice 'skip 20261026000600';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Sign-in guard. Before a sign-in link is sent, the Worker checks the address: an exact
+-- @vitbhopal.ac.in address, or an address on the admin list. Each refused address counts
+-- against the network (IP, stored only as a hash); 5 refusals within 24 hours block that
+-- network from asking for links for 24 hours.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create table if not exists public.signin_strikes (
+  ip_hash text primary key,
+  strikes int not null default 0,
+  first_at timestamptz not null default now(),
+  blocked_until timestamptz
+);
+alter table public.signin_strikes enable row level security;
+revoke all on public.signin_strikes from anon, authenticated;
+
+-- Count one refusal; returns when the block ends (null = not blocked).
+create or replace function public.signin_strike(p_ip text, p_limit int, p_hours int)
+returns timestamptz language plpgsql security definer set search_path = public as $$
+declare r public.signin_strikes;
+begin
+  insert into public.signin_strikes as s (ip_hash, strikes, first_at)
+  values (p_ip, 1, now())
+  on conflict (ip_hash) do update
+    set strikes = case when s.first_at < now() - make_interval(hours => p_hours) then 1 else s.strikes + 1 end,
+        first_at = case when s.first_at < now() - make_interval(hours => p_hours) then now() else s.first_at end
+  returning * into r;
+  if r.strikes >= p_limit and (r.blocked_until is null or r.blocked_until < now()) then
+    update public.signin_strikes set blocked_until = now() + make_interval(hours => p_hours)
+     where ip_hash = p_ip returning * into r;
+  end if;
+  return case when r.blocked_until > now() then r.blocked_until end;
+end $$;
+revoke execute on function public.signin_strike(text, int, int) from public, anon, authenticated;
+
+-- Old rows are useless after a day; the hourly job clears them.
+create or replace function public.prune_signin_strikes() returns int
+language sql security definer set search_path = public as $$
+  with gone as (
+    delete from public.signin_strikes
+     where first_at < now() - interval '48 hours' and (blocked_until is null or blocked_until < now())
+    returning 1)
+  select count(*)::int from gone;
+$$;
+revoke execute on function public.prune_signin_strikes() from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261026000600', 'signin_guard');
+end $migration$;
+
+-- ═══ 20261026000700_rewards_bonus ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261026000700') then
+    raise notice 'skip 20261026000700';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- 1. Cash rewards for contributions: when you've paid one, mark it paid (it shows as owed
+--    in Earnings until then, and the student sees "paid" on their Contribute page).
+-- 2. Yearly top-contributor bonus: the contributor whose notes sold most in the last
+--    12 months gets what they earned again. contributor_bonuses records each payment.
+-- ════════════════════════════════════════════════════════════════════════════
+
+alter table public.contributions add column if not exists reward_paid_at timestamptz;
+alter table public.contributions add column if not exists reward_paid_note text not null default ''
+  check (length(reward_paid_note) <= 300);
+
+create table if not exists public.contributor_bonuses (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  year int not null check (year between 2025 and 2100),
+  amount_paise int not null check (amount_paise > 0),
+  note text not null default '' check (length(note) <= 300),
+  paid_at timestamptz not null default now(),
+  recorded_by text not null default '',
+  primary key (user_id, year)
+);
+alter table public.contributor_bonuses enable row level security;
+revoke all on public.contributor_bonuses from anon, authenticated;
+
+-- Royalty sales and revenue per contributor and course since a moment (counting each course
+-- only from when its royalty began).
+create or replace function public.royalty_earnings_since(p_since timestamptz)
+returns table (user_id uuid, course_id uuid, share_percent int, sales int, revenue_paise bigint)
+language sql stable security definer set search_path = public as $$
+  select cr.user_id, cr.course_id, cr.share_percent, count(l.*)::int, coalesce(sum(l.amount_paise), 0)::bigint
+    from public.course_royalties cr
+    left join public.sale_lines() l
+      on l.course_id = cr.course_id and l.paid_at >= greatest(cr.since, p_since)
+   group by cr.user_id, cr.course_id, cr.share_percent;
+$$;
+revoke execute on function public.royalty_earnings_since(timestamptz) from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261026000700', 'rewards_bonus');
+end $migration$;

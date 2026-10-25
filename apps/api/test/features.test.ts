@@ -183,13 +183,14 @@ describe('admin import from drive-imports/', () => {
     const is = (await a.call('GET', '/admin/courses')).json.find(
       (c: any) => c.title === 'Information Security',
     );
-    const publishIncomplete = await a.call('PATCH', `/admin/courses/${is.id}`, { status: 'live' });
-    expect(publishIncomplete.status).toBe(409);
-    expect(publishIncomplete.json.error.code).toBe('NOT_READY'); // HEIC is unsupported and remains visible in the R2 audit.
+    // The HEIC was never put on the website, so it can't hurt a student: publishing goes ahead,
+    // and the R2 audit still reports it so the admin knows it's there.
+    const audit = (await a.call('GET', `/admin/storage-audit?courseId=${is.id}`)).json;
+    expect(audit.totals.unsupported).toBe(1);
+    const publish = await a.call('PATCH', `/admin/courses/${is.id}`, { status: 'live' });
+    expect(publish.status).toBe(200);
     const bsa2 = await new Browser(app).call('GET', '/catalogue/drawer?batch=2023&branch=bsa');
-    expect(bsa2.json.map((c: any) => c.title)).not.toContain('Information Security');
-    const bai = await new Browser(app).call('GET', '/catalogue/drawer?batch=2023&branch=bai');
-    expect(bai.json.map((c: any) => c.title)).not.toContain('Information Security');
+    expect(bsa2.json.map((c: any) => c.title)).toContain('Information Security');
   });
 
   it('real folders: code from "Subject (CODE)", units by kind, reference books and textbooks kept off the site', async () => {
@@ -384,12 +385,7 @@ describe('admin import from drive-imports/', () => {
     });
     expect(bundle.status).toBe(200);
     const newKey = `${course.r2Prefix}Unit 1/new lecture.pdf`;
-    env.sources.put(
-      newKey,
-      new Uint8Array([1, 2, 3]),
-      'application/pdf',
-      'new-etag',
-    );
+    env.sources.put(newKey, new Uint8Array([1, 2, 3]), 'application/pdf', 'new-etag');
     await a.call('POST', `/admin/courses/${course.id}/sync-file`, { sourceKey: newKey });
     expect(env.db.courses.get(course.id)?.status).toBe('draft');
     expect(env.db.bundles.get(bundle.json.id)?.status).toBe('draft');
@@ -576,6 +572,7 @@ describe('toolbox and announcements', () => {
     const r = await new Browser(app).call('GET', '/features');
     expect(r.json.map((f: any) => [f.key, f.status, f.path])).toEqual([
       ['cgpa', 'soon', '/tools/cgpa'],
+      ['attendance', 'soon', '/tools/attendance'],
       ['timetable', 'soon', '/tools/timetable'],
     ]);
   });
@@ -611,6 +608,7 @@ describe('toolbox and announcements', () => {
   it('respects the daily limit and resumes the next day from where it stopped', async () => {
     for (let i = 0; i < 5; i++) await student(`s${i}@vitbhopal.ac.in`);
     env.container.config.emailDailyLimit = 3;
+    env.container.config.emailReserve = 0;
     const a = await admin();
     const draft = (
       await a.call('POST', '/admin/announcements', {
@@ -655,16 +653,16 @@ describe('toolbox and announcements', () => {
   it('admin adds a new tool; it shows in the public toolbox as "coming soon"', async () => {
     const a = await admin();
     const made = await a.call('POST', '/admin/features', {
-      key: 'Attendance',
-      title: 'Attendance tracker',
-      blurb: 'See how many classes you can still miss.',
+      key: 'Exam-Planner',
+      title: 'Exam planner',
+      blurb: 'Plan your revision before exams.',
     });
     expect(made.status).toBe(201);
-    expect(made.json).toMatchObject({ key: 'attendance', status: 'soon', path: '/tools/attendance' });
+    expect(made.json).toMatchObject({ key: 'exam-planner', status: 'soon', path: '/tools/exam-planner' });
     const pub = (await new Browser(app).call('GET', '/features')).json as { key: string }[];
-    expect(pub.at(-1)?.key).toBe('attendance');
+    expect(pub.at(-1)?.key).toBe('exam-planner');
     expect(
-      (await a.call('POST', '/admin/features', { key: 'attendance', title: 'Again', blurb: '' })).status,
+      (await a.call('POST', '/admin/features', { key: 'exam-planner', title: 'Again', blurb: '' })).status,
     ).toBe(400);
     expect(
       (await a.call('POST', '/admin/features', { key: 'no spaces', title: 'Bad key', blurb: '' })).status,
@@ -781,7 +779,12 @@ describe('broken R2 copies', () => {
     expect(detail.units.flatMap((u: any) => u.files).map((f: any) => f.id)).not.toContain(file.id);
     // Re-uploading a good copy to R2 brings it back on the next rescan.
     const src = env.sources as unknown as { put(k: string, b: Uint8Array, t: string, e: string): void };
-    src.put(file.sourceKey, new Uint8Array(16), 'application/pdf', 'fixed-copy');
+    src.put(
+      file.sourceKey,
+      new TextEncoder().encode('%PDF-1.7 restored source'),
+      'application/pdf',
+      'fixed-copy',
+    );
     await a.call('POST', `/admin/courses/${course.id}/sync-file`, { sourceKey: file.sourceKey });
     expect(env.db.files.get(file.id)!.hidden).toBe(false);
     // An ordinary converter failure (our fault, retryable) is not hidden.

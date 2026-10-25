@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 type Variant = 'buy' | 'mist' | 'brand' | 'ink' | 'outline' | 'outline-light' | 'ghost';
-type Size = 'md' | 'lg';
+type Size = 'sm' | 'md' | 'lg';
 
 const VARIANTS: Record<Variant, string> = {
   // Marigold is used only for buying, so it always means "get it".
@@ -16,6 +16,7 @@ const VARIANTS: Record<Variant, string> = {
 };
 
 const SIZES: Record<Size, string> = {
+  sm: 'h-9 px-3.5 text-[14px]',
   md: 'h-11 px-5 text-[15px]',
   lg: 'h-14 px-7 text-[17px]',
 };

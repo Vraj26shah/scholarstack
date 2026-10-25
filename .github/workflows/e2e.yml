@@ -1,0 +1,28 @@
+name: Browser tests
+# The full browser suite (about 8 minutes). Run it by hand from the Actions tab before a big
+# release; everyday pushes use the quick checks in "Check and deploy".
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @ss/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @ss/web build:demo
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: apps/web/test-results
+          retention-days: 7

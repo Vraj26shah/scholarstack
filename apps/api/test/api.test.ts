@@ -88,6 +88,7 @@ describe('admin R2 sync', () => {
     file.conversionStatus = 'ready';
     file.pageCount = 1;
     file.previewKey = `pages/${file.id}/preview.webp`;
+    await env.pages.deletePrefix(`pages/${file.id}/`);
     sibling.hidden = false;
     sibling.unitHidden = false;
     sibling.conversionStatus = 'failed';
@@ -142,6 +143,8 @@ describe('admin R2 sync', () => {
     for (const file of env.db.files.values()) file.hidden = true;
     const pending = [...env.db.files.values()][0]!;
     pending.conversionStatus = 'pending';
+    await env.pages.deletePrefix(`pages/${pending.id}/`);
+    env.db.pages.delete(pending.id);
     env.pages.put('pages/orphan-record/1.webp', new Uint8Array([1]), 'image/webp');
     env.pages.put(`pages/${pending.id}/1.webp`, new Uint8Array([2]), 'image/webp');
 
@@ -704,9 +707,10 @@ describe('admin', () => {
   it('lists generated objects under one exact file page prefix without pulling sibling page keys', async () => {
     const file = [...env.db.files.values()][0]!;
     const exactPrefix = `pages/${file.id}/`;
-    env.sources.put(`${exactPrefix}1.webp`, new Uint8Array([1]), 'image/webp', 'page-1');
-    env.sources.put(`${exactPrefix}preview.webp`, new Uint8Array([1]), 'image/webp', 'preview');
-    env.sources.put('pages/unrelated-file/1.webp', new Uint8Array([1]), 'image/webp', 'sibling-page');
+    await env.pages.deletePrefix(exactPrefix);
+    env.pages.put(`${exactPrefix}1.webp`, new Uint8Array([1]), 'image/webp', 'page-1');
+    env.pages.put(`${exactPrefix}preview.webp`, new Uint8Array([1]), 'image/webp', 'preview');
+    env.pages.put('pages/unrelated-file/1.webp', new Uint8Array([1]), 'image/webp', 'sibling-page');
 
     const admin = new Browser(app);
     await admin.signIn('admin@vitbhopal.ac.in');
@@ -736,6 +740,11 @@ describe('admin', () => {
     file.conversionStatus = 'ready';
     file.pageCount = 2;
     file.previewKey = `pages/${file.id}/preview.webp`;
+    await env.pages.deletePrefix(`pages/${file.id}/`);
+    env.db.pages.set(file.id, [
+      { imageKey: `pages/${file.id}/1.webp`, tileSeed: 'seed-1' },
+      { imageKey: `pages/${file.id}/2.webp`, tileSeed: 'seed-2' },
+    ]);
     env.pages.put(`pages/${file.id}/1.webp`, new Uint8Array([1]), 'image/webp');
     env.pages.put(`pages/${file.id}/3.webp`, new Uint8Array([1]), 'image/webp');
     env.sources.put(`${file.sourceKey}.new.pdf`, new Uint8Array([1, 2, 3]), 'application/pdf');
@@ -1030,7 +1039,7 @@ describe('admin', () => {
     expect(env.db.courses.get(course.id)?.status).toBe('draft');
 
     const newKey = `${course.r2Prefix}Module 6/new-notes.pdf`;
-    env.sources.put(newKey, new Uint8Array([1, 2, 3, 4]), 'application/pdf', 'new-upload');
+    env.sources.put(newKey, new TextEncoder().encode('%PDF-1.7 new upload'), 'application/pdf', 'new-upload');
     const pending = await admin.call('GET', `/admin/courses/${course.id}/inventory`);
     expect(pending.json.complete).toBe(false);
     expect(pending.json.totals.unmapped).toBe(1);

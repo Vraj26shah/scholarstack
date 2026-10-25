@@ -13,4 +13,6 @@ export interface AppConfig {
   appUrl: string;
   /** Feature emails per day, kept under the email provider's daily cap. */
   emailDailyLimit: number;
+  /** Emails kept back each day for personal mail (receipts, answers, reminders). */
+  emailReserve: number;
 }

@@ -16,3 +16,12 @@ export function fileFormatLabel(format: FileFormat, name: string): string {
 export function formatsLabel(formats: FileFormat[]): string {
   return formats.map((f) => FORMAT_LABEL[f]).join(' + ') || '—';
 }
+
+/** ₹1,23,456 (Indian grouping), with paise only when there are any. */
+export function formatMoney(paise: number): string {
+  const rupees = paise / 100;
+  return `₹${rupees.toLocaleString('en-IN', {
+    minimumFractionDigits: Number.isInteger(rupees) ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
+}

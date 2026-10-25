@@ -1,7 +1,7 @@
 {
   "name": "scholars-stack",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.12.0",
   "packageManager": "pnpm@10.28.0",
   "engines": {
     "node": ">=22"
@@ -25,7 +25,8 @@
     "deploy:production": "pnpm --filter @ss/web build && pnpm --filter @ss/api deploy:production",
     "tunnel": "npx cloudflared tunnel --url http://localhost:8787",
     "ops": "pnpm --silent --filter @ss/api ops",
-    "db:bundle": "pnpm --silent --filter @ss/api ops db:bundle"
+    "db:bundle": "pnpm --silent --filter @ss/api ops db:bundle",
+    "github:secrets": "node scripts/github-secrets.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

@@ -89,9 +89,29 @@
   --color-marigold-text: var(--marigold-text);
   --color-on-marigold: #161b3a;
   --color-price: var(--price);
-  --font-display: "Bricolage Grotesque", "Geist", system-ui, sans-serif;
+  --font-display: "Fraunces", "Fraunces Fallback G", "Fraunces Fallback T", serif;
+  --font-brand: "Bricolage Grotesque", "Geist", system-ui, sans-serif;
   --font-sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Fallbacks tuned to Fraunces' width and line metrics, so headings don't jump when the real
+   font arrives. G = Georgia (Windows, macOS); T = Times-compatible serifs (Linux, Android). */
+@font-face {
+  font-family: "Fraunces Fallback G";
+  src: local("Georgia");
+  size-adjust: 82.9%;
+  ascent-override: 118%;
+  descent-override: 31.4%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: "Fraunces Fallback T";
+  src: local("Times New Roman"), local("Liberation Serif"), local("Tinos"), local("Noto Serif");
+  size-adjust: 91.2%;
+  ascent-override: 107.5%;
+  descent-override: 28.5%;
+  line-gap-override: 0%;
 }
 
 html,
@@ -127,41 +147,6 @@ body {
   background-position: 0 50px;
 }
 
-/* The "stacked." word: one soft sheet offset behind the letters. Legible on light or dark,
-   and quiet enough to sit inside a headline. */
-.stack-word {
-  --s1: rgba(161, 214, 226, 0.75);
-  display: inline-block;
-  text-shadow: 0.055em 0.055em 0 var(--s1);
-  padding-right: 0.06em;
-}
-.stack-word.on-dark {
-  --s1: rgba(25, 149, 173, 0.85);
-}
-[data-theme="dark"] .stack-word:not(.on-dark) {
-  --s1: rgba(25, 149, 173, 0.45);
-}
-.stack-word .letter {
-  display: inline-block;
-}
-.stack-word.animate .letter {
-  animation: letter-rise 0.8s var(--ease-out) both;
-  animation-delay: calc(var(--i) * 45ms + 150ms);
-}
-@keyframes letter-rise {
-  from {
-    transform: translateY(0.28em);
-    opacity: 0;
-    filter: blur(6px);
-    text-shadow: 0 0 0 transparent;
-  }
-  to {
-    transform: none;
-    opacity: 1;
-    filter: none;
-  }
-}
-
 .punch-hole {
   position: absolute;
   left: 50%;
@@ -181,24 +166,33 @@ body {
   -webkit-touch-callout: none;
 }
 
-/* The reader expands the current protected, watermarked page without losing its aspect ratio. */
-.reader-page-stage:fullscreen,
-.reader-page-stage-fallback-fullscreen {
-  position: fixed;
-  z-index: 60;
-  inset: 0;
-  width: 100vw;
-  height: 100dvh;
-  align-items: center;
-  overflow: auto;
-  padding: 0.75rem;
+/* Turning a page: the new one slides in from the side you are heading to, like paper. */
+@keyframes page-turn-next {
+  from {
+    opacity: 0.35;
+    transform: translateX(22px) rotate(0.4deg);
+  }
+}
+@keyframes page-turn-prev {
+  from {
+    opacity: 0.35;
+    transform: translateX(-22px) rotate(-0.4deg);
+  }
+}
+.page-turn-next {
+  animation: page-turn-next 0.38s var(--ease-out) both;
+}
+.page-turn-prev {
+  animation: page-turn-prev 0.38s var(--ease-out) both;
 }
 
-.reader-page-stage:fullscreen .reader-note-canvas,
-.reader-page-stage-fallback-fullscreen .reader-note-canvas {
-  width: auto !important;
-  max-width: min(100%, calc((100dvh - 1.5rem) / 1.414));
-  max-height: calc(100dvh - 1.5rem);
+/* Full-screen reading: a hand cursor says "you can drag this page around". */
+.reader-immersive {
+  cursor: grab;
+  overscroll-behavior: contain;
+}
+.reader-immersive[data-dragging] {
+  cursor: grabbing;
 }
 
 @media print {
@@ -283,9 +277,10 @@ body {
   transition: transform 0.35s var(--ease-out), box-shadow 0.35s var(--ease-out);
 }
 @media (hover: hover) {
+  /* Picked up off the desk: a small lift and tilt, like a real card, not a floating tile. */
   .lift:hover,
   .group:hover > .lift {
-    transform: translateY(-4px);
+    transform: translateY(-3px) rotate(-0.7deg);
   }
 }
 
@@ -323,9 +318,6 @@ body {
   [data-reveal] {
     opacity: 1;
     transform: none;
-  }
-  .stack-word.animate .letter {
-    animation: none;
   }
   *,
   *::before,
@@ -368,4 +360,569 @@ body {
 }
 .img-fade[data-loaded] {
   opacity: 1;
+}
+
+/* ── Type ────────────────────────────────────────────────────────────────────
+   Headings are a soft, bookish serif at a calm weight with natural spacing. These rules sit
+   outside Tailwind's layers on purpose, so they win over per-component weight/tracking
+   utilities and keep every page consistent. */
+.font-display {
+  font-family: var(--font-display);
+  font-variation-settings: "SOFT" 60, "opsz" 96;
+  font-optical-sizing: auto;
+  letter-spacing: -0.012em !important;
+  font-weight: 600 !important;
+}
+.font-display.leading-none,
+.font-display[class*="leading-[0.8"],
+.font-display[class*="leading-[0.9"] {
+  line-height: 1.04 !important;
+}
+.font-brand {
+  font-family: var(--font-brand);
+}
+/* Small display text (card titles, prices) reads better a touch lighter and wider. */
+.font-display[class*="text-[1"],
+.font-display[class*="text-[2"],
+.font-display.text-lg,
+.font-display.text-xl,
+.font-display.text-base,
+.font-display.text-sm {
+  font-variation-settings: "SOFT" 50, "opsz" 24;
+  letter-spacing: -0.005em !important;
+}
+
+/* Labels: quiet sentence-case, never shouting monospace capitals. */
+.uppercase[class*="tracking-[0.1"],
+p.font-mono[class*="tracking-[0.1"],
+nav.font-mono,
+div.font-mono[class*="tracking-[0.14em]"] {
+  font-family: var(--font-sans);
+  text-transform: none;
+  letter-spacing: 0.005em !important;
+  font-weight: 600;
+  font-size: max(13px, 1em);
+}
+nav.font-mono {
+  font-weight: 500;
+}
+.font-mono {
+  letter-spacing: 0 !important;
+}
+
+/* Accent words: a hand-drawn marker stroke that draws itself in (no gradients, no shine). */
+.stack-word {
+  --mark: rgba(161, 214, 226, 0.9);
+  position: relative;
+  z-index: 0;
+  text-shadow: none !important;
+  padding: 0 0.04em;
+}
+.stack-word.on-dark {
+  --mark: rgba(25, 149, 173, 0.95);
+}
+[data-theme="dark"] .stack-word:not(.on-dark) {
+  --mark: rgba(25, 149, 173, 0.7);
+}
+.stack-word::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: -0.02em;
+  right: -0.04em;
+  bottom: 0.02em;
+  height: 0.34em;
+  background: var(--mark);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 24' preserveAspectRatio='none'%3E%3Cpath d='M4 15 C 60 6, 118 20, 178 11 S 268 8, 296 13' fill='none' stroke='black' stroke-width='10' stroke-linecap='round'/%3E%3C/svg%3E")
+    no-repeat center / 100% 100%;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 24' preserveAspectRatio='none'%3E%3Cpath d='M4 15 C 60 6, 118 20, 178 11 S 268 8, 296 13' fill='none' stroke='black' stroke-width='10' stroke-linecap='round'/%3E%3C/svg%3E")
+    no-repeat center / 100% 100%;
+  transform-origin: left center;
+}
+/* Drawn when the word is actually seen (StackWord sets data-shown on first view). */
+.stack-word:not([data-shown])::after {
+  transform: scaleX(0);
+}
+.stack-word[data-shown]::after {
+  animation: marker-draw 0.9s var(--ease-out) 0.25s both;
+}
+.stack-word.animate[data-shown]::after {
+  animation-delay: 0.55s;
+}
+@keyframes marker-draw {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* ── Ambient: printed-paper grain and margin doodles behind blue bands ─────── */
+/* Whatever follows the ambient layer in its host renders above it. */
+.ambient ~ :not(.absolute):not(.fixed):not(.sticky) {
+  position: relative;
+  z-index: 1;
+}
+.ambient {
+  z-index: 0;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  --ink-stroke: rgba(233, 246, 250, 0.2);
+}
+.ambient-paper {
+  --ink-stroke: rgba(47, 60, 126, 0.14);
+}
+/* Fine paper tooth, so blue panels feel printed rather than flat. Static. */
+.ambient-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.09;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.doodle {
+  position: absolute;
+  overflow: visible;
+  fill: none;
+  stroke: var(--ink-stroke);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.doodle path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  /* Drawn by hand, left on the page for most of its cycle, softly rubbed out, drawn again.
+     Each mark keeps its own long cycle, so only one or two ever change at once. */
+  animation: doodle var(--cycle, 24s) linear var(--delay, 0s) infinite both;
+}
+@keyframes doodle {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.55, 0.1, 0.35, 1);
+  }
+  7% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  80% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+    animation-timing-function: ease-in-out;
+  }
+  88% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+  89%,
+  100% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+}
+/* ── Marquee ribbon ──────────────────────────────────────────────────────── */
+.marquee {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee calc(var(--n, 12) * 3.2s) linear infinite;
+}
+.marquee:hover .marquee-track {
+  animation-play-state: paused;
+}
+.marquee-row {
+  display: flex;
+  gap: 2.25rem;
+  padding: 0 1.125rem;
+  margin: 0;
+  list-style: none;
+}
+.marquee-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink2);
+}
+.marquee-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--teal);
+  box-shadow: 0 0 0 4px rgba(25, 149, 173, 0.14);
+}
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Perk bullets: an icon in a soft ring, not a stock tick. */
+.perk-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 9999px;
+  background: rgba(161, 214, 226, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(161, 214, 226, 0.35);
+  color: #a1d6e2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stack-word::after,
+  .marquee-track {
+    animation: none !important;
+  }
+  /* Doodles stay, fully drawn and still. */
+  .doodle path {
+    animation: none !important;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Handwritten margin notes: written in left to right, left a while, then fade like pencil. */
+.margin-note {
+  position: absolute;
+  font-family: "Caveat", "Segoe Print", "Bradley Hand", cursive;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--ink-stroke);
+  filter: brightness(1.35);
+  clip-path: inset(0 100% 0 0);
+  animation: note-write var(--cycle, 28s) linear var(--delay, 1.6s) infinite both;
+}
+@keyframes note-write {
+  0% {
+    clip-path: inset(0 100% 0 0);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.55, 0.1, 0.35, 1);
+  }
+  6% {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+  78% {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+    animation-timing-function: ease-in-out;
+  }
+  86% {
+    clip-path: inset(0 0 0 0);
+    opacity: 0;
+  }
+  87%,
+  100% {
+    clip-path: inset(0 100% 0 0);
+    opacity: 1;
+  }
+}
+/* Nothing is drawn until that part of the page is actually seen. */
+.ambient:not([data-shown]) .doodle path,
+.ambient:not([data-shown]) .margin-note {
+  animation-play-state: paused;
+}
+
+/* A paper plane thrown across the hero; its pencil-dot trail fades a moment behind it. */
+.plane-flight {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.plane-trail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.trail-dot {
+  fill: var(--ink-stroke);
+  animation: trail-fade 1.8s ease-out forwards;
+}
+@keyframes trail-fade {
+  from {
+    opacity: 0.9;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.paper-plane {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 34px;
+  height: 34px;
+  opacity: 0;
+  transform-origin: 17px 17px;
+  will-change: transform;
+}
+/* The drawing's nose points up-right; turn it so it faces the way it flies. */
+.paper-plane svg {
+  display: block;
+  rotate: 43deg;
+  overflow: visible;
+}
+.paper-plane-wing {
+  fill: #fbeaeb;
+  stroke: #2f3c7e;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+.paper-plane-fold {
+  fill: #a1d6e2;
+  stroke: #2f3c7e;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .margin-note,
+  .doodle path {
+    animation: none !important;
+    clip-path: none;
+    stroke-dashoffset: 0;
+  }
+  .plane-flight {
+    display: none;
+  }
+}
+
+/* Bundle ribbon: a satin band with a bow, instead of a flat accent stripe. */
+.ribbon {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 18px;
+  width: 12px;
+  pointer-events: none;
+  z-index: 1;
+}
+.ribbon-band {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    #d99a22 0%,
+    var(--marigold) 35%,
+    #ffd27a 55%,
+    var(--marigold) 75%,
+    #d99a22 100%
+  );
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+.ribbon-bow {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-4deg);
+  transform-origin: 50% 50%;
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.25));
+  transition: transform 0.6s var(--ease-out);
+}
+.ribbon-bow path,
+.ribbon-bow rect {
+  fill: var(--marigold);
+  stroke: #c98a16;
+  stroke-width: 1.2;
+}
+.ribbon-bow rect {
+  fill: #e9a630;
+}
+.ribbon-lg {
+  left: 22px;
+  width: 16px;
+}
+.ribbon-lg .ribbon-bow {
+  width: 62px;
+  height: 39px;
+  top: 18px;
+}
+@media (hover: hover) {
+  .group:hover .ribbon-bow {
+    animation: bow-wiggle 0.7s var(--ease-out);
+  }
+}
+@keyframes bow-wiggle {
+  30% {
+    transform: translateX(-50%) rotate(7deg) scale(1.06);
+  }
+  60% {
+    transform: translateX(-50%) rotate(-8deg);
+  }
+  100% {
+    transform: translateX(-50%) rotate(-4deg);
+  }
+}
+
+/* "pencil": a thin, quick hand underline for a phrase inside body text. */
+.stack-word.pencil {
+  padding: 0;
+}
+.stack-word.pencil::after {
+  height: 0.2em;
+  bottom: -0.16em;
+  left: 0;
+  right: 0;
+  background: rgba(161, 214, 226, 0.75);
+}
+.stack-word.pencil.animate[data-shown]::after {
+  animation-duration: 0.6s;
+  animation-delay: 1.35s;
+}
+
+/* A rubber stamp landing: overshoots a touch, settles, leaves a faint ink ring. Plays once the
+   card holding it scrolls into view (Reveal), one stamp after another. */
+@keyframes stamp-land {
+  0% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(0.93);
+  }
+  75% {
+    transform: scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes stamp-ink {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+.stamp-land {
+  position: relative;
+  animation: stamp-land 0.55s cubic-bezier(0.3, 0.7, 0.4, 1) both;
+  animation-delay: var(--delay, 0.3s);
+}
+.stamp-land::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  border: 2px solid currentColor;
+  opacity: 0;
+  animation: stamp-ink 0.7s ease-out both;
+  animation-delay: calc(var(--delay, 0.3s) + 0.28s);
+  pointer-events: none;
+}
+[data-reveal]:not([data-shown]) .stamp-land,
+[data-reveal]:not([data-shown]) .stamp-land::after {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stamp-land,
+  .stamp-land::after {
+    animation: none !important;
+    opacity: 1;
+  }
+  .stamp-land::after {
+    opacity: 0;
+  }
+  .stack-word::after {
+    transform: none !important;
+  }
+}
+
+/* Each page settles in gently on navigation, so moving around feels continuous. */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.page-enter {
+  animation: page-enter 0.5s var(--ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-enter {
+    animation: none;
+  }
+}
+
+/* Key phrases in body copy (<Hl>): the same hand-drawn marker stroke as the accent words
+   ("stacked.", "in."), same colours, drawn in when seen. Drawn as a background so a phrase that
+   wraps gets its own stroke on each line. */
+.hl {
+  --hl-stroke: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 30' preserveAspectRatio='none'%3E%3Cpath d='M6 18 C 60 9, 118 23, 178 14 S 268 11, 294 16' fill='none' stroke='rgb(161,214,226)' stroke-opacity='0.9' stroke-width='15' stroke-linecap='round'/%3E%3C/svg%3E");
+  color: var(--ink);
+  font-weight: 600;
+  background: var(--hl-stroke) no-repeat left bottom 0.1em / 100% 0.6em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  padding: 0 0.04em;
+}
+.hl.on-dark {
+  --hl-stroke: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 30' preserveAspectRatio='none'%3E%3Cpath d='M6 18 C 60 9, 118 23, 178 14 S 268 11, 294 16' fill='none' stroke='rgb(25,149,173)' stroke-opacity='0.95' stroke-width='15' stroke-linecap='round'/%3E%3C/svg%3E");
+  color: #fff;
+}
+[data-theme="dark"] .hl:not(.on-dark) {
+  --hl-stroke: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 30' preserveAspectRatio='none'%3E%3Cpath d='M6 18 C 60 9, 118 23, 178 14 S 268 11, 294 16' fill='none' stroke='rgb(25,149,173)' stroke-opacity='0.7' stroke-width='15' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.hl:not([data-shown]) {
+  background-size: 0% 0.6em;
+}
+.hl[data-shown] {
+  animation: hl-draw 0.9s var(--ease-out) 0.25s both;
+}
+@keyframes hl-draw {
+  from {
+    background-size: 0% 0.6em;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hl,
+  .hl:not([data-shown]) {
+    animation: none !important;
+    background-size: 100% 0.6em;
+  }
+}
+@media (forced-colors: active) {
+  .hl {
+    background: none;
+    font-weight: 700;
+  }
+}
+
+/* Timetable maker: "Print or PDF" prints only the grid, landscape. */
+@media print {
+  @page {
+    size: landscape;
+    margin: 10mm;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .timetable-print,
+  .timetable-print * {
+    visibility: visible;
+  }
+  .timetable-print {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    overflow: visible !important;
+    box-shadow: none !important;
+  }
 }

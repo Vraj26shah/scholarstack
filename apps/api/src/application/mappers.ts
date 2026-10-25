@@ -84,9 +84,9 @@ export function unitOrder(a: string, b: string): number {
 
 export function toUnits(files: CourseFile[]): CourseUnitDto[] {
   const byUnit = new Map<string, CourseFile[]>();
-  for (const f of [...files].filter(isReaderReady).sort(
-    (a, b) => compareUnits(a, b) || a.sort - b.sort || a.name.localeCompare(b.name),
-  )) {
+  for (const f of [...files]
+    .filter(isReaderReady)
+    .sort((a, b) => compareUnits(a, b) || a.sort - b.sort || a.name.localeCompare(b.name))) {
     const list = byUnit.get(f.unitKey) ?? [];
     list.push(f);
     byUnit.set(f.unitKey, list);

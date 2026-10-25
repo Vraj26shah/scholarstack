@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { R2ManifestConversionQueue } from '../src/infrastructure/r2-conversion-queue';
 
-const callbackUrl = 'https://scholars-stack.ss-api.workers.dev/api/internal/conversion';
+const callbackUrl = 'https://scholarstack.workers.dev/api/internal/conversion';
 
 describe('R2 conversion manifest queue', () => {
   it('stores one durable manifest for the scoped jobs without calling GitHub from the Worker', async () => {

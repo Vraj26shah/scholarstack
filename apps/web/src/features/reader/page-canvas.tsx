@@ -6,19 +6,41 @@ import { useLayoutEffect } from 'react';
  * Draws a scrambled page back into order on a canvas, then paints the reader's
  * watermark into the same pixels. No <img> or file URL ever exists in the page.
  */
+/**
+ * Put a scrambled page's tiles back in order ahead of time (while the reader is still on
+ * an earlier page), so turning to it only has to paint one image. Returns null where
+ * OffscreenCanvas is missing; the canvas then reorders the tiles itself.
+ */
+export async function preassemble(bitmap: ImageBitmap, seed: string): Promise<ImageBitmap | null> {
+  if (typeof OffscreenCanvas === 'undefined' || !seed) return null;
+  const tw = Math.floor(bitmap.width / TILE_GRID);
+  const th = Math.floor(bitmap.height / TILE_GRID);
+  const off = new OffscreenCanvas(tw * TILE_GRID, th * TILE_GRID);
+  const ctx = off.getContext('2d');
+  if (!ctx) return null;
+  for (const m of unscrambleMoves(seed)) {
+    ctx.drawImage(bitmap, m.fromCol * tw, m.fromRow * th, tw, th, m.toCol * tw, m.toRow * th, tw, th);
+  }
+  return off.transferToImageBitmap();
+}
+
 export function PageCanvas({
   bitmap,
   seed,
+  ordered = false,
   watermark,
   night,
-  zoom,
+  width,
   canvasRef,
 }: {
   bitmap: ImageBitmap | null;
   seed: string;
+  /** The bitmap's tiles are already in order (see preassemble). */
+  ordered?: boolean;
   watermark: string;
   night: boolean;
-  zoom: number;
+  /** Display width in CSS pixels (the bitmap keeps its full resolution). */
+  width: number;
   canvasRef: RefObject<HTMLCanvasElement | null>;
 }) {
   useLayoutEffect(() => {
@@ -26,17 +48,19 @@ export function PageCanvas({
     if (!canvas || !bitmap || !seed) return;
     const w = bitmap.width;
     const h = bitmap.height;
-    const tw = Math.floor(w / TILE_GRID);
-    const th = Math.floor(h / TILE_GRID);
+    const tw = ordered ? w / TILE_GRID : Math.floor(w / TILE_GRID);
+    const th = ordered ? h / TILE_GRID : Math.floor(h / TILE_GRID);
     canvas.width = tw * TILE_GRID;
     canvas.height = th * TILE_GRID;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    for (const m of unscrambleMoves(seed)) {
-      ctx.drawImage(bitmap, m.fromCol * tw, m.fromRow * th, tw, th, m.toCol * tw, m.toRow * th, tw, th);
-    }
+    if (ordered) ctx.drawImage(bitmap, 0, 0);
+    else
+      for (const m of unscrambleMoves(seed)) {
+        ctx.drawImage(bitmap, m.fromCol * tw, m.fromRow * th, tw, th, m.toCol * tw, m.toRow * th, tw, th);
+      }
     // Watermark baked into the pixels, diagonally repeated.
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
@@ -49,7 +73,7 @@ export function PageCanvas({
       ctx.fillText(watermark, 0, y);
     }
     ctx.restore();
-  }, [bitmap, seed, watermark, canvasRef]);
+  }, [bitmap, seed, ordered, watermark, canvasRef]);
 
   return (
     <canvas
@@ -58,9 +82,10 @@ export function PageCanvas({
       aria-label="Note page"
       onContextMenu={(e) => e.preventDefault()}
       onDragStart={(e) => e.preventDefault()}
-      className="reader-note-canvas block max-w-full h-auto rounded-md no-select shadow-[0_34px_60px_-34px_var(--shadow),0_0_0_1px_var(--line)] bg-white"
+      draggable={false}
+      className="reader-note-canvas block h-auto max-w-none rounded-md no-select shadow-[0_34px_60px_-34px_var(--shadow),0_0_0_1px_var(--line)] bg-white"
       style={{
-        width: `${Math.round(660 * zoom)}px`,
+        width: `${Math.round(width)}px`,
         filter: night ? 'invert(0.88) hue-rotate(180deg) contrast(0.95)' : 'none',
       }}
     />

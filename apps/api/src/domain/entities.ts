@@ -1,3 +1,4 @@
+import type { ContributionReward, SupportStatus, SupportTopic } from '@ss/contracts';
 import type {
   AnnouncementStatus,
   ConversionStage,
@@ -18,6 +19,8 @@ export interface Principal {
 
 export interface Batch {
   year: number;
+  /** False hides the year from the catalogue. Missing means shown. */
+  visible?: boolean;
 }
 
 export interface Branch {
@@ -48,6 +51,45 @@ export interface Course {
   r2Prefix: string;
   pricePaise: number;
   status: CourseStatus;
+  /** Term end: purchases made while this is set give access until then. */
+  accessUntil?: Date | null;
+  /** The term's name shown to students, e.g. "Sem 5 · Winter 2026". */
+  termLabel?: string;
+}
+
+/** One student's access to one course, with its whole history state. */
+export interface AccessRecord {
+  userId: string;
+  courseId: string;
+  email: string;
+  fullName: string | null;
+  grantedAt: Date;
+  expiresAt: Date | null;
+  revokedAt: Date | null;
+  revokeReason: 'admin' | 'dispute' | null;
+  /** purchase: paid order. admin: given by an admin without payment. */
+  grantedBy: 'purchase' | 'admin';
+}
+
+/** An access whose end has passed and whose student hasn't been emailed about it yet. */
+export interface EndedAccess {
+  userId: string;
+  email: string;
+  fullName: string | null;
+  courseId: string;
+  courseTitle: string;
+  courseSlug: string;
+  expiresAt: Date;
+}
+
+export type AccessChange = { kind: 'block' } | { kind: 'restore' } | { kind: 'until'; until: Date | null };
+
+/** active: can read now. ended: the access period is over. blocked: an admin (or a lost
+ *  dispute) took it away. */
+export function accessState(r: Pick<AccessRecord, 'expiresAt' | 'revokedAt' | 'revokeReason'>, now: Date) {
+  if (r.revokedAt) return r.revokeReason === 'dispute' ? ('disputed' as const) : ('blocked' as const);
+  if (r.expiresAt && r.expiresAt.getTime() <= now.getTime()) return 'ended' as const;
+  return 'active' as const;
 }
 
 export interface CourseFile {
@@ -119,6 +161,8 @@ export interface Announcement {
   ctaLabel: string;
   ctaUrl: string;
   featureKey: string | null;
+  /** Only this course's students get it (e.g. "new notes added"); null = every opted-in student. */
+  courseId?: string | null;
   status: AnnouncementStatus;
   recipients: number;
   sent: number;
@@ -221,4 +265,100 @@ export interface FileUpsert {
   sourceKey: string;
   sourceEtag: string;
   sort: number;
+}
+
+/** A student's upload of their own notes, waiting for or after the admin's review. */
+export interface Contribution {
+  id: string;
+  userId: string;
+  title: string;
+  courseHint: string;
+  kind: 'notes' | 'pyq' | 'slides' | 'lab' | 'other';
+  description: string;
+  files: { index: number; key: string; name: string; size: number; type: string }[];
+  totalBytes: number;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewNote: string;
+  reward: ContributionReward | null;
+  rewardPaidAt?: Date | null;
+  rewardPaidNote?: string;
+  reviewedBy: string | null;
+  reviewedAt: Date | null;
+  createdAt: Date;
+}
+
+/** One row per course: what it sold and what its contributor has earned and been paid. */
+export interface CourseEarningRow {
+  courseId: string;
+  sales: number;
+  buyers: number;
+  revenuePaise: number;
+  lastSaleAt: Date | null;
+  freeAccess: number;
+  readingNow: number;
+  /** Sales and revenue since the royalty started (zero when there is no royalty). */
+  royaltySales: number;
+  royaltyRevenuePaise: number;
+  /** Paid so far to this course's royalty holder. */
+  paidOutPaise: number;
+}
+
+export interface CourseRoyalty {
+  courseId: string;
+  userId: string;
+  sharePercent: number;
+  since: Date;
+  contributionId: string | null;
+  createdBy: string;
+}
+
+export interface RoyaltyPayout {
+  id: string;
+  courseId: string;
+  userId: string;
+  amountPaise: number;
+  note: string;
+  paidAt: Date;
+  recordedBy: string;
+}
+
+export interface StoredFile {
+  index: number;
+  key: string;
+  name: string;
+  size: number;
+  type: string;
+}
+
+export interface SupportMessage {
+  id: string;
+  fromAdmin: boolean;
+  author: string;
+  body: string;
+  createdAt: Date;
+}
+
+export interface SupportQuery {
+  id: string;
+  userId: string;
+  topic: SupportTopic;
+  subject: string;
+  page: string;
+  status: SupportStatus;
+  files: StoredFile[];
+  messages: SupportMessage[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** An access that ends soon and whose student hasn't been reminded yet. */
+export interface EndingAccess {
+  userId: string;
+  email: string;
+  fullName: string | null;
+  courseId: string;
+  courseTitle: string;
+  courseSlug: string;
+  expiresAt: Date;
+  termLabel: string;
 }

@@ -1,6 +1,13 @@
 import { ClaimDeviceBody, EmailPrefsBody, UpdateProfileBody } from '@ss/contracts';
 import { Hono } from 'hono';
-import { type AppEnv, authenticate, cookieDeviceId, requireLive, setDeviceCookie } from '../helpers';
+import {
+  type AppEnv,
+  authenticate,
+  cookieDeviceId,
+  requireLive,
+  setDeviceCookie,
+  throttle,
+} from '../helpers';
 
 export const meRoutes = new Hono<AppEnv>();
 
@@ -21,6 +28,7 @@ meRoutes.get('/me', async (c) => {
 
 meRoutes.patch('/me', async (c) => {
   const { principal, deviceId } = await requireLive(c);
+  await throttle(c, 'profile', principal.userId);
   const { fullName } = UpdateProfileBody.parse(await c.req.json());
   const container = c.get('container');
   await container.account.updateName(principal, fullName);
@@ -29,6 +37,7 @@ meRoutes.patch('/me', async (c) => {
 
 meRoutes.put('/me/email', async (c) => {
   const { principal, deviceId } = await requireLive(c);
+  await throttle(c, 'profile', principal.userId);
   const { emailOptIn } = EmailPrefsBody.parse(await c.req.json());
   const container = c.get('container');
   await container.account.setEmailOptIn(principal, emailOptIn);
@@ -37,6 +46,7 @@ meRoutes.put('/me/email', async (c) => {
 
 meRoutes.delete('/me/devices/:id', async (c) => {
   const principal = await authenticate(c);
+  await throttle(c, 'devices', principal.userId);
   const container = c.get('container');
   const deviceId = await cookieDeviceId(c);
   await container.account.assertCanManageDevices(principal, deviceId);

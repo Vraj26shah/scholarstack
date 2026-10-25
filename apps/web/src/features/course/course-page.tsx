@@ -1,19 +1,32 @@
 import type { CourseDetailDto, CourseUnitDto } from '@ss/contracts';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { fileFormatLabel, formatBytes, formatRupees, formatsLabel } from '../../lib/format';
+import { prefetchChunk } from '../../lib/prefetch';
 import { useSession } from '../../lib/session';
 
-import { Pill, Stamp } from '../../shared/ui/brand';
+import { Ambient } from '../../shared/ui/ambient';
+import { Hl, Pill, Stamp } from '../../shared/ui/brand';
 import { Button, LinkButton } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
-import { ArrowRight, Check, Cross, Lock } from '../../shared/ui/icons';
+import { ArrowRight, Check, Cross, Devices, FilePlus, Lock, ShelfIcon } from '../../shared/ui/icons';
+import { U } from '../../shared/ui/note';
+import { PaymentProblem } from '../checkout/payment-problem';
 import { useBuy } from '../checkout/use-buy';
 import { PreviewGallery } from './preview-gallery';
 import { ReadingList } from './reading-list';
+
+/** "87 days left", "Last day today". */
+function daysLeft(iso: string) {
+  const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+  return days <= 0 ? 'Ends today' : days === 1 ? '1 day left' : `${days} days left`;
+}
+
+const longDay = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -45,7 +58,7 @@ function Unit({
           {unit.title}
         </span>
         <span className="font-mono text-[13px] text-ink2">
-          {unit.fileCount} {unit.fileCount === 1 ? 'FILE' : 'FILES'} · {unit.pageCount} PP
+          {unit.fileCount} {unit.fileCount === 1 ? 'file' : 'files'} · {unit.pageCount} pages
         </span>
         <span
           aria-hidden="true"
@@ -115,11 +128,12 @@ function CheckoutPanel({
 
   return (
     <div className="flex flex-col gap-4 lg:sticky lg:top-6">
-      <div className="bg-brand text-white rounded-[30px] p-7 flex flex-col gap-5">
-        <span className="font-mono text-xs tracking-[0.14em] text-on-brand2">
-          {course.owned ? 'ON YOUR SHELF' : 'CHECK OUT THIS CARD'}
+      <div className="relative overflow-hidden bg-brand text-white rounded-[30px] p-7 flex flex-col gap-5">
+        <Ambient tone="navy" layout="card" />
+        <span className="relative font-mono text-xs tracking-[0.14em] text-on-brand2">
+          {course.owned ? 'On your shelf' : 'Check out this card'}
         </span>
-        <div className="flex items-center gap-4">
+        <div className="relative flex items-center gap-4">
           <Stamp
             label={formatRupees(course.pricePaise)}
             ring="WHOLE COURSE · ONE TIME · "
@@ -138,47 +152,77 @@ function CheckoutPanel({
             </span>
           </div>
         </div>
-        <ul className="list-none m-0 p-0 flex flex-col gap-3 text-[15px]">
-          <li className="flex gap-2.5">
-            <Check size={18} className="text-mist flex-none" /> All {course.fileCount} files on your shelf
-          </li>
-          <li className="flex gap-2.5">
-            <Check size={18} className="text-mist flex-none" /> Phone or laptop, up to 2 devices
-          </li>
-          <li className="flex gap-2.5">
-            <Check size={18} className="text-mist flex-none" /> New files added to this course included
-          </li>
-          <li className="flex gap-2.5 text-on-brand2">
-            <Cross size={18} className="flex-none" /> Read-only, no downloads
-          </li>
+        {/* A borrower slip: ticked lines, not icon badges. */}
+        <ul className="relative list-none m-0 p-0 flex flex-col text-[15px]">
+          {[
+            `All ${course.fileCount} files on your shelf`,
+            'Phone or laptop, up to 2 devices',
+            'New files added to this course included',
+            'Read here only: your name on every page',
+          ].map((text, i) => (
+            <li
+              key={text}
+              className={`pop-in flex items-baseline gap-3 py-2 border-b border-dashed border-white/20 last:border-b-0 ${i === 3 ? 'text-on-brand2' : ''}`}
+              style={{ ['--delay' as string]: `${0.35 + i * 0.09}s` }}
+            >
+              <span aria-hidden="true" className="font-mono text-[13px] text-mist w-4 flex-none">
+                {i === 3 ? '※' : '✓'}
+              </span>
+              {text}
+            </li>
+          ))}
         </ul>
-        {course.owned ? (
-          firstFile ? (
-            <LinkButton to={`/read/${firstFile.id}`} variant="mist" size="lg">
-              Start reading <ArrowRight size={18} />
-            </LinkButton>
-          ) : null
-        ) : (
-          <Button variant="buy" size="lg" onClick={buy} disabled={busy}>
-            {busy
-              ? 'Opening payment…'
-              : signedIn
-                ? `Buy for ${formatRupees(course.pricePaise)}`
-                : 'Sign in to buy'}{' '}
-            <ArrowRight size={18} />
-          </Button>
-        )}
-        {error && (
-          <p role="alert" className="m-0 text-sm bg-blush text-blush-text rounded-xl px-3 py-2">
-            {error}
-          </p>
-        )}
-        {!course.owned && (
-          <span className="text-[13px] leading-relaxed text-on-brand2">
-            UPI, cards and netbanking via Razorpay. All sales are final, so peek at page one of every unit
-            first.
-          </span>
-        )}
+        <div className="relative flex flex-col gap-3">
+          {course.owned ? (
+            firstFile ? (
+              <LinkButton to={`/read/${firstFile.id}`} variant="mist" size="lg">
+                Start reading <ArrowRight size={18} />
+              </LinkButton>
+            ) : null
+          ) : (
+            <Button variant="buy" size="lg" onClick={buy} disabled={busy}>
+              {busy
+                ? 'Opening payment…'
+                : signedIn
+                  ? `Buy for ${formatRupees(course.pricePaise)}`
+                  : 'Sign in to buy'}{' '}
+              <ArrowRight size={18} />
+            </Button>
+          )}
+          {error && (
+            <p role="status" className="m-0 text-sm bg-blush text-blush-text rounded-xl px-3 py-2">
+              {error}
+            </p>
+          )}
+          <PaymentProblem problem={buyState.problem} onRetry={buy} onClose={buyState.dismiss} />
+          {course.owned && course.yourAccessUntil && (
+            <span className="text-[13px] leading-relaxed text-on-brand2">
+              <Hl onDark>{daysLeft(course.yourAccessUntil)}</Hl> · yours until{' '}
+              {longDay(course.yourAccessUntil)}.
+            </span>
+          )}
+          {!course.owned && (
+            <span className="text-[13px] leading-relaxed text-on-brand2">
+              <Hl onDark>{course.accessMonths} months of access</Hl> from the day you buy. UPI, cards and
+              netbanking via Razorpay. <Hl onDark>All sales are final</Hl>, so peek at page one of every unit
+              first.
+            </span>
+          )}
+          {!course.owned && (
+            <p className="m-0 text-[13px] leading-relaxed text-on-brand2">
+              Syllabi change, so <U onDark>check these units against your current syllabus</U> before buying.{' '}
+              <Link to="/terms#syllabus" className="text-mist">
+                Terms
+              </Link>
+            </p>
+          )}
+          <Link
+            to={`/help?topic=notes&page=${encodeURIComponent(`/c/${course.slug}`)}`}
+            className="self-start text-[13px] font-semibold text-on-brand2 hover:text-white"
+          >
+            Something wrong with these notes? Tell us
+          </Link>
+        </div>
       </div>
 
       {bundle && !course.owned && (
@@ -190,7 +234,7 @@ function CheckoutPanel({
           <span className="flex flex-col gap-3 p-5 pl-6">
             <span className="flex items-center justify-between gap-3">
               <span className="font-mono text-[11px] font-semibold tracking-[0.12em] text-marigold-text">
-                BETTER TOGETHER
+                Better together
               </span>
               <Pill>
                 Save {formatRupees(Math.max(0, bundle.listPricePaise - bundle.pricePaise))} ·{' '}
@@ -224,6 +268,10 @@ export function CoursePage() {
   const { slug = '' } = useParams();
   const { status } = useSession();
   const q = useQuery({ queryKey: ['course', slug, status], queryFn: () => api.course(slug) });
+  // Owners will open the reader next: fetch its code while they look at the page.
+  useEffect(() => {
+    if (q.data?.owned) prefetchChunk('reader');
+  }, [q.data?.owned]);
   const [open, setOpen] = useState<number | null>(null);
 
   if (q.isLoading)
@@ -264,27 +312,27 @@ function CourseView({
     <Page wide>
       <nav
         aria-label="Breadcrumb"
-        className="flex flex-wrap items-center gap-2.5 font-mono text-[13px] text-ink2 mb-6 mt-2"
+        className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[13px] sm:text-[14px] text-ink2 mb-6 mt-2"
       >
         <Link
           to={`/?batch=${c.batchYear}&branch=${c.branchSlug}#catalogue`}
           className="text-ink2 no-underline"
         >
-          DRAWER {c.batchYear}
+          Drawer {c.batchYear}
         </Link>
         <span aria-hidden="true">→</span>
         <Link
           to={`/?batch=${c.batchYear}&branch=${c.branchSlug}#catalogue`}
-          className="text-ink2 no-underline uppercase"
+          className="text-ink2 no-underline"
         >
-          TAB: {c.branchName}
+          {c.branchName}
         </Link>
         <span aria-hidden="true">→</span>
-        <span className="text-ink">CARD {c.callNo}</span>
+        <span className="text-ink">Card {c.callNo}</span>
       </nav>
 
       <article
-        className="ruled relative rounded-[20px] p-6 sm:p-[26px_36px_64px] shadow-[0_30px_60px_-36px_var(--shadow),0_0_0_1px_var(--line)]"
+        className="ruled relative rounded-[20px] p-[24px_24px_56px] sm:p-[26px_36px_64px] shadow-[0_30px_60px_-36px_var(--shadow),0_0_0_1px_var(--line)]"
         style={{ backgroundPosition: '0 92px' }}
       >
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-3 pb-4 border-b-[3px] border-card-head font-mono">
@@ -321,7 +369,7 @@ function CourseView({
             <h2 className="m-0 font-display font-extrabold text-[clamp(32px,4vw,44px)] tracking-[-0.045em] leading-none">
               What's in the card
             </h2>
-            <span className="font-mono text-[13px] text-ink2">TAP A UNIT TO PEEK</span>
+            <span className="text-sm text-ink2">Tap a unit to peek</span>
           </div>
           <div className="flex flex-col gap-2.5">
             {c.units.map((u, i) => (

@@ -1,12 +1,15 @@
 import type { BatchDto, BranchDto } from '@ss/contracts';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
+import { LABEL } from '../../shared/copy';
 import { StackWord } from '../../shared/ui/brand';
 import { LinkButton } from '../../shared/ui/button';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
-import { BundleBox, IndexCard } from '../../shared/ui/index-card';
+import { BundleGrid, IndexCard } from '../../shared/ui/index-card';
 import { Reveal } from '../../shared/ui/motion';
+import { CatalogueSearchBox, CatalogueSearchResults } from './catalogue-search';
 
 function Drawer({ batch, selected, onPick }: { batch: BatchDto; selected: boolean; onPick: () => void }) {
   return (
@@ -21,7 +24,7 @@ function Drawer({ batch, selected, onPick }: { batch: BatchDto; selected: boolea
       }`}
     >
       <span className="bg-white text-on-mist border-2 border-on-mist/25 rounded-md px-3 py-1 font-mono text-xs font-semibold">
-        {batch.year} BATCH
+        {batch.year} batch
       </span>
       <span className="flex flex-col items-center gap-0.5">
         <span className="font-display font-extrabold text-[32px] leading-none tracking-[-0.04em]">
@@ -82,7 +85,9 @@ function BranchTabs({
 }
 
 export function CatalogueSection() {
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const index = useQuery({ queryKey: ['catalogue'], queryFn: api.catalogue, staleTime: 60_000 });
 
   const batches = index.data?.batches ?? [];
@@ -93,15 +98,53 @@ export function CatalogueSection() {
   const selectedBranch = branches.find((b) => b.slug === branch);
   const branchName = selectedBranch?.name ?? branch;
 
+  const urlQuery = params.get('q') ?? '';
+  const [draft, setDraft] = useState(urlQuery);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const [query, setQuery] = useState(urlQuery.trim());
+
+  const patchParams = useCallback(
+    (mutate: (next: URLSearchParams) => void) => {
+      const next = new URLSearchParams(window.location.search);
+      const before = next.toString();
+      mutate(next);
+      const search = next.toString();
+      if (search === before) return;
+      navigate(
+        {
+          pathname: location.pathname,
+          search: search ? `?${search}` : '',
+          hash: location.hash || window.location.hash,
+        },
+        { replace: true, preventScrollReset: true },
+      );
+    },
+    [location.hash, location.pathname, navigate],
+  );
+
+  useEffect(() => {
+    if (urlQuery !== draftRef.current && urlQuery !== draftRef.current.trim()) setDraft(urlQuery);
+  }, [urlQuery]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const trimmed = draft.trim();
+      setQuery(trimmed);
+      patchParams((p) => {
+        if (trimmed) p.set('q', trimmed);
+        else p.delete('q');
+      });
+    }, 220);
+    return () => clearTimeout(t);
+  }, [draft, patchParams]);
+
   const pick = (next: { batch?: number; branch?: string }) =>
-    setParams(
-      (p) => {
-        p.set('batch', String(next.batch ?? batch));
-        p.set('branch', next.branch ?? branch);
-        return p;
-      },
-      { replace: true, preventScrollReset: true },
-    );
+    patchParams((p) => {
+      p.set('batch', String(next.batch ?? batch));
+      p.set('branch', next.branch ?? branch);
+    });
+  const searching = draft.trim().length >= 2;
 
   const drawer = useQuery({
     queryKey: ['drawer', batch, branch],
@@ -121,13 +164,11 @@ export function CatalogueSection() {
     <section
       id="catalogue"
       aria-labelledby="catalogue-title"
-      className="mx-auto max-w-[1280px] px-5 sm:px-9 pt-20 pb-24"
+      className="mx-auto max-w-[1280px] px-5 sm:px-9 pt-20 pb-24 [overflow-anchor:none]"
     >
       <div className="flex flex-wrap items-end justify-between gap-5 mb-10">
         <div>
-          <p className="font-mono text-[13px] tracking-[0.14em] text-teal-text m-0 mb-3.5">
-            01 — THE CATALOGUE
-          </p>
+          <p className="font-mono text-[13px] tracking-[0.14em] text-teal-text m-0 mb-3.5">The catalogue</p>
           <h2
             id="catalogue-title"
             className="m-0 font-display font-extrabold text-[clamp(48px,7vw,84px)] leading-[0.95] tracking-[-0.05em]"
@@ -149,96 +190,101 @@ export function CatalogueSection() {
         />
       ) : (
         <>
-          <div
-            className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 pt-4"
-            role="group"
-            aria-label="Batch year"
-          >
-            {index.isLoading
-              ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-40" />)
-              : batches.map((b, i) => (
-                  <Reveal key={b.year} index={i}>
-                    <Drawer batch={b} selected={b.year === batch} onPick={() => pick({ batch: b.year })} />
-                  </Reveal>
-                ))}
-          </div>
-
-          <div className="mt-9 bg-surface border border-line rounded-[30px] p-5 sm:p-[26px_30px_40px]">
-            {index.isLoading ? (
-              <Skeleton className="h-12" />
-            ) : (
-              <BranchTabs branches={branches} selected={branch} onPick={(s) => pick({ branch: s })} />
-            )}
-
-            <div className="flex flex-wrap items-baseline justify-between gap-2 my-7">
-              <div>
-                <div className="font-display font-extrabold text-[clamp(26px,3.4vw,36px)] leading-none tracking-[-0.04em]">
-                  Drawer {batch || '…'} · {branchName}
-                </div>
-                {current && (
-                  <div className="text-[15px] text-ink2 mt-2">
-                    {current.label}, {current.semesters}
-                  </div>
-                )}
-                {selectedBranch?.tagline && (
-                  <p className="m-0 text-sm text-ink2 mt-2 max-w-[680px]">
-                    <span className="font-semibold text-ink">{selectedBranch.tagline}.</span>{' '}
-                    {selectedBranch.description}
-                  </p>
-                )}
+          <CatalogueSearchBox value={draft} onChange={setDraft} />
+          {searching ? (
+            <CatalogueSearchResults query={query} batches={batches} onPick={setDraft} />
+          ) : (
+            <>
+              <div
+                className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 pt-8"
+                role="group"
+                aria-label="Batch year"
+              >
+                {index.isLoading
+                  ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-40" />)
+                  : batches.map((b, i) => (
+                      <Reveal key={b.year} index={i}>
+                        <Drawer
+                          batch={b}
+                          selected={b.year === batch}
+                          onPick={() => pick({ batch: b.year })}
+                        />
+                      </Reveal>
+                    ))}
               </div>
-              {drawer.data && (
-                <span className="font-mono text-[13px] tracking-[0.1em] text-ink2">
-                  {drawer.data.length} {drawer.data.length === 1 ? 'CARD' : 'CARDS'}
-                </span>
-              )}
-            </div>
 
-            {bundles.data && bundles.data.length > 0 && (
-              <div className="mb-7 grid gap-4" key={`b-${batch}`}>
-                {bundles.data.map((b) => (
-                  <div key={b.id} className="deal-in">
-                    <BundleBox bundle={b} />
+              <div className="mt-9 bg-surface border border-line rounded-[30px] p-5 sm:p-[26px_30px_40px]">
+                {index.isLoading ? (
+                  <Skeleton className="h-12" />
+                ) : (
+                  <BranchTabs branches={branches} selected={branch} onPick={(s) => pick({ branch: s })} />
+                )}
+
+                <div className="flex flex-wrap items-baseline justify-between gap-2 my-7">
+                  <div>
+                    <div className="font-display font-extrabold text-[clamp(26px,3.4vw,36px)] leading-none tracking-[-0.04em]">
+                      Drawer {batch || '…'} · {branchName}
+                    </div>
+                    {current && (
+                      <div className="text-[15px] text-ink2 mt-2">
+                        {current.label}, {current.semesters}
+                      </div>
+                    )}
+                    {selectedBranch?.tagline && (
+                      <p className="m-0 text-sm text-ink2 mt-2 max-w-[680px]">
+                        <span className="font-semibold text-ink">{selectedBranch.tagline}.</span>{' '}
+                        {selectedBranch.description}
+                      </p>
+                    )}
                   </div>
-                ))}
-              </div>
-            )}
+                  {drawer.data && (
+                    <span className="text-sm text-ink2">
+                      {drawer.data.length} {drawer.data.length === 1 ? 'card' : 'cards'}
+                    </span>
+                  )}
+                </div>
 
-            <div id="drawer-cards" role="tabpanel" aria-live="polite">
-              {drawer.isLoading || index.isLoading ? (
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-6">
-                  {[0, 1, 2].map((i) => (
-                    <Skeleton key={i} className="h-60" />
-                  ))}
+                {bundles.data && bundles.data.length > 0 && (
+                  <BundleGrid key={`b-${batch}`} bundles={bundles.data} className="mb-8" />
+                )}
+
+                <div id="drawer-cards" role="tabpanel" aria-live="polite">
+                  {drawer.isLoading || index.isLoading ? (
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-6">
+                      {[0, 1, 2].map((i) => (
+                        <Skeleton key={i} className="h-60" />
+                      ))}
+                    </div>
+                  ) : drawer.isError ? (
+                    <ErrorState
+                      title="These cards didn't load."
+                      message={friendly(drawer.error)}
+                      onRetry={() => drawer.refetch()}
+                    />
+                  ) : drawer.data && drawer.data.length > 0 ? (
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-6">
+                      {drawer.data.map((c, i) => (
+                        <IndexCard key={c.id} course={c} index={i} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="min-h-[220px] rounded-2xl border-2 border-dashed border-line flex flex-col items-center justify-center gap-3 text-center p-8">
+                      <span className="font-display font-extrabold text-[34px] tracking-[-0.04em]">
+                        This tab is empty, for now.
+                      </span>
+                      <span className="text-ink2 max-w-[480px]">
+                        No {branchName} cards in this drawer yet. Wrote good notes for this branch? Send them
+                        in and we'll file them.
+                      </span>
+                      <LinkButton to="/contribute" variant="brand">
+                        {LABEL.upload}
+                      </LinkButton>
+                    </div>
+                  )}
                 </div>
-              ) : drawer.isError ? (
-                <ErrorState
-                  title="These cards didn't load."
-                  message={friendly(drawer.error)}
-                  onRetry={() => drawer.refetch()}
-                />
-              ) : drawer.data && drawer.data.length > 0 ? (
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-6">
-                  {drawer.data.map((c, i) => (
-                    <IndexCard key={c.id} course={c} index={i} />
-                  ))}
-                </div>
-              ) : (
-                <div className="min-h-[220px] rounded-2xl border-2 border-dashed border-line flex flex-col items-center justify-center gap-3 text-center p-8">
-                  <span className="font-display font-extrabold text-[34px] tracking-[-0.04em]">
-                    This tab is empty, for now.
-                  </span>
-                  <span className="text-ink2 max-w-[480px]">
-                    No {branchName} cards in this drawer yet. Wrote good notes for this branch? Send them in
-                    and we'll file them.
-                  </span>
-                  <LinkButton to="/contact" variant="brand">
-                    Share your notes
-                  </LinkButton>
-                </div>
-              )}
-            </div>
-          </div>
+              </div>
+            </>
+          )}
         </>
       )}
     </section>

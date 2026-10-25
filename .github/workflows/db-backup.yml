@@ -6,22 +6,30 @@ on:
     - cron: '41 21 * * *' # 03:11 IST
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   backup:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      DB_URL: ${{ secrets.SUPABASE_DB_URL }}
     steps:
+      - name: Skip when no database URL is set
+        if: env.DB_URL == ''
+        run: echo "::notice::Add SUPABASE_DB_URL (Supabase → Connect → Session pooler) to turn on nightly backups."
       - uses: supabase/setup-cli@v1
+        if: env.DB_URL != ''
         with: { version: latest }
       - name: Dump
+        if: env.DB_URL != ''
         run: |
           supabase db dump --db-url "$DB_URL" -f schema.sql
           supabase db dump --db-url "$DB_URL" --data-only -f data.sql
           gzip schema.sql data.sql
-        env:
-          # Supabase → Connect → Session pooler connection string (with the DB password)
-          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       - uses: actions/upload-artifact@v4
+        if: env.DB_URL != ''
         with:
           name: db-${{ github.run_id }}
           path: '*.sql.gz'

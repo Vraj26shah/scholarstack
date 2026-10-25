@@ -364,7 +364,7 @@ function AuditFileRow({
           >
             <strong>Supabase page map:</strong>
             <ul className="mb-0 mt-1 list-disc pl-5">
-              {file.pageMappingIssues.slice(0, 5).map((issue) => (
+              {file.pageMappingIssues.map((issue) => (
                 <li key={issue}>{issue}</li>
               ))}
               {file.pageMappingIssues.length > 5 && (
@@ -374,13 +374,12 @@ function AuditFileRow({
           </div>
         )}
         {file.missingPageNumbers.length > 0 && (
-          <details className="mt-1 text-xs text-blush-text">
+          <details open className="mt-1 text-xs text-blush-text">
             <summary className="cursor-pointer">
               {file.missingPageNumbers.length} page objects missing
             </summary>
             <p className="mb-0 mt-1 break-all font-mono">
-              Page numbers: {file.missingPageNumbers.slice(0, 50).join(', ')}
-              {file.missingPageNumbers.length > 50 ? `, +${file.missingPageNumbers.length - 50} more` : ''}
+              Page numbers: {file.missingPageNumbers.join(', ')}
             </p>
           </details>
         )}
@@ -1390,20 +1389,20 @@ function BucketInventoryPanel() {
           {scopeSyncResult.result.outcomes.some(
             (item) => item.status === 'failed' || item.status === 'review',
           ) && (
-            <details className="mt-2">
+            <details open className="mt-2">
               <summary className="cursor-pointer text-xs text-blush-text">Show file sync errors</summary>
               <ul className="m-0 mt-2 max-h-48 overflow-y-auto list-none rounded-lg bg-sunk p-2 flex flex-col gap-1 text-xs">
                 {scopeSyncResult.result.outcomes
                   .filter((item) => item.status === 'failed' || item.status === 'review')
                   .map((item) => (
                     <li key={`${item.courseId}:${item.key}`} className="break-all font-mono">
-                      {item.courseTitle} · {item.key} — {item.message ?? item.status}
+                      {item.courseTitle} · {item.key}: {item.message ?? item.status}
                     </li>
                   ))}
               </ul>
             </details>
           )}
-          <details className="mt-2 text-xs">
+          <details open className="mt-2 text-xs">
             <summary className="cursor-pointer">
               Show per-file results ({scopeSyncResult.result.outcomes.length})
             </summary>
@@ -1558,7 +1557,7 @@ function BucketInventoryPanel() {
                 {sync.data.skipped.length > 0 ? ` · ${sync.data.skipped.length} skipped` : ''}
               </p>
               {sync.data.skipped.length > 0 && (
-                <details className="mt-2 text-xs">
+                <details open className="mt-2 text-xs">
                   <summary className="cursor-pointer">Show skipped objects</summary>
                   <ul className="mb-0 mt-1 list-disc break-all pl-5">
                     {sync.data.skipped.map((entry) => (
@@ -1837,7 +1836,7 @@ function BucketInventoryPanel() {
           </details>
 
           {scan.complete && matchingFolders.length > 0 && (
-            <details className="rounded-xl border border-line bg-surface p-3 sm:p-4">
+            <details open className="rounded-xl border border-line bg-surface p-3 sm:p-4">
               <summary className="cursor-pointer font-semibold">
                 Source folders ({matchingFolders.length} of {folderSummary.length})
               </summary>

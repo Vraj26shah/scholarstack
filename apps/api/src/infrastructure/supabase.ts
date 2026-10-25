@@ -10,13 +10,17 @@ import type { ConversionReport } from '@ss/contracts';
 import { type SupabaseClient, createClient } from '@supabase/supabase-js';
 import { DeviceLimitReached } from '../domain/entities';
 import type {
+  AccessChange,
+  AccessRecord,
   ActiveSession,
   Announcement,
   Branch,
   Bundle,
+  Contribution,
   Course,
   CourseFile,
   Device,
+  EndedAccess,
   Feature,
   FileUpsert,
   Order,
@@ -31,29 +35,35 @@ import type {
   BundleRepository,
   CatalogueReader,
   CatalogueWriter,
+  ContributionRepository,
+  DatabaseHousekeeping,
   DeviceRepository,
   EmailQuota,
   EntitlementRepository,
   FeatureRepository,
   LeaseRepository,
   OrderRepository,
+  ProblemLog,
+  ProblemReport,
   ProfileRepository,
   ProgressRepository,
   RecipientSource,
   SessionRegistry,
+  SettingsRepository,
+  UploadStore,
 } from '../domain/ports';
 
 export function supabaseClient(url: string, secretKey: string): SupabaseClient {
   return createClient(url, secretKey, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-function must<T>(res: { data: T; error: { message: string } | null }): T {
+export function must<T>(res: { data: T; error: { message: string } | null }): T {
   // Upstream errors can be whole HTML pages (e.g. a firewall page): keep logs short.
   if (res.error) throw new Error(`Supabase: ${res.error.message.replace(/\s+/g, ' ').slice(0, 300)}`);
   return res.data;
 }
 
-type Row = Record<string, unknown>;
+export type Row = Record<string, unknown>;
 
 const toCourse = (r: Row): Course => ({
   id: r.id as string,
@@ -68,6 +78,8 @@ const toCourse = (r: Row): Course => ({
   r2Prefix: r.r2_prefix as string,
   pricePaise: r.price_paise as number,
   status: r.status as Course['status'],
+  accessUntil: r.access_until ? new Date(r.access_until as string) : null,
+  termLabel: (r.term_label as string) ?? '',
 });
 
 /** Files are always read with their unit (course_units) embedded. */
@@ -138,11 +150,13 @@ export class SupabaseCatalogue implements CatalogueReader, CatalogueWriter {
 
   async listBatches() {
     const [batchRows, liveRows] = await Promise.all([
-      this.db.from('batches').select('year').order('year', { ascending: false }),
+      this.db.from('batches').select('year, is_visible').order('year', { ascending: false }),
       this.db.from('courses').select('batch_year').eq('status', 'live'),
     ]);
     const years = new Set((must(liveRows) as Row[]).map((row) => row.batch_year as number));
-    return (must(batchRows) as { year: number }[]).filter((batch) => years.has(batch.year));
+    return (must(batchRows) as { year: number; is_visible: boolean | null }[])
+      .filter((batch) => batch.is_visible !== false && years.has(batch.year))
+      .map((batch) => ({ year: batch.year }));
   }
 
   async listBranches(): Promise<Branch[]> {
@@ -227,6 +241,39 @@ export class SupabaseCatalogue implements CatalogueReader, CatalogueWriter {
     );
   }
 
+  async moveCourseSource(
+    courseId: string,
+    newPrefix: string,
+    files: { fileId: string; sourceKey: string; sourceEtag: string }[],
+  ) {
+    must(
+      await this.db.rpc('move_course_source', {
+        p_course_id: courseId,
+        p_prefix: newPrefix,
+        p_files: files.map((f) => ({
+          file_id: f.fileId,
+          source_key: f.sourceKey,
+          source_etag: f.sourceEtag,
+        })),
+      }),
+    );
+  }
+
+  async deleteCourse(courseId: string) {
+    return must(await this.db.rpc('delete_course', { p_course_id: courseId })) as
+      | 'deleted'
+      | 'sold'
+      | 'not-found';
+  }
+  async deleteFiles(fileIds: string[]) {
+    let n = 0;
+    for (let i = 0; i < fileIds.length; i += 200)
+      n += Number(
+        must(await this.db.rpc('delete_course_files', { p_file_ids: fileIds.slice(i, i + 200) })) ?? 0,
+      );
+    return n;
+  }
+
   async updateCourse(courseId: string, patch: Partial<Omit<Course, 'id' | 'r2Prefix'>>) {
     if (!isUuid(courseId)) return null;
     if (patch.courseCode) await this.ensureSubject(patch.courseCode, patch.title);
@@ -242,8 +289,11 @@ export class SupabaseCatalogue implements CatalogueReader, CatalogueWriter {
       seq: 'seq',
       pricePaise: 'price_paise',
       status: 'status',
+      accessUntil: 'access_until',
+      termLabel: 'term_label',
     };
-    for (const [k, v] of Object.entries(patch)) if (v !== undefined && map[k]) cols[map[k]] = v;
+    for (const [k, v] of Object.entries(patch))
+      if (v !== undefined && map[k]) cols[map[k]] = v instanceof Date ? v.toISOString() : v;
     if (Object.keys(cols).length === 0) return this.findCourse(courseId);
     const row = must(
       await this.db.from('courses').update(cols).eq('id', courseId).select('*').maybeSingle(),
@@ -665,6 +715,12 @@ export class SupabaseCatalogue implements CatalogueReader, CatalogueWriter {
 
 export class SupabaseProfiles implements ProfileRepository {
   constructor(private readonly db: SupabaseClient) {}
+  async findByEmails(emails: string[]) {
+    const wanted = [...new Set(emails.map((e) => e.toLowerCase()))];
+    if (wanted.length === 0) return [];
+    const rows = must(await this.db.from('profiles').select('id, email').in('email', wanted)) as Row[];
+    return rows.map((r) => ({ id: r.id as string, email: (r.email as string).toLowerCase() }));
+  }
   async ensure(p: Principal): Promise<Profile> {
     const row = must(
       await this.db.from('profiles').select('*').eq('id', p.userId).maybeSingle(),
@@ -843,7 +899,12 @@ export class SupabaseOrders implements OrderRepository, EntitlementRepository {
   async revokeByPayment(gatewayPaymentId: string) {
     must(await this.db.rpc('revoke_by_payment', { p_gateway_payment_id: gatewayPaymentId }));
   }
+  /** Not blocked and not past its end. */
+  private notEnded() {
+    return `expires_at.is.null,expires_at.gt.${new Date().toISOString()}`;
+  }
   async has(userId: string, courseId: string) {
+    if (!isUuid(userId) || !isUuid(courseId)) return false;
     const row = must(
       await this.db
         .from('entitlements')
@@ -851,15 +912,209 @@ export class SupabaseOrders implements OrderRepository, EntitlementRepository {
         .eq('user_id', userId)
         .eq('course_id', courseId)
         .is('revoked_at', null)
+        .or(this.notEnded())
         .maybeSingle(),
     );
     return row !== null;
   }
   async listCourseIds(userId: string) {
+    if (!isUuid(userId)) return [];
     const rows = must(
-      await this.db.from('entitlements').select('course_id').eq('user_id', userId).is('revoked_at', null),
+      await this.db
+        .from('entitlements')
+        .select('course_id')
+        .eq('user_id', userId)
+        .is('revoked_at', null)
+        .or(this.notEnded()),
     ) as Row[];
     return rows.map((r) => r.course_id as string);
+  }
+  private static readonly ACCESS_SELECT =
+    'user_id, course_id, granted_at, expires_at, revoked_at, revoke_reason, granted_by, profiles(email, full_name)';
+  private toAccess(r: Row): AccessRecord {
+    const p = (Array.isArray(r.profiles) ? r.profiles[0] : r.profiles) as Row | null;
+    return {
+      userId: r.user_id as string,
+      courseId: r.course_id as string,
+      email: (p?.email as string) ?? '',
+      fullName: (p?.full_name as string | null) ?? null,
+      grantedAt: new Date(r.granted_at as string),
+      expiresAt: r.expires_at ? new Date(r.expires_at as string) : null,
+      revokedAt: r.revoked_at ? new Date(r.revoked_at as string) : null,
+      revokeReason: r.revoked_at ? ((r.revoke_reason as 'admin' | 'dispute' | null) ?? 'dispute') : null,
+      grantedBy: r.granted_by === 'admin' ? 'admin' : 'purchase',
+    };
+  }
+  async listForUser(userId: string) {
+    if (!isUuid(userId)) return [];
+    const rows = must(
+      await this.db.from('entitlements').select(SupabaseOrders.ACCESS_SELECT).eq('user_id', userId),
+    ) as Row[];
+    return rows.map((r) => this.toAccess(r));
+  }
+  async listForCourse(courseId: string) {
+    if (!isUuid(courseId)) return [];
+    const out: AccessRecord[] = [];
+    for (let from = 0; ; from += 1000) {
+      const rows = must(
+        await this.db
+          .from('entitlements')
+          .select(SupabaseOrders.ACCESS_SELECT)
+          .eq('course_id', courseId)
+          .order('granted_at', { ascending: false })
+          .range(from, from + 999),
+      ) as Row[];
+      out.push(...rows.map((r) => this.toAccess(r)));
+      if (rows.length < 1000) break;
+    }
+    return out;
+  }
+  async changeAccess(courseId: string, userIds: string[], change: AccessChange) {
+    const ids = [...new Set(userIds)].filter(isUuid);
+    if (!isUuid(courseId) || ids.length === 0) return 0;
+    const table = () => this.db.from('entitlements');
+    const q =
+      change.kind === 'block'
+        ? table()
+            .update({ revoked_at: new Date().toISOString(), revoke_reason: 'admin' })
+            .is('revoked_at', null)
+        : change.kind === 'restore'
+          ? // Only an admin block can be undone here; a lost bank dispute stays revoked.
+            table()
+              .update({ revoked_at: null, revoke_reason: null })
+              .eq('revoke_reason', 'admin')
+          : table()
+              .update({
+                expires_at: change.until ? change.until.toISOString() : null,
+                end_notified_at: null,
+                ending_notified_at: null,
+              })
+              .or('revoke_reason.is.null,revoke_reason.eq.admin');
+    const rows = must(await q.eq('course_id', courseId).in('user_id', ids).select('user_id')) as Row[];
+    return rows.length;
+  }
+  async listEndedUnnotified(limit: number) {
+    const rows = must(
+      await this.db
+        .from('entitlements')
+        .select('user_id, course_id, expires_at, profiles(email, full_name), courses(title, slug)')
+        .is('revoked_at', null)
+        .is('end_notified_at', null)
+        .not('expires_at', 'is', null)
+        .lte('expires_at', new Date().toISOString())
+        .order('expires_at', { ascending: true })
+        .limit(Math.max(1, Math.min(limit, 1000))),
+    ) as Row[];
+    const one = (v: unknown) => (Array.isArray(v) ? v[0] : v) as Row | null;
+    return rows
+      .map((r) => ({ r, p: one(r.profiles), c: one(r.courses) }))
+      .filter(({ p, c }) => p?.email && c?.title)
+      .map(({ r, p, c }) => ({
+        userId: r.user_id as string,
+        email: p!.email as string,
+        fullName: (p!.full_name as string | null) ?? null,
+        courseId: r.course_id as string,
+        courseTitle: c!.title as string,
+        courseSlug: c!.slug as string,
+        expiresAt: new Date(r.expires_at as string),
+      }));
+  }
+  async listEndingSoon(before: Date, limit: number) {
+    const rows = must(
+      await this.db.rpc('access_ending_soon', { p_before: before.toISOString(), p_limit: limit }),
+    ) as Row[];
+    return rows.map((r) => ({
+      userId: r.user_id as string,
+      email: r.email as string,
+      fullName: (r.full_name as string | null) ?? null,
+      courseId: r.course_id as string,
+      courseTitle: r.course_title as string,
+      courseSlug: r.course_slug as string,
+      expiresAt: new Date(r.expires_at as string),
+      termLabel: (r.term_label as string) ?? '',
+    }));
+  }
+  async addPendingGrants(courseId: string, emails: string[], until: Date | null, adminEmail: string) {
+    if (!isUuid(courseId) || emails.length === 0) return;
+    must(
+      await this.db.from('pending_grants').upsert(
+        emails.map((email) => ({
+          email,
+          course_id: courseId,
+          expires_at: until ? until.toISOString() : null,
+          granted_by_admin: adminEmail,
+        })),
+        { onConflict: 'email,course_id' },
+      ),
+    );
+  }
+  async markEndingNotified(items: { userId: string; courseId: string }[]) {
+    const stamp = new Date().toISOString();
+    const byCourse = new Map<string, string[]>();
+    for (const i of items) byCourse.set(i.courseId, [...(byCourse.get(i.courseId) ?? []), i.userId]);
+    for (const [courseId, userIds] of byCourse)
+      must(
+        await this.db
+          .from('entitlements')
+          .update({ ending_notified_at: stamp })
+          .eq('course_id', courseId)
+          .in('user_id', userIds),
+      );
+  }
+  async markEndNotified(items: { userId: string; courseId: string }[]) {
+    const stamp = new Date().toISOString();
+    const byCourse = new Map<string, string[]>();
+    for (const i of items) byCourse.set(i.courseId, [...(byCourse.get(i.courseId) ?? []), i.userId]);
+    for (const [courseId, userIds] of byCourse)
+      must(
+        await this.db
+          .from('entitlements')
+          .update({ end_notified_at: stamp })
+          .eq('course_id', courseId)
+          .in('user_id', userIds),
+      );
+  }
+  async grantByAdmin(courseId: string, userIds: string[], until: Date | null, adminEmail: string) {
+    const ids = [...new Set(userIds)].filter(isUuid);
+    if (!isUuid(courseId) || ids.length === 0) return 0;
+    const now = new Date().toISOString();
+    const rows = must(
+      await this.db
+        .from('entitlements')
+        .upsert(
+          ids.map((user_id) => ({
+            user_id,
+            course_id: courseId,
+            granted_at: now,
+            expires_at: until ? until.toISOString() : null,
+            revoked_at: null,
+            revoke_reason: null,
+            granted_by: 'admin',
+            granted_by_admin: adminEmail,
+            end_notified_at: null,
+            ending_notified_at: null,
+          })),
+          { onConflict: 'user_id,course_id' },
+        )
+        .select('user_id'),
+    ) as Row[];
+    return rows.length;
+  }
+  async applyTerm(courseId: string, until: Date | null) {
+    if (!isUuid(courseId)) return 0;
+    const rows = must(
+      await this.db
+        .from('entitlements')
+        .update({
+          expires_at: until ? until.toISOString() : null,
+          end_notified_at: null,
+          ending_notified_at: null,
+        })
+        .eq('course_id', courseId)
+        .is('revoked_at', null)
+        .select('user_id'),
+    ) as Row[];
+    return rows.length;
   }
 }
 
@@ -1025,6 +1280,7 @@ const toAnnouncement = (r: Row): Announcement => ({
   ctaLabel: (r.cta_label as string) ?? '',
   ctaUrl: (r.cta_url as string) ?? '',
   featureKey: (r.feature_key as string | null) ?? null,
+  courseId: (r.course_id as string | null) ?? null,
   status: r.status as Announcement['status'],
   recipients: r.recipients as number,
   sent: r.sent as number,
@@ -1050,11 +1306,16 @@ export class SupabaseAnnouncements implements AnnouncementRepository {
     ) as Row | null;
     return row ? toAnnouncement(row) : null;
   }
-  async create(a: Pick<Announcement, 'subject' | 'heading' | 'body' | 'ctaLabel' | 'ctaUrl' | 'featureKey'>) {
+  async create(
+    a: Pick<Announcement, 'subject' | 'heading' | 'body' | 'ctaLabel' | 'ctaUrl' | 'featureKey'> & {
+      courseId?: string | null;
+    },
+  ) {
     const row = must(
       await this.db
         .from('announcements')
         .insert({
+          course_id: a.courseId ?? null,
           subject: a.subject,
           heading: a.heading,
           body: a.body,
@@ -1075,6 +1336,7 @@ export class SupabaseAnnouncements implements AnnouncementRepository {
       ctaLabel: 'cta_label',
       ctaUrl: 'cta_url',
       featureKey: 'feature_key',
+      courseId: 'course_id',
       status: 'status',
       recipients: 'recipients',
       sent: 'sent',
@@ -1125,6 +1387,74 @@ export class SupabaseRecipients implements RecipientSource {
   }
 }
 
+export class SupabaseProblems implements ProblemLog {
+  constructor(private readonly db: SupabaseClient) {}
+  async record(p: Omit<ProblemReport, 'count' | 'firstAt' | 'lastAt'>) {
+    must(
+      await this.db.rpc('record_problem', {
+        p_fingerprint: p.fingerprint,
+        p_source: p.source,
+        p_kind: p.kind,
+        p_message: p.message,
+        p_path: p.path,
+        p_detail: p.detail,
+        p_user_agent: p.userAgent,
+      }),
+    );
+  }
+  async list(limit: number) {
+    const rows = must(
+      await this.db.from('problem_reports').select('*').order('last_at', { ascending: false }).limit(limit),
+    ) as Row[];
+    return rows.map((r) => ({
+      fingerprint: r.fingerprint as string,
+      source: r.source as 'browser' | 'server',
+      kind: r.kind as string,
+      message: r.message as string,
+      path: r.path as string,
+      detail: r.detail as string,
+      userAgent: r.user_agent as string,
+      count: r.count as number,
+      firstAt: new Date(r.first_at as string),
+      lastAt: new Date(r.last_at as string),
+    }));
+  }
+  async clear(fingerprints?: string[]) {
+    const q = this.db.from('problem_reports').delete();
+    const rows = must(
+      await (fingerprints ? q.in('fingerprint', fingerprints) : q.neq('fingerprint', '')).select(
+        'fingerprint',
+      ),
+    ) as Row[];
+    return rows.length;
+  }
+}
+
+export class SupabaseHousekeeping implements DatabaseHousekeeping {
+  constructor(private readonly db: SupabaseClient) {}
+  async tables() {
+    const rows = must(await this.db.rpc('storage_tables')) as Row[];
+    return rows.map((r) => ({
+      table: r.table_name as string,
+      rows: Number(r.row_count),
+      bytes: Number(r.total_bytes),
+    }));
+  }
+  async countAbandonedOrders(days: number) {
+    const { count, error } = await this.db
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['created', 'failed'])
+      .is('gateway_payment_id', null)
+      .lt('created_at', new Date(Date.now() - days * 86_400_000).toISOString());
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  }
+  async cleanAbandonedOrders(days: number) {
+    return must(await this.db.rpc('clean_abandoned_orders', { p_days: days })) as number;
+  }
+}
+
 export class SupabaseQuota implements EmailQuota {
   constructor(private readonly db: SupabaseClient) {}
   async usedOn(day: string) {
@@ -1135,5 +1465,162 @@ export class SupabaseQuota implements EmailQuota {
   }
   async add(day: string, count: number) {
     return must(await this.db.rpc('add_email_quota', { p_day: day, p_count: count })) as number;
+  }
+}
+
+const toContribution = (r: Row): Contribution => ({
+  id: r.id as string,
+  userId: r.user_id as string,
+  title: r.title as string,
+  courseHint: r.course_hint as string,
+  kind: r.kind as Contribution['kind'],
+  description: r.description as string,
+  files: (r.files as Contribution['files']) ?? [],
+  totalBytes: Number(r.total_bytes),
+  status: r.status as Contribution['status'],
+  reviewNote: r.review_note as string,
+  reward: (r.reward as Contribution['reward']) ?? null,
+  rewardPaidAt: r.reward_paid_at ? new Date(r.reward_paid_at as string) : null,
+  rewardPaidNote: (r.reward_paid_note as string) ?? '',
+  reviewedBy: (r.reviewed_by as string) ?? null,
+  reviewedAt: r.reviewed_at ? new Date(r.reviewed_at as string) : null,
+  createdAt: new Date(r.created_at as string),
+});
+
+export class SupabaseContributions implements ContributionRepository {
+  constructor(private readonly db: SupabaseClient) {}
+  async create(c: Parameters<ContributionRepository['create']>[0]) {
+    const row = must(
+      await this.db
+        .from('contributions')
+        .insert({
+          id: c.id,
+          user_id: c.userId,
+          title: c.title,
+          course_hint: c.courseHint,
+          kind: c.kind,
+          description: c.description,
+          files: c.files,
+          total_bytes: c.totalBytes,
+        })
+        .select('*')
+        .single(),
+    ) as Row;
+    return toContribution(row);
+  }
+  async find(id: string) {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+    const row = must(
+      await this.db.from('contributions').select('*').eq('id', id).maybeSingle(),
+    ) as Row | null;
+    return row ? toContribution(row) : null;
+  }
+  async listForUser(userId: string) {
+    const rows = must(
+      await this.db
+        .from('contributions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(100),
+    ) as Row[];
+    return rows.map(toContribution);
+  }
+  async list(status: Contribution['status'] | 'all', limit: number) {
+    let q = this.db.from('contributions').select('*').order('created_at', { ascending: false }).limit(limit);
+    if (status !== 'all') q = q.eq('status', status);
+    return (must(await q) as Row[]).map(toContribution);
+  }
+  async counts(userId: string, since: Date) {
+    const rows = must(
+      await this.db.from('contributions').select('status, created_at').eq('user_id', userId).limit(1000),
+    ) as Row[];
+    return {
+      recent: rows.filter((r) => new Date(r.created_at as string) >= since).length,
+      pending: rows.filter((r) => r.status === 'pending').length,
+      approved: rows.filter((r) => r.status === 'approved').length,
+    };
+  }
+  async review(id: string, patch: Pick<Contribution, 'status' | 'reviewNote' | 'reward' | 'reviewedBy'>) {
+    const row = must(
+      await this.db
+        .from('contributions')
+        .update({
+          status: patch.status,
+          review_note: patch.reviewNote,
+          reward: patch.reward,
+          reviewed_by: patch.reviewedBy,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select('*')
+        .maybeSingle(),
+    ) as Row | null;
+    return row ? toContribution(row) : null;
+  }
+  async remove(id: string) {
+    must(await this.db.from('contributions').delete().eq('id', id));
+  }
+  async contributors(userIds: string[]) {
+    const out = new Map<string, { email: string; name: string | null; blocked: boolean; approved: number }>();
+    if (!userIds.length) return out;
+    const [people, approved] = await Promise.all([
+      this.db.from('profiles').select('id, email, full_name, contribution_blocked').in('id', userIds),
+      this.db.from('contributions').select('user_id').eq('status', 'approved').in('user_id', userIds),
+    ]);
+    const counts = new Map<string, number>();
+    for (const r of (must(approved) as Row[]) ?? [])
+      counts.set(r.user_id as string, (counts.get(r.user_id as string) ?? 0) + 1);
+    for (const r of (must(people) as Row[]) ?? [])
+      out.set(r.id as string, {
+        email: r.email as string,
+        name: (r.full_name as string) ?? null,
+        blocked: Boolean(r.contribution_blocked),
+        approved: counts.get(r.id as string) ?? 0,
+      });
+    return out;
+  }
+  async isBlocked(userId: string) {
+    const row = must(
+      await this.db.from('profiles').select('contribution_blocked').eq('id', userId).maybeSingle(),
+    ) as Row | null;
+    return Boolean(row?.contribution_blocked);
+  }
+  async setBlocked(userId: string, blocked: boolean) {
+    must(await this.db.from('profiles').update({ contribution_blocked: blocked }).eq('id', userId));
+  }
+  async cashRewards() {
+    const rows = must(
+      await this.db
+        .from('contributions')
+        .select('*')
+        .eq('status', 'approved')
+        .eq('reward->>type', 'cash')
+        .order('reviewed_at', { ascending: false })
+        .limit(300),
+    ) as Row[];
+    return rows.map(toContribution);
+  }
+  async markRewardPaid(id: string, note: string) {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return;
+    must(
+      await this.db
+        .from('contributions')
+        .update({ reward_paid_at: new Date().toISOString(), reward_paid_note: note })
+        .eq('id', id),
+    );
+  }
+}
+
+export class SupabaseSettings implements SettingsRepository {
+  constructor(private readonly db: SupabaseClient) {}
+  async get<T>(key: string, fallback: T): Promise<T> {
+    const row = must(
+      await this.db.from('site_settings').select('value').eq('key', key).maybeSingle(),
+    ) as Row | null;
+    return row ? (row.value as T) : fallback;
+  }
+  async set<T>(key: string, value: T) {
+    must(await this.db.from('site_settings').upsert({ key, value, updated_at: new Date().toISOString() }));
   }
 }

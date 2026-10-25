@@ -1,7 +1,7 @@
-import { CatalogueQuery, UnsubscribeBody } from '@ss/contracts';
+import { CatalogueQuery, ClientProblemBody, SearchQuery, UnsubscribeBody } from '@ss/contracts';
 import { type Context, Hono } from 'hono';
 import { z } from 'zod';
-import { type AppEnv, bearer } from '../helpers';
+import { type AppEnv, bearer, requestMeta, throttle } from '../helpers';
 
 export const catalogueRoutes = new Hono<AppEnv>();
 
@@ -16,6 +16,13 @@ catalogueRoutes.get('/catalogue/drawer', async (c) => {
   return c.json(await c.get('container').catalogue.drawer(q.batch, q.branch));
 });
 
+/** Search every live course and bundle, across batches and programmes. */
+catalogueRoutes.get('/catalogue/search', async (c) => {
+  const { q } = SearchQuery.parse({ q: c.req.query('q') ?? '' });
+  c.header('cache-control', 'no-store');
+  return c.json(await c.get('container').catalogue.search(q));
+});
+
 /** Who's asking, if they sent a valid token. Anonymous is fine on public pages. */
 async function optionalViewer(c: Context<AppEnv>) {
   const container = c.get('container');
@@ -23,7 +30,7 @@ async function optionalViewer(c: Context<AppEnv>) {
   if (!token) return { userId: null, isAdmin: false };
   try {
     const principal = await container.auth.verify(token);
-    return { userId: principal.userId, isAdmin: container.account.isAdmin(principal) };
+    return { userId: principal.userId, isAdmin: await container.account.isAdmin(principal) };
   } catch {
     return { userId: null, isAdmin: false };
   }
@@ -72,8 +79,23 @@ catalogueRoutes.get('/features', async (c) => {
 
 /** From the link in every announcement email (and one-click List-Unsubscribe). */
 catalogueRoutes.post('/email/unsubscribe', async (c) => {
+  await throttle(c, 'unsubscribe', (await requestMeta(c)).ipHash);
   const fromQuery = c.req.query('t');
   const token = fromQuery ?? UnsubscribeBody.parse(await c.req.json()).token;
   await c.get('container').announcements.unsubscribe(token);
   return c.json({ ok: true });
+});
+
+/**
+ * A student's browser reporting something unexpected (a crash, a page image that would not load,
+ * a blocked script). Anonymous and rate-limited; it goes to the admin's Problems log only.
+ */
+catalogueRoutes.post('/problems', async (c) => {
+  const meta = await requestMeta(c);
+  await throttle(c, 'problems', meta.ipHash);
+  const raw = await c.req.text();
+  if (raw.length > 4000) return c.body(null, 204);
+  const parsed = ClientProblemBody.safeParse(JSON.parse(raw || '{}'));
+  if (parsed.success) await c.get('container').problems.fromBrowser(parsed.data, meta.userAgent);
+  return c.body(null, 204);
 });

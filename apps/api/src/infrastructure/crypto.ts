@@ -39,7 +39,8 @@ export async function sha256Hex(message: string): Promise<string> {
 
 /** Constant-time string comparison. */
 export function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
+  // An empty secret must never match, even an empty header.
+  if (!a || !b || a.length !== b.length) return false;
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;

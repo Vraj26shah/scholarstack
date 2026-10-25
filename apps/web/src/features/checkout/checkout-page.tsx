@@ -5,6 +5,7 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { formatRupees } from '../../lib/format';
 import type { PaymentResult } from '../../lib/payments';
+import { BackLink } from '../../shared/ui/back-link';
 import { LinkButton } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
 import { Spinner } from '../../shared/ui/feedback';
@@ -28,6 +29,17 @@ export function CheckoutPage() {
     let cancelled = false;
 
     async function run() {
+      // Back from the bank's own page (Razorpay's redirect route): the server already checked
+      // the result. A failure comes with Razorpay's reason; otherwise confirm as usual.
+      const params = new URLSearchParams(window.location.search);
+      const failed = params.get('failed');
+      if (failed !== null) {
+        setError(
+          `${failed || 'The payment was not completed.'} Nothing was added to your shelf; if money left your account, the bank reverses it automatically.`,
+        );
+        setPhase('failed');
+        return;
+      }
       try {
         if (state?.order && state.payment) {
           const verified = await api.verifyPayment({
@@ -45,7 +57,8 @@ export function CheckoutPage() {
           const o = await api.order(orderId);
           setOrder(o);
           if (o.status === 'paid') return finish();
-          if (o.status === 'failed') return setPhase('failed');
+          // Keep checking even if an earlier attempt failed: the student reached this page because
+          // Razorpay approved a later one, and netbanking/UPI can take a little while to settle.
           await new Promise((r) => setTimeout(r, 3000));
         }
         if (!cancelled) setPhase('waiting');
@@ -120,9 +133,11 @@ export function CheckoutPage() {
             <p className="m-0 text-ink2 text-[17px]">
               {error ?? 'Nothing was added to your shelf. You can try again from the course page.'}
             </p>
-            <LinkButton to="/" variant="outline" size="lg">
-              Back to the catalogue
-            </LinkButton>
+            <BackLink
+              fallback="/"
+              skip={(p) => p.startsWith('/checkout') || p.startsWith('/sign-in') || p.startsWith('/auth/')}
+              className="inline-flex items-center justify-center h-14 px-6 rounded-full border-[1.5px] border-line bg-transparent text-ink text-base font-semibold cursor-pointer self-start"
+            />
           </>
         )}
 

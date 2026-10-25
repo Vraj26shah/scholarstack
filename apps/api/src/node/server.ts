@@ -11,6 +11,7 @@ import { renderDemoPage } from '@ss/converter/demo-page';
 import { renderPreview } from '@ss/converter/preview';
 import { scramblePage } from '@ss/converter/scramble';
 import { Hono } from 'hono';
+import { compress } from 'hono/compress';
 import { memoryContainer } from '../composition/memory';
 import { createApp } from '../http/app';
 import type { MemoryDb } from '../infrastructure/memory';
@@ -45,12 +46,51 @@ async function producePage(key: string): Promise<Uint8Array | null> {
   return webp;
 }
 
-const { container, db, seeder } = memoryContainer({ seed: true, pageProducer: producePage });
+const { container, db, seeder, sources } = memoryContainer({
+  seed: true,
+  pageProducer: producePage,
+  conversionPageMs: Number(process.env.DEMO_CONVERT_PAGE_MS ?? 0),
+});
 dbRef = db;
 seederRef = seeder;
 
+// DEMO_DRIFT=1: make R2 differ from the database (one new, one edited, one deleted file in
+// DBMS) so the admin "Check storage" step has something to show. Demo server only.
+if (process.env.DEMO_DRIFT === '1') {
+  const dbms = [...db.courses.values()].find((course) => course.slug === 'dbms-2025-cse-core');
+  const files = [...db.files.values()].filter((file) => file.courseId === dbms?.id && !file.hidden);
+  if (dbms && files.length >= 3) {
+    const pdf = (text: string) => new TextEncoder().encode(`%PDF-1.7\n${text}\n`);
+    sources.put(
+      `${dbms.r2Prefix}Unit 6 - NoSQL/NoSQL-overview.pdf`,
+      pdf('new upload'),
+      'application/pdf',
+      'demo-new',
+    );
+    sources.put(files[1]!.sourceKey, pdf('re-uploaded with fixes'), 'application/pdf', 'demo-edited');
+    void sources.delete(files[2]!.sourceKey);
+  }
+}
+
+// DEMO_BULK=N: add N extra files to R2 (half new inside DBMS, half in folders no course owns)
+// to see how the admin panel copes with a big library. Demo server only.
+const bulk = Number(process.env.DEMO_BULK ?? 0);
+if (bulk > 0) {
+  const dbms = [...db.courses.values()].find((course) => course.slug === 'dbms-2025-cse-core');
+  const body = new TextEncoder().encode('%PDF-1.7\nbulk\n');
+  for (let i = 0; i < bulk; i++) {
+    const key =
+      i % 2 === 0 && dbms
+        ? `${dbms.r2Prefix}Unit ${(i % 5) + 1} - Extra/extra-notes-${i}.pdf`
+        : `2024/ECE/Course ${i % 40}/Unit ${(i % 6) + 1}/lecture-${i}.pdf`;
+    sources.put(key, body, 'application/pdf', `bulk-${i}`);
+  }
+}
+
 const api = createApp(() => container);
 const root = new Hono();
+// Like Cloudflare in production: compress text responses.
+root.use('*', compress());
 root.route('/', api);
 
 const webDist = process.env.WEB_DIST ? resolve(process.env.WEB_DIST) : null;
@@ -74,7 +114,11 @@ if (webDist && existsSync(webDist)) {
         ? candidate
         : join(webDist, 'index.html');
     return new Response(readFileSync(file), {
-      headers: { 'content-type': types[extname(file)] ?? 'application/octet-stream' },
+      headers: {
+        'content-type': types[extname(file)] ?? 'application/octet-stream',
+        // Same caching as production (_headers): hashed build files forever, pages always fresh.
+        'cache-control': path.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+      },
     });
   });
 }

@@ -72,9 +72,15 @@ export function CountUp({ value, duration = 1100 }: { value: number; duration?: 
       cancelAnimationFrame(raf);
     };
   }, [value, duration]);
+  // The final number reserves its width, so counting never re-wraps the sentence around it.
   return (
-    <span ref={ref} aria-label={String(value)}>
-      {n.toLocaleString('en-IN')}
+    <span ref={ref} aria-label={String(value)} className="inline-grid">
+      <span aria-hidden="true" className="invisible [grid-area:1/1]">
+        {value.toLocaleString('en-IN')}
+      </span>
+      <span aria-hidden="true" className="[grid-area:1/1]">
+        {n.toLocaleString('en-IN')}
+      </span>
     </span>
   );
 }

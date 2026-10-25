@@ -15,7 +15,7 @@ const unique = (p: string) => `${p}.${Date.now().toString(36)}${Math.random().to
 
 async function signIn(page: Page, username: string, next = '/shelf') {
   await page.goto(`/sign-in?next=${encodeURIComponent(next)}`);
-  await page.getByLabel('College email').fill(username);
+  await page.locator('#email').fill(username);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.waitForURL((u) => u.pathname === next.split('?')[0]);
 }
@@ -39,11 +39,7 @@ test.describe('browsing (signed out)', () => {
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     await shot(page, 'home', info);
 
-    await page
-      .getByRole('link', { name: 'Catalogue' })
-      .first()
-      .click()
-      .catch(() => {});
+    await page.getByRole('link', { name: /Find your notes/ }).click();
     const catalogue = page.locator('#catalogue');
     await catalogue.scrollIntoViewIfNeeded();
     await catalogue.getByRole('button', { name: /2nd year/ }).click();
@@ -66,14 +62,14 @@ test.describe('browsing (signed out)', () => {
 
   test('unknown routes show the 404 card', async ({ page }) => {
     await page.goto('/nope/nothing');
-    await expect(page.getByText("This card's misfiled.")).toBeVisible();
+    await expect(page.getByText('This card’s misfiled.')).toBeVisible();
   });
 });
 
 test.describe('sign in', () => {
   test('non-college email is rejected', async ({ page }, info) => {
     await page.goto('/sign-in');
-    await page.getByLabel('College email').fill('someone@gmail.com');
+    await page.locator('#email').fill('someone@gmail.com');
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('vitbhopal.ac.in');
     await shot(page, 'sign-in-rejected', info);
@@ -247,14 +243,19 @@ test.describe('account and admin', () => {
   test('admin imports a Drive folder as a course, then publishes it', async ({ page }, info) => {
     await signIn(page, 'admin', '/admin');
     const tabs = page.getByRole('tablist', { name: 'Admin sections' });
-    const storageTab = tabs.getByRole('tab', { name: 'Storage audit' });
-    await expect(storageTab).toBeVisible();
-    const overflowY = await tabs.evaluate((element) => getComputedStyle(element).overflowY);
-    expect(['hidden', 'clip']).toContain(overflowY);
-    await storageTab.click();
-    await expect(storageTab).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByRole('heading', { name: 'R2 storage inventory' })).toBeVisible();
-    await tabs.getByRole('tab', { name: 'Import' }).click();
+    await expect(page.getByRole('heading', { name: 'Keep the website in step with R2' })).toBeVisible();
+    // Pick one folder only, compare it, and see the page-making stage for that folder.
+    await page.getByRole('radio', { name: /Only some folders or files/ }).click();
+    await page.getByRole('checkbox', { name: 'Select folder Database Management Systems' }).check();
+    await page.getByRole('button', { name: 'Next: compare with the website' }).click();
+    await expect(page.getByText('The website already matches R2 for everything you chose.')).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByText(/Every file here has its pages|Done \d+/).first()).toBeVisible();
+    await tabs.getByRole('tab', { name: 'Email & tools' }).click();
+    await expect(page.getByRole('heading', { name: 'Tools on the home page' })).toBeVisible();
+    await tabs.getByRole('tab', { name: 'Notes & courses' }).click();
+    await page.getByRole('tab', { name: 'Import', exact: true }).click();
     const pick = page.getByRole('checkbox', { name: 'Import Network Security as a course' });
     await expect(pick).toBeVisible();
     await pick.check();
@@ -267,19 +268,21 @@ test.describe('account and admin', () => {
     await expect(page.getByRole('status').filter({ hasText: 'Imported' })).toBeVisible();
     await shot(page, 'admin-imported', info);
 
-    await page.getByRole('tab', { name: 'Courses' }).click();
+    await tabs.getByRole('tab', { name: 'Notes & courses' }).click();
+    await page.getByRole('tab', { name: 'Courses', exact: true }).click();
+    const panel = page.locator('#admin-panel');
     await expect(page.getByRole('heading', { name: 'Courses', exact: true })).toBeVisible();
     const search = page.getByRole('searchbox', { name: 'Search courses' });
     await expect(search).toBeVisible();
-    const titles = await page
+    const titles = await panel
       .getByRole('listitem')
       .evaluateAll((items) => items.map((item) => item.querySelector('a')?.textContent?.trim() ?? ''));
     expect(titles).toEqual(
       [...titles].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })),
     );
     await search.fill('Network Security');
-    await expect(page.getByRole('listitem')).toHaveCount(1);
-    const row = page
+    await expect(panel.getByRole('listitem')).toHaveCount(1);
+    const row = panel
       .getByRole('listitem')
       .filter({ has: page.getByRole('link', { name: 'Network Security' }) });
     await expect(row).toBeVisible();
@@ -287,7 +290,8 @@ test.describe('account and admin', () => {
     if (await publish.isVisible()) await publish.click(); // a second run finds it already live
     await expect(row.getByText('live', { exact: true })).toBeVisible({ timeout: 10_000 });
 
-    await page.getByRole('tab', { name: 'Storage audit' }).click();
+    await tabs.getByRole('tab', { name: 'Storage & health' }).click();
+    await page.getByRole('tab', { name: 'Full audit', exact: true }).click();
     await page.getByLabel('Scan scope').selectOption('course');
     const scanControls = page.locator('section').filter({ hasText: 'Scan scope' }).first();
     const courseSelect = scanControls.locator('select').nth(1);
@@ -302,7 +306,7 @@ test.describe('account and admin', () => {
     await expect(page.getByText(/file page folders were checked/)).toBeVisible({ timeout: 20_000 });
     const scopeTotals = page.getByRole('region', { name: 'Selected scope totals' });
     const generatedPageObjects = scopeTotals
-      .getByText('Generated page objects', { exact: true })
+      .getByText('Generated page assets', { exact: true })
       .locator('..');
     await expect(generatedPageObjects.locator('strong')).not.toHaveText('Not checked');
 

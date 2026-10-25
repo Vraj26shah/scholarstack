@@ -32,7 +32,7 @@ describe('reader readiness', () => {
 
     const admin = await env.container.admin.inventory(course.id);
     const entry = admin.objects.find((object) => object.fileId === file.id);
-    expect(entry).toMatchObject({ status: 'changed-in-r2', conversionStatus: 'failed', pageCount: 0 });
+    expect(entry).toMatchObject({ status: 'registered', conversionStatus: 'failed', pageCount: 0 });
     expect(entry?.hidden).toBe(false);
 
     await env.container.admin.setFileHidden(file.id, true);

@@ -142,9 +142,9 @@ export class ReaderService {
   }
 
   /** Hot path: no database call. Token signature + rate limit + object read. */
-  async page(viewerToken: string, fileId: string, pageNo: number): Promise<PageImage> {
+  async page(viewerToken: string, fileId: string, pageNo: number, userId: string): Promise<PageImage> {
     const claims = await this.signer.verify<ViewerClaims>(viewerToken);
-    if (!claims || claims.f !== fileId) throw fail.viewerToken();
+    if (!claims || claims.f !== fileId || claims.u !== userId) throw fail.viewerToken();
     if (!Number.isInteger(pageNo) || pageNo < 1 || pageNo > claims.pc) throw fail.notFound('That page');
     if (!(await this.limiter.allow(`pages:${claims.u}`))) throw fail.rateLimited();
     const object = await this.pages.get(`pages/${fileId}/${pageNo}.webp`);

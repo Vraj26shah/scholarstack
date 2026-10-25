@@ -1,25 +1,39 @@
 import type {
+  AccessChangeInput,
+  AccessGrantInput,
   AdminBundleDto,
+  AdminCourseAccessDto,
   AdminCourseDto,
+  AdminGrantResultDto,
+  AdminOverviewDto,
   AdminSyncHealthDto,
   AdminUnitDto,
+  ConversionBoardDto,
+  ConversionBoardState,
   ConversionProgressReport,
   ConversionReport,
+  ConvertScopeInput,
+  ConvertScopeResultDto,
   CourseInventoryDto,
+  DeleteCourseResultDto,
   ImportCourseInput,
   ImportFolderDto,
   ImportObjectDto,
   ImportTreeDto,
   StorageAuditDto,
+  StorageCompareDto,
   StorageInventoryPageDto,
   SyncResultDto,
 } from '@ss/contracts';
-import { BROKEN_SOURCE, extractCourseCode } from '@ss/contracts';
+import { BROKEN_SOURCE, extractCourseCode, isCollegeEmail, normaliseEmail } from '@ss/contracts';
+import { accessEnd } from '../domain/access-window';
 import {
+  type AccessChange,
   type Bundle,
   type Course,
   type CourseFile,
   type StoredObject,
+  accessState,
   isReaderReady,
   isVisible,
 } from '../domain/entities';
@@ -28,11 +42,15 @@ import type {
   CatalogueReader,
   CatalogueWriter,
   ConversionQueue,
+  EntitlementRepository,
   ObjectStore,
+  PaymentGateway,
+  ProfileRepository,
 } from '../domain/ports';
+import type { AccessMailService } from './access-mail';
 import type { AppConfig } from './config';
 import { recordConversion } from './conversion';
-import { fail } from './errors';
+import { AppError, fail } from './errors';
 import {
   formatOf,
   guessBatchYear,
@@ -101,7 +119,7 @@ function sourceIssueFromPrefix(prefix: Uint8Array, fileName: string, sizeBytes: 
   if (sizeBytes <= 0 || prefix.length === 0) return `${BROKEN_SOURCE} the R2 source is empty.`;
   const head = new TextDecoder('latin1').decode(prefix);
   if (/^\s*<(?:!doctype\s+html|html|head)\b/i.test(head) || /accounts\.google\.com/i.test(head)) {
-    return `${BROKEN_SOURCE} this file is an HTML or Google sign-in page saved with a document extension. Download the original from Drive and replace the R2 source.`;
+    return `${BROKEN_SOURCE} this is a saved web page, including a Google sign-in page, with a document extension, not the original file. Download the original from Drive and replace the R2 source.`;
   }
 
   const extension = fileName.includes('.') ? `.${fileName.split('.').at(-1)!.toLowerCase()}` : '';
@@ -236,6 +254,33 @@ const activeConversionStages = new Set([
   'saving_manifest',
 ]);
 
+/** True when a key falls inside a normalised selection (folder prefixes or exact keys). */
+function inScope(scope: string[], key: string): boolean {
+  return scope.some((entry) => (entry.endsWith('/') ? key.startsWith(entry) : key === entry));
+}
+
+/** Does the selection reach into this course folder at all? */
+function scopeTouchesPrefix(scope: string[], prefix: string): boolean {
+  return scope.some((entry) =>
+    entry.endsWith('/') ? entry.startsWith(prefix) || prefix.startsWith(entry) : entry.startsWith(prefix),
+  );
+}
+
+/** List as little of R2 as possible: one folder inside the course, else the course folder. */
+function narrowestListing(scope: string[], prefix: string): string {
+  const inside = scope.filter((entry) => entry.startsWith(prefix));
+  if (inside.length === 1 && inside[0]!.endsWith('/')) return inside[0]!;
+  return prefix;
+}
+
+function boardState(file: CourseFile, now = Date.now()): ConversionBoardState {
+  if (file.conversionStatus === 'ready') return 'ready';
+  if (file.conversionStatus === 'failed') return 'failed';
+  if (isConversionInFlight(file, now)) return file.conversionStage === 'queued' ? 'queued' : 'working';
+  if (file.conversionStage && activeConversionStages.has(file.conversionStage)) return 'stalled';
+  return 'waiting';
+}
+
 /** A callback that stopped updating is eligible for an explicit course rescan after 15 minutes. */
 function isConversionInFlight(file: CourseFile, now = Date.now()): boolean {
   if (!file.conversionStage || !activeConversionStages.has(file.conversionStage)) return false;
@@ -266,12 +311,114 @@ export class AdminService {
     private readonly pages: ObjectStore,
     private readonly queue: ConversionQueue,
     private readonly config: AppConfig,
+    private readonly gateway?: PaymentGateway,
+    private readonly entitlements?: EntitlementRepository,
+    private readonly profiles?: ProfileRepository,
+    private readonly accessMail?: AccessMailService,
   ) {}
+
+  /**
+   * Give a course to students by email, without payment. Only exact college addresses that
+   * already have an account can receive it; everything else is reported back, never guessed.
+   */
+  async grantAccess(input: AccessGrantInput, adminEmail: string): Promise<AdminGrantResultDto> {
+    const course = await this.reader.findCourse(input.courseId);
+    if (!course) throw fail.notFound('That course');
+    if (!this.profiles) throw fail.notReady('Giving access is not available in this setup.');
+    const typed = [...new Set(input.emails.map(normaliseEmail).filter(Boolean))];
+    const invalid = typed.filter((e) => !isCollegeEmail(e, this.config.allowedDomain));
+    const valid = typed.filter((e) => isCollegeEmail(e, this.config.allowedDomain));
+    const accounts = await this.profiles.findByEmails(valid);
+    const found = new Set(accounts.map((a) => a.email));
+    // A gift lasts the same window as a purchase unless the admin picks a date (or no end).
+    const until =
+      input.until === undefined ? accessEnd(new Date()) : input.until ? new Date(input.until) : null;
+    if (until && until.getTime() <= Date.now()) throw fail.badRequest('Choose an end date in the future.');
+    await this.access().grantByAdmin(
+      course.id,
+      accounts.map((a) => a.id),
+      until,
+      adminEmail,
+    );
+    // College emails with no account yet: saved, and on their shelf the moment they sign up.
+    const missing = valid.filter((e) => !found.has(e));
+    if (missing.length) await this.access().addPendingGrants(course.id, missing, until, adminEmail);
+    // Tell each student, so a course never appears on a shelf unexplained.
+    const names = new Map(
+      (await this.access().listForCourse(course.id)).map((r) => [r.userId, r.fullName] as const),
+    );
+    const emailed =
+      (await this.accessMail?.courseGiven(
+        accounts.map((a) => ({ id: a.id, email: a.email, fullName: names.get(a.id) ?? null })),
+        course,
+        until,
+      )) ?? [];
+    // Students who haven't signed in yet get it the moment their account is created.
+    const waiting = valid.filter((e) => !found.has(e));
+    if (waiting.length) await this.access().addPendingGrants(course.id, waiting, until, adminEmail);
+    return {
+      ...(await this.courseAccess(course.id)),
+      emailed,
+      granted: valid.filter((e) => found.has(e)),
+      notFound: waiting,
+      invalid,
+    };
+  }
+
+  // ── Students & access ──
+
+  private access(): EntitlementRepository {
+    if (!this.entitlements) throw fail.notReady('Student access is not available in this setup.');
+    return this.entitlements;
+  }
+
+  /** Everyone who ever had this course, with their state, newest purchase first. */
+  async courseAccess(courseId: string): Promise<AdminCourseAccessDto> {
+    const course = await this.reader.findCourse(courseId);
+    if (!course) throw fail.notFound('That course');
+    const now = new Date();
+    const records = await this.access().listForCourse(course.id);
+    return {
+      course: {
+        id: course.id,
+        title: course.title,
+        batchYear: course.batchYear,
+        semester: course.semester,
+        accessUntil: course.accessUntil ? course.accessUntil.toISOString() : null,
+        termLabel: course.termLabel ?? '',
+      },
+      students: records
+        .sort((a, b) => b.grantedAt.getTime() - a.grantedAt.getTime())
+        .map((r) => ({
+          userId: r.userId,
+          email: r.email,
+          fullName: r.fullName,
+          grantedAt: r.grantedAt.toISOString(),
+          expiresAt: r.expiresAt ? r.expiresAt.toISOString() : null,
+          state: accessState(r, now),
+          source: r.grantedBy,
+        })),
+    };
+  }
+
+  /** Block, restore or set the end date for chosen students of one course. */
+  async changeAccess(input: AccessChangeInput): Promise<AdminCourseAccessDto & { changed: number }> {
+    const course = await this.reader.findCourse(input.courseId);
+    if (!course) throw fail.notFound('That course');
+    if (input.action === 'until' && input.until === undefined)
+      throw fail.badRequest('Choose when access should end, or "no end".');
+    const change: AccessChange =
+      input.action === 'until'
+        ? { kind: 'until', until: input.until ? new Date(input.until) : null }
+        : { kind: input.action };
+    const changed = await this.access().changeAccess(course.id, input.userIds, change);
+    return { ...(await this.courseAccess(course.id)), changed };
+  }
 
   /** Independent live checks; a healthy R2 scan cannot hide a Supabase or queue failure. */
   async syncHealth(): Promise<AdminSyncHealthDto> {
     const checkedAt = new Date().toISOString();
-    const [r2Result, databaseResult, conversionResult] = await Promise.allSettled([
+    const [r2Result, databaseResult, conversionResult, paymentsResult] = await Promise.allSettled([
       this.sources.listPage('', undefined, 1),
       (async () => {
         const courses = await this.writer.listAllCourses();
@@ -286,6 +433,8 @@ export class AdminService {
           queuedJobs: null,
           deadLetterJobs: null,
         }),
+      this.gateway?.checkKeys() ??
+        Promise.resolve({ ok: false, mode: 'test' as const, message: 'No payment gateway is configured.' }),
     ]);
     const errorMessage = (reason: unknown) => {
       const message = reason instanceof Error ? reason.message : 'The connection check failed.';
@@ -326,10 +475,57 @@ export class AdminService {
               queuedJobs: null,
               deadLetterJobs: null,
             },
+      payments:
+        paymentsResult.status === 'fulfilled'
+          ? {
+              status: paymentsResult.value.ok ? 'connected' : 'error',
+              mode: paymentsResult.value.mode,
+              message: paymentsResult.value.message,
+            }
+          : { status: 'error', mode: 'test', message: errorMessage(paymentsResult.reason) },
     };
   }
 
   // ── Courses ──
+
+  /**
+   * Delete an archived course for good: its database records (units, files, page index), its
+   * generated pages in R2 and, when asked, its uploaded notes in R2. Refused while the course is
+   * on sale or when anyone bought or was given it, so sales and access history are never lost.
+   */
+  async deleteCourse(courseId: string, deleteNotes: boolean): Promise<DeleteCourseResultDto> {
+    const course = (await this.writer.listAllCourses()).find((c) => c.id === courseId);
+    if (!course) throw fail.notFound('That course');
+    if (course.status !== 'archived')
+      throw fail.badRequest('Archive the course first. Only archived courses can be deleted.');
+    const files = await this.writer.listAllFiles([courseId]);
+    const outcome = await this.writer.deleteCourse(courseId);
+    if (outcome === 'not-found') throw fail.notFound('That course');
+    if (outcome === 'sold')
+      throw fail.badRequest(
+        'Students bought or were given this course, so it is kept (archived) as part of your sales history.',
+      );
+    let pageFoldersRemoved = 0;
+    for (const file of files) {
+      await this.pages.deletePrefix(`pages/${file.id}/`);
+      pageFoldersRemoved++;
+    }
+    let notesRemoved = 0;
+    let notesShared = 0;
+    if (deleteNotes) {
+      const remaining = await this.writer.listAllFiles((await this.writer.listAllCourses()).map((c) => c.id));
+      const stillUsed = new Set(remaining.map((f) => f.sourceKey));
+      for (const key of new Set(files.map((f) => f.sourceKey))) {
+        if (stillUsed.has(key)) {
+          notesShared++;
+          continue;
+        }
+        await this.sources.delete(key);
+        notesRemoved++;
+      }
+    }
+    return { deleted: true, pageFoldersRemoved, notesRemoved, notesShared };
+  }
 
   async listCourses(): Promise<AdminCourseDto[]> {
     const [courses, branches] = await Promise.all([this.writer.listAllCourses(), this.reader.listBranches()]);
@@ -355,6 +551,8 @@ export class AdminService {
             branches.find((b) => b.slug === c.branchSlug),
           ),
           status: c.status,
+          accessUntil: c.accessUntil ? c.accessUntil.toISOString() : null,
+          termLabel: c.termLabel ?? '',
           // Prefer curriculum-defined assignments. Keep deliberate admin
           // cross-listing for unmapped courses, but hide legacy all-branch fallbacks.
           branchSlugs:
@@ -836,7 +1034,7 @@ export class AdminService {
         previous.sourceEtag !== object.etag ||
         previous.sizeBytes !== object.size ||
         previous.unitKey !== unit.key ||
-        previous.sourceMissingAt !== null;
+        Boolean(previous.sourceMissingAt);
       const previousUnit = existingFiles.find((candidate) => candidate.unitKey === unit.key);
       const willBeVisible = previous
         ? isVisible(previous) ||
@@ -1025,7 +1223,7 @@ export class AdminService {
         previous.sourceEtag !== obj.etag ||
         previous.sizeBytes !== obj.size ||
         previous.unitKey !== unit.key ||
-        previous.sourceMissingAt !== null;
+        Boolean(previous.sourceMissingAt);
       const previousUnit = existingFiles.find((candidate) => candidate.unitKey === unit.key);
       const willBeVisible = previous
         ? isVisible(previous) ||
@@ -1144,7 +1342,7 @@ export class AdminService {
   }
 
   /** Remove page objects with no catalogue owner, and malformed/out-of-range output keys. */
-  private async cleanOrphanPageObjects(): Promise<number> {
+  async cleanOrphanPageObjects(): Promise<number> {
     const courses = await this.writer.listAllCourses();
     const files = await this.writer.listAllFiles(courses.map((course) => course.id));
     const filesById = new Map(files.map((file) => [file.id, file]));
@@ -1244,23 +1442,34 @@ export class AdminService {
     );
   }
 
+  /**
+   * What stops a course going on sale: only problems a student would actually meet.
+   * Hidden files (textbooks you took off the site) and R2 objects that are not on the
+   * website at all (a ZIP, a new upload you haven't imported) never block. The audit
+   * still lists them, so nothing is hidden from the admin.
+   */
+  async publishBlockers(courseId: string): Promise<string[]> {
+    const inventory = await this.inventory(courseId);
+    const blockers: string[] = [];
+    for (const object of inventory.objects) {
+      if (!object.fileId || object.hidden) continue;
+      const name = object.name.split('/').at(-1) ?? object.name;
+      if (object.status === 'missing-in-r2') blockers.push(`${name} is gone from R2`);
+      else if (object.status === 'changed-in-r2') blockers.push(`${name} changed in R2 and needs a sync`);
+      else if (object.sourceIssue) blockers.push(`${name} is not a real document (re-upload it)`);
+      else if (object.pageMappingIssues?.length) blockers.push(`${name} has a broken page map (sync it)`);
+    }
+    return blockers;
+  }
+
   private async assertCoursePublishable(courseId: string): Promise<void> {
     const files = (await this.writer.listAllFiles([courseId])).filter(isVisible);
     if (files.length === 0)
       throw fail.notReady('A course needs at least one visible file before publishing.');
-    const inventory = await this.inventory(courseId);
-    const sourceComplete =
-      inventory.totals.changed === 0 &&
-      inventory.totals.unmapped === 0 &&
-      inventory.totals.unsupported === 0 &&
-      inventory.totals.invalidSources === 0 &&
-      inventory.totals.pageMappingsInvalid === 0 &&
-      // Missing rows already retired by a completed scan remain in the audit,
-      // but no longer block publication once public access has been removed.
-      !inventory.objects.some((object) => object.status === 'missing-in-r2' && !object.hidden);
-    if (!sourceComplete) {
+    const blockers = await this.publishBlockers(courseId);
+    if (blockers.length) {
       throw fail.notReady(
-        'R2 contains unimported, unsupported, changed, invalid, or missing files. Review the storage audit and sync the course before publishing.',
+        `Students would hit a problem in ${blockers.length === 1 ? 'this file' : `these ${blockers.length} files`}: ${blockers.join('; ')}. Fix it in R2 and sync, or hide it, then publish.`,
       );
     }
     if (!(await this.hasCompletePageAssets(files))) {
@@ -1668,8 +1877,10 @@ export class AdminService {
     // time. Those prefixes are already scoped to one immutable file ID, so avoid querying the
     // entire catalogue again for every generated-page cursor request.
     const isolatedPagePrefix = /^pages\/[^/]+\/$/.test(prefix);
+    // Generated pages live under pages/ (the same R2 bucket in production; a separate store in demo).
+    const store = prefix.startsWith('pages/') ? this.pages : this.sources;
     const [page, initial] = await Promise.all([
-      this.sources.listPage(prefix, cursor, 500),
+      store.listPage(prefix, cursor, 500),
       cursor || isolatedPagePrefix
         ? Promise.resolve(undefined)
         : (async () => {
@@ -2264,6 +2475,354 @@ export class AdminService {
   }
 
   /** Explicitly retry a failed conversion after verifying the source object is still intact. */
+  // ── Step-by-step admin workflow ──
+
+  /** Supabase-only counts for the admin step chips. */
+  async overview(): Promise<AdminOverviewDto> {
+    const courses = await this.writer.listAllCourses();
+    const files = await this.writer.listAllFiles(courses.map((course) => course.id));
+    const bundles = await this.bundles.listAll();
+    const now = Date.now();
+    const out: AdminOverviewDto = {
+      checkedAt: new Date(now).toISOString(),
+      courses: { total: courses.length, draft: 0, live: 0, archived: 0, readyToPublish: 0 },
+      files: {
+        total: files.length,
+        waiting: 0,
+        working: 0,
+        failed: 0,
+        ready: 0,
+        offSite: 0,
+        missingSource: 0,
+      },
+      bundles: { total: bundles.length, live: bundles.filter((bundle) => bundle.status === 'live').length },
+    };
+    for (const course of courses) out.courses[course.status]++;
+    const byCourse = new Map<string, CourseFile[]>();
+    for (const file of files) {
+      if (file.sourceMissingAt) {
+        out.files.missingSource++;
+        continue;
+      }
+      if (!isVisible(file)) {
+        out.files.offSite++;
+        continue;
+      }
+      const state = boardState(file, now);
+      if (state === 'ready') out.files.ready++;
+      else if (state === 'failed') out.files.failed++;
+      else if (state === 'waiting' || state === 'stalled') out.files.waiting++;
+      else out.files.working++;
+      byCourse.set(file.courseId, [...(byCourse.get(file.courseId) ?? []), file]);
+    }
+    for (const course of courses) {
+      if (course.status !== 'draft') continue;
+      const visible = byCourse.get(course.id) ?? [];
+      if (visible.length && visible.every((file) => file.conversionStatus === 'ready')) {
+        out.courses.readyToPublish++;
+      }
+    }
+    return out;
+  }
+
+  /** Every visible file's page-making state (one course, or everything not yet ready). */
+  async conversionBoard(courseId?: string, scopes?: string[]): Promise<ConversionBoardDto> {
+    const scope = scopes ? this.normaliseScopes(scopes) : null;
+    const courses = (await this.writer.listAllCourses()).filter(
+      (course) =>
+        course.status !== 'archived' &&
+        (!courseId || course.id === courseId) &&
+        (!scope || scopeTouchesPrefix(scope, course.r2Prefix)),
+    );
+    if (courseId && !courses.length) throw fail.notFound('That course');
+    const titles = new Map(courses.map((course) => [course.id, course.title]));
+    const files = await this.writer.listAllFiles(courses.map((course) => course.id));
+    const now = Date.now();
+    const recent = (file: CourseFile) =>
+      !!file.conversionUpdatedAt && now - Date.parse(file.conversionUpdatedAt) < 60 * 60_000;
+    const rows = files
+      .filter((file) => !file.sourceMissingAt && (!scope || inScope(scope, file.sourceKey)))
+      .map((file) => ({ file, state: boardState(file, now), offSite: !isVisible(file) }))
+      .filter(({ file, state, offSite }) =>
+        courseId || scope ? true : !offSite && (state !== 'ready' || recent(file)),
+      );
+    const order: Record<ConversionBoardState, number> = {
+      working: 0,
+      queued: 1,
+      stalled: 2,
+      failed: 3,
+      waiting: 4,
+      ready: 5,
+    };
+    rows.sort(
+      (a, b) =>
+        Number(a.offSite) - Number(b.offSite) ||
+        order[a.state] - order[b.state] ||
+        (a.file.conversionQueuePosition ?? 0) - (b.file.conversionQueuePosition ?? 0) ||
+        a.file.unitSort - b.file.unitSort ||
+        a.file.sort - b.file.sort,
+    );
+    const totals = { waiting: 0, queued: 0, working: 0, stalled: 0, failed: 0, ready: 0, offSite: 0 };
+    for (const row of rows) {
+      if (row.offSite) totals.offSite++;
+      else totals[row.state]++;
+    }
+    return {
+      checkedAt: new Date(now).toISOString(),
+      totals,
+      files: rows.map(({ file, state, offSite }) => ({
+        fileId: file.id,
+        courseId: file.courseId,
+        courseTitle: titles.get(file.courseId) ?? '',
+        unitKey: file.unitKey,
+        unit: file.unitTitle,
+        name: file.name,
+        sourceKey: file.sourceKey,
+        state,
+        offSite,
+        stage: file.conversionStage ?? null,
+        current: file.conversionProgressCurrent ?? 0,
+        total: file.conversionProgressTotal ?? 0,
+        queuePosition: file.conversionQueuePosition ?? 0,
+        queueTotal: file.conversionQueueTotal ?? 0,
+        error: file.conversionError,
+        errorStage: file.conversionErrorStage ?? null,
+        pageCount: file.pageCount,
+        updatedAt: file.conversionUpdatedAt ?? null,
+      })),
+    };
+  }
+
+  /**
+   * Read-only R2 → Supabase comparison per course. R2 is the source of truth, so every
+   * difference is reported as what Supabase must change; nothing is written here.
+   */
+  async compareStorage(scopes: string[] = ['']): Promise<StorageCompareDto> {
+    const scope = this.normaliseScopes(scopes);
+    const allCourses = (await this.writer.listAllCourses()).filter((course) => course.status !== 'archived');
+    const courses = allCourses.filter((course) => scopeTouchesPrefix(scope, course.r2Prefix));
+    const files = await this.writer.listAllFiles(courses.map((course) => course.id));
+    const byCourse = new Map<string, CourseFile[]>();
+    for (const file of files) byCourse.set(file.courseId, [...(byCourse.get(file.courseId) ?? []), file]);
+    const results: StorageCompareDto['courses'] = [];
+    // A few listings at a time keeps the Worker well inside its subrequest budget.
+    for (let offset = 0; offset < courses.length; offset += 4) {
+      const chunk = courses.slice(offset, offset + 4);
+      results.push(
+        ...(await Promise.all(
+          chunk.map(async (course) => {
+            const records = byCourse.get(course.id) ?? [];
+            const base = {
+              courseId: course.id,
+              title: course.title,
+              slug: course.slug,
+              prefix: course.r2Prefix,
+              status: course.status,
+              supabaseFiles: records.filter((file) => !file.sourceMissingAt && inScope(scope, file.sourceKey))
+                .length,
+            };
+            try {
+              const objects = (await this.sources.list(narrowestListing(scope, course.r2Prefix))).filter(
+                (object) => {
+                  const name = object.key.split('/').at(-1) ?? '';
+                  return (
+                    !object.key.endsWith('/') &&
+                    !!name &&
+                    !isJunkFile(name) &&
+                    !!formatOf(name) &&
+                    inScope(scope, object.key)
+                  );
+                },
+              );
+              const bySource = new Map(records.map((file) => [file.sourceKey, file]));
+              const inR2 = new Set(objects.map((object) => object.key));
+              const newInR2: string[] = [];
+              const changedInR2: string[] = [];
+              for (const object of objects) {
+                const record = bySource.get(object.key);
+                if (!record || record.sourceMissingAt) newInR2.push(object.key);
+                else if (record.sourceEtag !== object.etag || record.sizeBytes !== object.size)
+                  changedInR2.push(object.key);
+              }
+              const missingFromR2 = records
+                .filter(
+                  (file) =>
+                    !file.sourceMissingAt && inScope(scope, file.sourceKey) && !inR2.has(file.sourceKey),
+                )
+                .map((file) => file.sourceKey);
+              return { ...base, r2Files: objects.length, newInR2, changedInR2, missingFromR2, error: null };
+            } catch (error) {
+              return {
+                ...base,
+                r2Files: 0,
+                newInR2: [],
+                changedInR2: [],
+                missingFromR2: [],
+                error: error instanceof Error ? error.message : 'R2 could not be listed.',
+              };
+            }
+          }),
+        )),
+      );
+    }
+    const totals = { courses: results.length, inSync: 0, newInR2: 0, changedInR2: 0, missingFromR2: 0 };
+    for (const course of results) {
+      totals.newInR2 += course.newInR2.length;
+      totals.changedInR2 += course.changedInR2.length;
+      totals.missingFromR2 += course.missingFromR2.length;
+      if (
+        !course.error &&
+        !course.newInR2.length &&
+        !course.changedInR2.length &&
+        !course.missingFromR2.length
+      )
+        totals.inSync++;
+    }
+    const unassigned = await this.unassignedInScope(scope, allCourses);
+    return { checkedAt: new Date().toISOString(), totals, courses: results, unassigned, scopes: scope };
+  }
+
+  /** "" → the import root; folders keep their slash; files stay exact. Anything else is refused. */
+  private normaliseScopes(scopes: string[]): string[] {
+    const root = this.config.importRoot;
+    const out = new Set<string>();
+    for (const raw of scopes) {
+      const value = raw === '' ? root : raw;
+      if (!value.startsWith(root) || value.split('/').some((part) => part === '.' || part === '..')) {
+        throw fail.badRequest(`Choose files or folders inside ${root}.`);
+      }
+      out.add(value);
+    }
+    // A folder already covers everything inside it.
+    const folders = [...out].filter((value) => value.endsWith('/'));
+    return [...out].filter(
+      (value) => !folders.some((folder) => folder !== value && value.startsWith(folder)),
+    );
+  }
+
+  /** Supported R2 files in the selection that no course maps yet. */
+  private async unassignedInScope(scope: string[], courses: Course[]) {
+    const keys: string[] = [];
+    let count = 0;
+    for (const entry of scope) {
+      if (courses.some((course) => entry.startsWith(course.r2Prefix))) continue;
+      const objects = entry.endsWith('/')
+        ? await this.sources.list(entry)
+        : (await this.sources.list(entry)).filter((object) => object.key === entry);
+      for (const object of objects) {
+        const name = object.key.split('/').at(-1) ?? '';
+        if (object.key.endsWith('/') || !name || isJunkFile(name) || !formatOf(name)) continue;
+        if (courses.some((course) => object.key.startsWith(course.r2Prefix))) continue;
+        count++;
+        keys.push(object.key);
+      }
+    }
+    return { count, keys };
+  }
+
+  /** Make pages for any R2 selection: whole bucket, folders, or single files, across courses. */
+  async convertSelection(input: {
+    scopes: string[];
+    include: 'waiting' | 'failed' | 'both';
+  }): Promise<ConvertScopeResultDto> {
+    const scope = this.normaliseScopes(input.scopes);
+    const explicitFiles = scope.every((entry) => !entry.endsWith('/'));
+    const courses = (await this.writer.listAllCourses()).filter(
+      (course) => course.status !== 'archived' && scopeTouchesPrefix(scope, course.r2Prefix),
+    );
+    const result: ConvertScopeResultDto = { queued: 0, skipped: [] };
+    if (!courses.length) {
+      result.skipped.push('Nothing in this selection belongs to a course yet. Import it first.');
+      return result;
+    }
+    for (const course of courses) {
+      const ids = (await this.writer.listAllFiles([course.id]))
+        .filter((file) => inScope(scope, file.sourceKey))
+        .map((file) => file.id);
+      for (let offset = 0; offset < ids.length; offset += 200) {
+        const part = await this.convertScope(
+          { courseId: course.id, fileIds: ids.slice(offset, offset + 200), include: input.include },
+          { explain: explicitFiles },
+        );
+        result.queued += part.queued;
+        result.skipped.push(...part.skipped);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Make pages for a scope (course, unit or chosen files) in one queue, so the converter
+   * works through a small batch at a time and every file shows its own progress.
+   */
+  async convertScope(
+    input: ConvertScopeInput,
+    options: { explain?: boolean } = {},
+  ): Promise<ConvertScopeResultDto> {
+    const course = await this.reader.findCourse(input.courseId);
+    if (!course) throw fail.notFound('That course');
+    const wanted = input.fileIds ? new Set(input.fileIds) : null;
+    const explain = options.explain ?? !!wanted;
+    const now = Date.now();
+    const inScope = (await this.writer.listAllFiles([course.id])).filter(
+      (file) => (!input.unitKey || file.unitKey === input.unitKey) && (!wanted || wanted.has(file.id)),
+    );
+    const skipped: string[] = [];
+    const candidates: CourseFile[] = [];
+    for (const file of inScope) {
+      if (file.sourceMissingAt) {
+        if (explain) skipped.push(`${file.name}: the file is no longer in R2.`);
+        continue;
+      }
+      if (!isVisible(file)) {
+        if (explain) skipped.push(`${file.name}: kept off the site, so no pages are made.`);
+        continue;
+      }
+      if (isConversionInFlight(file, now)) {
+        skipped.push(`${file.name}: already being made.`);
+        continue;
+      }
+      const failed = file.conversionStatus === 'failed';
+      if (failed && input.include === 'waiting') continue;
+      if (!failed && input.include === 'failed') continue;
+      candidates.push(file);
+    }
+    const ready = candidates.filter((file) => file.conversionStatus === 'ready');
+    const incomplete = await this.incompletePageAssets(ready);
+    const todo = candidates.filter((file) => file.conversionStatus !== 'ready' || incomplete.has(file.id));
+    if (explain) {
+      for (const file of candidates) {
+        if (file.conversionStatus === 'ready' && !incomplete.has(file.id)) {
+          skipped.push(`${file.name}: pages are already complete.`);
+        }
+      }
+    }
+    if (!todo.length) return { queued: 0, skipped };
+
+    // A failed file is only retried against the exact R2 copy Supabase knows about.
+    const listing = new Map((await this.sources.list(course.r2Prefix)).map((object) => [object.key, object]));
+    const jobs: { fileId: string; sourceKey: string }[] = [];
+    let repairsVisiblePages = false;
+    for (const file of todo.slice(0, 200)) {
+      const object = listing.get(file.sourceKey);
+      if (!object) {
+        skipped.push(`${file.name}: not found in R2. Run "Compare R2 with Supabase" first.`);
+        continue;
+      }
+      if (object.etag !== file.sourceEtag || object.size !== file.sizeBytes) {
+        skipped.push(`${file.name}: changed in R2. Update Supabase from R2 first.`);
+        continue;
+      }
+      if (file.conversionStatus === 'failed' && !(await this.writer.markConversionPending(file.id))) continue;
+      if (file.conversionStatus === 'ready') repairsVisiblePages = true;
+      jobs.push({ fileId: file.id, sourceKey: file.sourceKey });
+    }
+    if (todo.length > 200) skipped.push(`${todo.length - 200} more files: run this again after this batch.`);
+    if (repairsVisiblePages) await this.takeCourseOffline(course.id);
+    await this.enqueueConversions(jobs);
+    return { queued: jobs.length, skipped };
+  }
+
   async retryConversion(fileId: string): Promise<{ ok: true; queued: number }> {
     const file = await this.writer.findAnyFile(fileId);
     if (!file) throw fail.notFound('That file');
@@ -2354,24 +2913,37 @@ export class AdminService {
     const courses = await this.reader.coursesByIds(input.courseIds);
     if (courses.length !== new Set(input.courseIds).size)
       throw fail.badRequest('A chosen course no longer exists.');
+    const activeCourses = courses.filter((course) => course.status !== 'archived');
+    if (activeCourses.length < 2) throw fail.badRequest('A bundle needs at least two active courses.');
+    // A bundle is one batch's pack: mixing batches would sell a 2023 student 2025 notes.
+    const batches = [...new Set(courses.map((course) => course.batchYear))];
+    if (batches.length > 1 || (input.batchYear !== null && batches[0] !== input.batchYear)) {
+      const odd = courses.filter((course) => course.batchYear !== (input.batchYear ?? batches[0]));
+      throw fail.badRequest(
+        `A bundle keeps to one batch. Not from ${input.batchYear ?? batches[0]}: ${odd.map((c) => `${c.title} (${c.batchYear})`).join(', ')}.`,
+      );
+    }
+    const listPaise = activeCourses.reduce((sum, course) => sum + course.pricePaise, 0);
+    if (input.pricePaise >= listPaise)
+      throw fail.badRequest('A bundle should cost less than its courses together.');
     if (input.status === 'live' && courses.some((course) => course.status !== 'live'))
       throw fail.badRequest('Publish every course in this bundle before publishing the bundle.');
     if (input.status === 'live') {
-      for (const course of courses) await this.assertCoursePublishable(course.id);
+      for (const course of courses) {
+        try {
+          await this.assertCoursePublishable(course.id);
+        } catch (error) {
+          if (error instanceof AppError) throw fail.notReady(`${course.title}: ${error.message}`);
+          throw error;
+        }
+      }
     }
-    if (input.batchYear !== null) await this.writer.ensureBatch(input.batchYear);
     const all = await this.bundles.listAll();
     const current = input.id ? all.find((b) => b.id === input.id) : undefined;
     if (input.id && !current) throw fail.notFound('That bundle');
     let slug = current?.slug ?? slugify(input.title);
     for (let i = 2; !current && all.some((b) => b.slug === slug); i++) slug = slugify(`${input.title}-${i}`);
-    const activeCourses = courses.filter((course) => course.status !== 'archived');
-    if (activeCourses.length < 2) throw fail.badRequest('A bundle needs at least two active courses.');
-    const listPaise = activeCourses
-      .filter((course) => course.status !== 'archived')
-      .reduce((s, c) => s + c.pricePaise, 0);
-    if (input.pricePaise >= listPaise)
-      throw fail.badRequest('A bundle should cost less than its courses together.');
+    if (input.batchYear !== null) await this.writer.ensureBatch(input.batchYear);
     const saved = await this.bundles.save({ ...input, slug });
     const files = await this.reader.listFiles(saved.courseIds);
     return { ...toBundleCard(saved, courses, files, true), status: saved.status, courseIds: saved.courseIds };

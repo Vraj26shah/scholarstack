@@ -56,7 +56,7 @@ export function AccountPage() {
     <Page>
       <div className="pt-4 flex flex-col gap-10 max-w-[720px]">
         <div>
-          <p className="font-mono text-[11px] tracking-[0.14em] text-ink2 m-0">BORROWER CARD</p>
+          <p className="font-mono text-[11px] tracking-[0.14em] text-ink2 m-0">Borrower card</p>
           <h1 className="m-0 font-display font-extrabold text-[clamp(44px,7vw,64px)] leading-[0.95] tracking-[-0.05em]">
             Account<span className="text-teal-text">.</span>
           </h1>
@@ -98,7 +98,7 @@ export function AccountPage() {
           {save.isError && <p className="m-0 text-sm text-blush-text">{friendly(save.error)}</p>}
           {save.isSuccess && <p className="m-0 text-sm text-teal-text">Saved.</p>}
           <div className="text-sm">
-            <span className="text-ink2">College email: </span>
+            <span className="text-ink2">{me.isAdmin ? 'Account email: ' : 'College email: '}</span>
             <span className="font-mono">{me.email}</span>
           </div>
         </section>
