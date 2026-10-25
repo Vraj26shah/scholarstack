@@ -2,6 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { env } from '../env';
 import type { AuthGateway } from './gateway';
 
+/** True when the current page is part of the admin area. */
+function isAdminContext(): boolean {
+  return typeof window !== 'undefined' && window.location?.pathname.startsWith('/admin');
+}
+
 /**
  * Real sign-in: Supabase Auth with Google (college accounts) or an email sign-in link.
  * The SDK is loaded on first use, so the catalogue renders without waiting for it.
@@ -15,7 +20,9 @@ export class SupabaseAuthGateway implements AuthGateway {
     if (!this.loading) {
       if (!env.supabaseUrl || !env.supabaseKey)
         throw new Error(
-          'Sign-in is not configured: set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.',
+          isAdminContext()
+            ? 'Sign-in is not configured: set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.'
+            : 'Sign-in is temporarily unavailable. Please try again later or contact support.',
         );
       this.loading = import('@supabase/supabase-js').then(({ createClient }) =>
         createClient(env.supabaseUrl, env.supabaseKey, {
@@ -59,29 +66,42 @@ export class SupabaseAuthGateway implements AuthGateway {
     if (error) {
       const code = 'code' in error && typeof error.code === 'string' ? error.code : '';
       const message = error.message.toLowerCase();
+      const admin = isAdminContext();
       if (code.includes('captcha') || message.includes('captcha'))
         throw new Error(
-          'Security check failed. Check that this site is allowed in the Turnstile widget and that its secret is configured in Supabase Auth.',
+          admin
+            ? 'Security check failed. Check that this site is allowed in the Turnstile widget and that its secret is configured in Supabase Auth.'
+            : 'The security check could not be completed. Please refresh the page and try again, or use "Continue with Google" instead.',
         );
       if (code.includes('rate') || message.includes('rate limit'))
-        throw new Error('Sign-in email limit reached. Wait a few minutes and try again.');
+        throw new Error('Too many sign-in attempts. Please wait a few minutes and try again.');
       if (code.includes('email_address_not_authorized') || message.includes('only authorized'))
         throw new Error(
-          'Supabase is using its test email service, which only sends to authorized team addresses. Configure custom SMTP in Supabase Auth.',
+          admin
+            ? 'Supabase is using its test email service, which only sends to authorized team addresses. Configure custom SMTP in Supabase Auth.'
+            : 'We could not send the sign-in email right now. Please try again later or use "Continue with Google" instead.',
         );
       if (message.includes('redirect') && (message.includes('allow') || message.includes('url')))
         throw new Error(
-          'Supabase rejected the callback URL. Add this site’s /auth/callback URL to Auth → URL Configuration.',
+          admin
+            ? 'Supabase rejected the callback URL. Add this site\'s /auth/callback URL to Auth → URL Configuration.'
+            : 'Sign-in is temporarily misconfigured. Please try again later or contact support.',
         );
       if (message.includes('vitbhopal')) throw new Error(error.message);
-      const status = 'status' in error && typeof error.status === 'number' ? `HTTP ${error.status}` : '';
-      const detail = error.message
-        .replace(/[\r\n\t]+/g, ' ')
-        .replace(/\b(password|secret|token|authorization)\b\s*[:=]\s*\S+/gi, '$1=[redacted]')
-        .replace(/https?:\/\/\S+/gi, '[URL]')
-        .slice(0, 200);
+      // Admin gets the full diagnostic; students get a calm, actionable message.
+      if (admin) {
+        const status = 'status' in error && typeof error.status === 'number' ? `HTTP ${error.status}` : '';
+        const detail = error.message
+          .replace(/[\r\n\t]+/g, ' ')
+          .replace(/\b(password|secret|token|authorization)\b\s*[:=]\s*\S+/gi, '$1=[redacted]')
+          .replace(/https?:\/\/\S+/gi, '[URL]')
+          .slice(0, 200);
+        throw new Error(
+          `Could not send the sign-in link (${code || status || 'email delivery error'}): ${detail || 'Check Supabase Auth email/SMTP settings and logs.'}`,
+        );
+      }
       throw new Error(
-        `Could not send the sign-in link (${code || status || 'email delivery error'}): ${detail || 'Check Supabase Auth email/SMTP settings and logs.'}`,
+        'We couldn\'t send your sign-in link. Please try again in a moment, or use "Continue with Google" instead.',
       );
     }
   }
@@ -98,7 +118,7 @@ export class SupabaseAuthGateway implements AuthGateway {
         queryParams,
       },
     });
-    if (error) throw new Error('Google sign-in could not start. Try the email code instead.');
+    if (error) throw new Error('Google sign-in could not start. Please try again or use the email sign-in link instead.');
   }
 
   completeRedirect() {

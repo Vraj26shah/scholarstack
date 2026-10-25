@@ -115,7 +115,7 @@ export function SignInPage({ adminMode: adminProp = false }: { adminMode?: boole
       if (isDemo) await finish();
       else setStep('link-sent');
     } catch (err) {
-      setError(err instanceof ApiError ? friendly(err) : (err as Error).message);
+      setError(friendly(err));
     } finally {
       setBusy(false);
       setCaptcha(undefined);
@@ -204,7 +204,7 @@ export function SignInPage({ adminMode: adminProp = false }: { adminMode?: boole
                           sessionStorage.setItem('auth_next', returnTo);
                           await authGateway.startGoogle(isAdmin);
                         } catch (e) {
-                          setError((e as Error).message);
+                          setError(e instanceof ApiError ? friendly(e) : (e as Error).message || 'Google sign-in could not start. Please try again.');
                           setBusy(false);
                         }
                       }}

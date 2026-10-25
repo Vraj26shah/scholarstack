@@ -482,8 +482,15 @@ export class ApiClient {
 
 export const api = new ApiClient(env.apiBase);
 
-/** Friendly text for every error code. */
+/** True when the current page is part of the admin area. */
+function isAdminRoute(): boolean {
+  return typeof globalThis.location !== 'undefined' && globalThis.location?.pathname.startsWith('/admin');
+}
+
+/** Friendly text for every error code. Admins see full details; students see calm messages. */
 export function friendly(error: unknown): string {
+  const admin = isAdminRoute();
+
   if (error instanceof ApiError) {
     switch (error.code) {
       case 'NOT_COLLEGE_EMAIL':
@@ -496,18 +503,28 @@ export function friendly(error: unknown): string {
         return 'Buy this course to open its files.';
       case 'NOT_READY':
         // Admins get the server's exact reason (which file, what to do); students the calm version.
-        if (globalThis.location?.pathname.startsWith('/admin')) return error.message;
+        if (admin) return error.message;
         return 'This file is still being prepared. Check back in a few minutes.';
       case 'SYNC_FAILED':
+        if (admin) return error.message;
+        return 'Something went wrong while syncing. Please try again shortly.';
       case 'PAYMENTS_UNAVAILABLE':
         return error.message;
       case 'NETWORK':
-        return 'We couldn’t reach Scholars Stack. Check your connection, then try again.';
+        return 'We couldn\u2019t reach Scholars Stack. Check your connection, then try again.';
+      case 'ALREADY_OWNED':
+        return 'You already own this course. Check your shelf!';
       default:
-        // Server-side failures: students get a calm, human sentence; admins keep the real detail.
-        if (error.status >= 500 && !globalThis.location?.pathname.startsWith('/admin'))
+        // Admins always see the server's real message for debugging.
+        if (admin) return error.message;
+        // Server-side failures: students get a calm, human sentence.
+        if (error.status >= 500)
           return 'The library is having a moment on our side. Nothing is lost. Try again in a minute.';
-        return error.message;
+        // Client errors (400, 403, 404, 409, etc.): show the server's message only if it looks
+        // human-readable (no stack traces, no long technical dumps).
+        if (error.message && error.message.length < 200 && !/\b(stack|trace|error at|ERR_|ECONNREFUSED|ENOTFOUND|uncaught|exception|undefined|null pointer)\b/i.test(error.message))
+          return error.message;
+        return 'Something went wrong. Please try again or contact support if this keeps happening.';
     }
   }
   return 'Something went wrong. Please try again.';

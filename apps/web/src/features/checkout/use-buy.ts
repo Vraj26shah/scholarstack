@@ -53,7 +53,7 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
       } else
         setProblem({
           kind: 'error',
-          message: e instanceof Error && !(e instanceof ApiError) ? e.message : friendly(e),
+          message: friendly(e),
         });
     } finally {
       setBusy(false);

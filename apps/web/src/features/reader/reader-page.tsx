@@ -345,7 +345,7 @@ function ReaderView({ fileId }: { fileId: string }) {
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return;
       setShareMessage(
-        error instanceof Error ? error.message : 'Could not share this page. Please try again.',
+        'Could not share this page. Please try again.',
       );
     } finally {
       setShareBusy(false);
