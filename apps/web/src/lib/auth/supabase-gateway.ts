@@ -84,7 +84,7 @@ export class SupabaseAuthGateway implements AuthGateway {
       if (message.includes('redirect') && (message.includes('allow') || message.includes('url')))
         throw new Error(
           admin
-            ? 'Supabase rejected the callback URL. Add this site\'s /auth/callback URL to Auth → URL Configuration.'
+            ? "Supabase rejected the callback URL. Add this site's /auth/callback URL to Auth → URL Configuration."
             : 'Sign-in is temporarily misconfigured. Please try again later or contact support.',
         );
       if (message.includes('vitbhopal')) throw new Error(error.message);
@@ -118,7 +118,10 @@ export class SupabaseAuthGateway implements AuthGateway {
         queryParams,
       },
     });
-    if (error) throw new Error('Google sign-in could not start. Please try again or use the email sign-in link instead.');
+    if (error)
+      throw new Error(
+        'Google sign-in could not start. Please try again or use the email sign-in link instead.',
+      );
   }
 
   completeRedirect() {

@@ -522,7 +522,13 @@ export function friendly(error: unknown): string {
           return 'The library is having a moment on our side. Nothing is lost. Try again in a minute.';
         // Client errors (400, 403, 404, 409, etc.): show the server's message only if it looks
         // human-readable (no stack traces, no long technical dumps).
-        if (error.message && error.message.length < 200 && !/\b(stack|trace|error at|ERR_|ECONNREFUSED|ENOTFOUND|uncaught|exception|undefined|null pointer)\b/i.test(error.message))
+        if (
+          error.message &&
+          error.message.length < 200 &&
+          !/\b(stack|trace|error at|ERR_|ECONNREFUSED|ENOTFOUND|uncaught|exception|undefined|null pointer)\b/i.test(
+            error.message,
+          )
+        )
           return error.message;
         return 'Something went wrong. Please try again or contact support if this keeps happening.';
     }

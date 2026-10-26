@@ -786,13 +786,13 @@ check(
   earnRows.some((r) => r.user_id === uid && r.sales >= 1),
 );
 await db.query(
-  `insert into public.contributor_bonuses (user_id, year, amount_paise) values ($1, 2026, 100)`,
+  'insert into public.contributor_bonuses (user_id, year, amount_paise) values ($1, 2026, 100)',
   [uid],
 );
 check(
   'the yearly bonus can be paid only once per year',
   await throws(
-    `insert into public.contributor_bonuses (user_id, year, amount_paise) values ($1, 2026, 100)`,
+    'insert into public.contributor_bonuses (user_id, year, amount_paise) values ($1, 2026, 100)',
     [uid],
   ),
 );

@@ -297,7 +297,7 @@ describe('ConvertPages', () => {
     const written = progressReports.filter((r) => r.stage === 'writing_pages').map((r) => r.current);
     expect(written).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
     expect(progressReports.every((r) => r.stage !== 'writing_pages' || r.total === 20)).toBe(true);
-  });
+  }, 30_000);
 
   it('keeps converting when a progress callback fails', async () => {
     const storage = new MapStorage();

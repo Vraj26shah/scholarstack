@@ -43,15 +43,18 @@ export function SignInPage({ adminMode: adminProp = false }: { adminMode?: boole
   }, []);
   // Tokens last a few minutes; Turnstile fetches a new one by itself, so this is silent.
   const onCaptchaExpired = useCallback(() => setCaptcha(undefined), []);
-  const onCaptchaError = useCallback((code?: string) => {
-    setCaptcha(undefined);
-    setCaptchaProblem(turnstileProblem(code));
-    reportProblem(
-      'blocked',
-      `The sign-in security check failed (code ${code ?? 'unknown'})`,
-      turnstileProblem(code),
-    );
-  }, []);
+  const onCaptchaError = useCallback(
+    (code?: string) => {
+      setCaptcha(undefined);
+      setCaptchaProblem(turnstileProblem(code, isAdmin));
+      reportProblem(
+        'blocked',
+        `The sign-in security check failed (code ${code ?? 'unknown'})`,
+        turnstileProblem(code, true),
+      );
+    },
+    [isAdmin],
+  );
   const retryCaptcha = () => {
     setCaptchaProblem(null);
     setCaptcha(undefined);
@@ -204,7 +207,11 @@ export function SignInPage({ adminMode: adminProp = false }: { adminMode?: boole
                           sessionStorage.setItem('auth_next', returnTo);
                           await authGateway.startGoogle(isAdmin);
                         } catch (e) {
-                          setError(e instanceof ApiError ? friendly(e) : (e as Error).message || 'Google sign-in could not start. Please try again.');
+                          setError(
+                            e instanceof ApiError
+                              ? friendly(e)
+                              : (e as Error).message || 'Google sign-in could not start. Please try again.',
+                          );
                           setBusy(false);
                         }
                       }}

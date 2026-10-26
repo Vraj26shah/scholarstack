@@ -22,30 +22,33 @@ declare global {
 }
 
 /** Why the check failed, in words a student (or the admin setting it up) can act on. */
-export function turnstileProblem(code?: string): string {
+export function turnstileProblem(code?: string, isAdmin?: boolean): string {
   const c = code ?? '';
-  const isAdmin = typeof window !== 'undefined' && window.location?.pathname.startsWith('/admin');
-  
+  const admin =
+    isAdmin ??
+    (typeof window !== 'undefined' &&
+      (window.location?.pathname.startsWith('/admin') || window.location?.search.includes('admin=1')));
+
   // Configuration errors (site key, domain)
   if (/^1101(00|10)/.test(c) || c === '400020') {
-    if (isAdmin) {
+    if (admin) {
       return 'The security check is not set up correctly (wrong site key). Check Cloudflare Turnstile configuration.';
     }
     return "We're having technical issues with the security check. Please contact support.";
   }
-  
+
   if (c.startsWith('110200')) {
-    if (isAdmin) {
+    if (admin) {
       return 'This web address is not allowed in the Turnstile widget. Add it to the allowed domains list.';
     }
     return "We're having technical issues with the security check. Please contact support.";
   }
-  
+
   // User verification failed (can retry)
   if (c.startsWith('300') || c.startsWith('600')) {
     return "We couldn't verify you're human. Please refresh the page and try again, or try a different browser.";
   }
-  
+
   // Script loading failed (ad blockers, network issues)
   return 'The security check could not load. Please disable ad or tracker blockers for this site, then refresh the page.';
 }
