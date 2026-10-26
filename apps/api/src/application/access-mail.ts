@@ -107,6 +107,87 @@ export class AccessMailService {
   }
 
   /**
+   * Tell students their access state was updated (e.g. blocked, restored, or validity changed).
+   */
+  async accessChanged(
+    students: { id: string; email: string; fullName: string | null }[],
+    course: Pick<Course, 'id' | 'title' | 'slug'>,
+    action: 'block' | 'restore' | 'until',
+    until?: Date | null,
+  ): Promise<string[]> {
+    if (this.mailer.provider === 'none' || students.length === 0) return [];
+    const room = await this.left();
+    const take = students.slice(0, room);
+    if (take.length === 0) return [];
+    try {
+      let subject = '';
+      let heading = '';
+      let bodyText = '';
+      let kicker = '';
+
+      if (action === 'block') {
+        subject = `Access suspended: ${course.title}`;
+        heading = `Your access to ${course.title} has been suspended`;
+        kicker = 'ACCESS SUSPENDED';
+        bodyText = [
+          `Your reading access for ${course.title} has been temporarily suspended by an administrator.`,
+          'If you believe this is an error or need help, please reach out to library support.',
+        ].join('\n\n');
+      } else if (action === 'restore') {
+        subject = `Access restored: ${course.title}`;
+        heading = `Your access to ${course.title} is active again`;
+        kicker = 'ACCESS RESTORED';
+        bodyText = [
+          `Good news! Your access to ${course.title} has been restored.`,
+          'You can resume reading directly from your shelf.',
+        ].join('\n\n');
+      } else {
+        subject = `Access updated: ${course.title}`;
+        heading = `Your access period for ${course.title} was updated`;
+        kicker = 'ACCESS UPDATED';
+        bodyText = [
+          `Your access period for ${course.title} has been updated.`,
+          until
+            ? `Your access is now active until ${day(until)}.`
+            : 'Your access now has no expiration date.',
+          'Open it any time from My shelf.',
+        ].join('\n\n');
+      }
+
+      const messages = await Promise.all(
+        take.map(async (s) => ({
+          to: { email: s.email, name: s.fullName ?? undefined },
+          ...renderAnnouncement(
+            {
+              subject,
+              heading,
+              body: bodyText,
+              ctaLabel: action === 'block' ? 'Contact support' : 'Go to course',
+              ctaUrl: action === 'block' ? '/help' : `/c/${course.slug}`,
+            },
+            {
+              appUrl: this.config.appUrl,
+              name: s.fullName,
+              unsubscribeUrl: await this.unsubscribeUrl(s.id),
+              kicker,
+              reason:
+                'You are getting this notification regarding an access status update to a course on your account.',
+            },
+          ),
+        })),
+      );
+      await this.mailer.sendBatch(messages);
+      await this.quota.add(this.today(), messages.length);
+      return take.map((s) => s.email);
+    } catch (e) {
+      console.error(
+        JSON.stringify({ level: 'warn', event: 'mail.access_changed', error: (e as Error).message }),
+      );
+      return [];
+    }
+  }
+
+  /**
    * Hourly: email each student whose access has ended (once per ended access), with one email
    * per student listing every course that ended, how to get it back, and what's new.
    */

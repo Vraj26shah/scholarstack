@@ -402,7 +402,9 @@ export class AdminService {
   }
 
   /** Block, restore or set the end date for chosen students of one course. */
-  async changeAccess(input: AccessChangeInput): Promise<AdminCourseAccessDto & { changed: number }> {
+  async changeAccess(
+    input: AccessChangeInput,
+  ): Promise<AdminCourseAccessDto & { changed: number; emailed?: string[] }> {
     const course = await this.reader.findCourse(input.courseId);
     if (!course) throw fail.notFound('That course');
     if (input.action === 'until' && input.until === undefined)
@@ -412,7 +414,27 @@ export class AdminService {
         ? { kind: 'until', until: input.until ? new Date(input.until) : null }
         : { kind: input.action };
     const changed = await this.access().changeAccess(course.id, input.userIds, change);
-    return { ...(await this.courseAccess(course.id)), changed };
+
+    // Notify students of the status change (block, restore, or expiration update)
+    let emailed: string[] = [];
+    if (this.accessMail && input.userIds.length > 0) {
+      const records = await this.access().listForCourse(course.id);
+      const studentMap = new Map(records.map((r) => [r.userId, r] as const));
+      const targetStudents = input.userIds
+        .map((uid) => studentMap.get(uid))
+        .filter((r): r is NonNullable<typeof r> => Boolean(r))
+        .map((r) => ({ id: r.userId, email: r.email, fullName: r.fullName }));
+      if (targetStudents.length > 0) {
+        emailed = await this.accessMail.accessChanged(
+          targetStudents,
+          course,
+          input.action,
+          change.kind === 'until' ? change.until : null,
+        );
+      }
+    }
+
+    return { ...(await this.courseAccess(course.id)), changed, emailed };
   }
 
   /** Independent live checks; a healthy R2 scan cannot hide a Supabase or queue failure. */

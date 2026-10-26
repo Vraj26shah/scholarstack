@@ -7,17 +7,21 @@ import type { Mailer } from '../domain/ports';
  */
 export class BrevoMailer implements Mailer {
   readonly provider = 'brevo' as const;
+  private readonly doFetch: typeof fetch;
+
   constructor(
     private readonly apiKey: string,
     private readonly from: { email: string; name: string },
-    private readonly fetcher: typeof fetch = fetch,
-  ) {}
+    fetcher: typeof fetch = fetch,
+  ) {
+    this.doFetch = (url, init) => fetcher(url, init);
+  }
 
   async sendBatch(messages: OutgoingEmail[]): Promise<void> {
     for (let i = 0; i < messages.length; i += 500) {
       const chunk = messages.slice(i, i + 500);
       const first = chunk[0]!;
-      const res = await this.fetcher('https://api.brevo.com/v3/smtp/email', {
+      const res = await this.doFetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
         headers: { 'content-type': 'application/json', accept: 'application/json', 'api-key': this.apiKey },
         body: JSON.stringify({
