@@ -19,6 +19,8 @@ catalogueRoutes.get('/catalogue/drawer', async (c) => {
 /** Search every live course and bundle, across batches and programmes. */
 catalogueRoutes.get('/catalogue/search', async (c) => {
   const { q } = SearchQuery.parse({ q: c.req.query('q') ?? '' });
+  // Each search reads the whole catalogue: 40 a minute per network is plenty for a person.
+  await throttle(c, 'search', (await requestMeta(c)).ipHash);
   c.header('cache-control', 'no-store');
   return c.json(await c.get('container').catalogue.search(q));
 });
@@ -55,8 +57,8 @@ catalogueRoutes.get('/bundles', async (c) => {
 });
 
 catalogueRoutes.get('/bundles/:idOrSlug', async (c) => {
-  const { userId } = await optionalViewer(c);
-  return c.json(await c.get('container').catalogue.bundle(c.req.param('idOrSlug'), userId));
+  const { userId, isAdmin } = await optionalViewer(c);
+  return c.json(await c.get('container').catalogue.bundle(c.req.param('idOrSlug'), userId, isAdmin));
 });
 
 /** First page of a unit, watermarked "PREVIEW". Public and cacheable. */

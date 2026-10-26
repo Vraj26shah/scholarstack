@@ -2188,3 +2188,80 @@ revoke execute on function public.royalty_earnings_since(timestamptz) from publi
 $m$;
   insert into supabase_migrations.schema_migrations (version, name) values ('20261026000700', 'rewards_bonus');
 end $migration$;
+
+-- ═══ 20261027000100_contribution_pipeline ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261027000100') then
+    raise notice 'skip 20261027000100';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Contribution pipeline: where the admin filed a student's upload (course, folder, the storage
+-- keys written), and when the whole job was marked done. The automatic file checks live inside
+-- the existing `files` json (one `check` per file), so they need no column.
+-- ════════════════════════════════════════════════════════════════════════════
+
+alter table public.contributions add column if not exists filed_course_id uuid
+  references public.courses(id) on delete set null;
+alter table public.contributions add column if not exists filed_folder text not null default ''
+  check (length(filed_folder) <= 600);
+alter table public.contributions add column if not exists filed_keys text[] not null default '{}';
+alter table public.contributions add column if not exists filed_at timestamptz;
+alter table public.contributions add column if not exists completed_at timestamptz;
+
+create index if not exists contributions_filed_course_idx on public.contributions (filed_course_id)
+  where filed_course_id is not null;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261027000100', 'contribution_pipeline');
+end $migration$;
+
+-- ═══ 20261027000200_relocate_file ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261027000200') then
+    raise notice 'skip 20261027000200';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Move or rename one notes file without re-making its pages: point the file row at its new
+-- storage key, unit (created if new) and, if needed, another course, all in one step. Page rows
+-- and reading progress are keyed by the file id, so they follow it. A unit left empty is removed.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create or replace function public.relocate_course_file(
+  p_file_id uuid,
+  p_course_id uuid,
+  p_unit_key text,
+  p_unit_title text,
+  p_unit_kind text,
+  p_unit_sort int,
+  p_unit_hidden boolean,
+  p_source_key text,
+  p_source_etag text,
+  p_name text
+) returns void language plpgsql security definer set search_path = public as $$
+declare
+  old_unit uuid;
+  new_unit uuid;
+begin
+  select unit_id into old_unit from public.course_files where id = p_file_id for update;
+  if not found then
+    raise exception 'file not found' using errcode = 'P0002';
+  end if;
+  insert into public.course_units (course_id, key, title, kind, sort, is_hidden)
+  values (p_course_id, p_unit_key, p_unit_title, p_unit_kind, p_unit_sort, p_unit_hidden)
+  on conflict (course_id, key) do nothing;
+  select id into new_unit from public.course_units where course_id = p_course_id and key = p_unit_key;
+  update public.course_files
+     set course_id = p_course_id, unit_id = new_unit, source_key = p_source_key,
+         source_etag = p_source_etag, name = p_name, source_missing_at = null
+   where id = p_file_id;
+  if old_unit is distinct from new_unit
+     and not exists (select 1 from public.course_files where unit_id = old_unit) then
+    delete from public.course_units where id = old_unit;
+  end if;
+end $$;
+revoke execute on function public.relocate_course_file(uuid, uuid, text, text, text, int, boolean, text, text, text)
+  from public, anon, authenticated;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261027000200', 'relocate_file');
+end $migration$;

@@ -11,6 +11,7 @@ import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { ArrowRight, Box, Check } from '../../shared/ui/icons';
 import { PriceTag, Ribbon } from '../../shared/ui/index-card';
 import { Reveal } from '../../shared/ui/motion';
+import { PreviewBar } from '../../shared/ui/preview-bar';
 import { PaymentProblem } from '../checkout/payment-problem';
 import { useBuy } from '../checkout/use-buy';
 
@@ -50,6 +51,7 @@ export function BundlePage() {
 
   return (
     <Page wide>
+      {b.preview && <PreviewBar what="bundle" section="bundles" />}
       <nav
         aria-label="Breadcrumb"
         className="flex flex-wrap items-center gap-2.5 font-mono text-[13px] text-ink2 mb-6 mt-2"
@@ -119,7 +121,7 @@ export function BundlePage() {
                 All on your shelf <ArrowRight size={18} />
               </LinkButton>
             ) : (
-              <Button variant="buy" size="lg" onClick={buyState.buy} disabled={buyState.busy}>
+              <Button variant="buy" size="lg" onClick={buyState.buy} disabled={buyState.busy || b.preview}>
                 {buyState.busy
                   ? 'Opening payment…'
                   : buyState.signedIn

@@ -107,7 +107,7 @@ export async function syncR2Files(
           await new Promise((resolve) => setTimeout(resolve, 350 * (attempt + 1)));
         }
       }
-      if (!result) throw lastError ?? new Error('The R2 file sync returned no result.');
+      if (!result) throw lastError ?? new Error('The storage file sync returned no result.');
       addResult(summary, result);
       outcomes[index] = {
         ...task,

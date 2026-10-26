@@ -112,6 +112,8 @@ export interface ReadingItemDto {
 }
 
 export interface CourseDetailDto extends CourseCardDto {
+  /** An admin is looking at a course students can't see yet (draft or archived). */
+  preview?: boolean;
   description: string;
   branchName: string;
   units: CourseUnitDto[];
@@ -150,6 +152,8 @@ export interface BundleCardDto {
 }
 
 export interface BundleDetailDto extends BundleCardDto {
+  /** An admin is looking at a bundle students can't see yet. */
+  preview?: boolean;
   courses: (CourseCardDto & { owned: boolean })[];
   /** What this buyer pays: the bundle price scaled to the courses they don't own yet. */
   yourPricePaise: number;
@@ -1036,6 +1040,23 @@ export const ConvertSelectionBody = z.object({
 export type ConvertSelectionInput = z.infer<typeof ConvertSelectionBody>;
 export const BoardScopeBody = z.object({ scopes: R2Scopes });
 
+// ── Admin "Today" (what needs the admin now) ──────────────────────────────────
+
+export type TodayKey = 'questions' | 'uploads' | 'publish' | 'files' | 'rewards' | 'emails' | 'problems';
+
+export interface TodayItemDto {
+  key: TodayKey;
+  /** How many need attention; null when that part couldn't be checked just now. */
+  count: number | null;
+  /** Money involved, for rewards. */
+  amountPaise?: number;
+}
+
+export interface AdminTodayDto {
+  checkedAt: string;
+  items: TodayItemDto[];
+}
+
 // ── Problems log (admin) ─────────────────────────────────────────────────────
 
 /** What a student's browser reports when something unexpected goes wrong. Never shown to them. */
@@ -1096,13 +1117,69 @@ export const StorageCleanBody = z.discriminatedUnion('what', [
   z.object({ what: z.literal('notes'), folders: z.array(z.string().min(1).max(400)).min(1).max(500) }),
   z.object({ what: z.literal('pages') }),
   z.object({ what: z.literal('orders'), olderThanDays: z.number().int().min(7).max(3650).default(30) }),
+  /** One whole group from the unused report (re-checked when deleting). */
+  z.object({
+    what: z.literal('unused'),
+    group: z.enum(['leftovers', 'uploads-orphan', 'uploads-finished', 'support-orphan']),
+  }),
 ]);
+
+/** Kinds of stored objects nothing on the site uses. */
+export type UnusedGroupKey = 'pages' | 'leftovers' | 'uploads-orphan' | 'uploads-finished' | 'support-orphan';
+
+export interface UnusedGroupDto {
+  key: UnusedGroupKey;
+  objects: number;
+  bytes: number;
+  /** The biggest ones first (up to 200). */
+  items: { key: string; bytes: number }[];
+}
+
+/** Everything stored that nothing uses, by kind, plus folders still waiting to be imported. */
+export interface StorageUnusedDto {
+  scannedAt: string;
+  groups: UnusedGroupDto[];
+  /** Folders in no course yet: not unused, just not imported (never deleted from here). */
+  notImported: { folder: string; objects: number; bytes: number }[];
+}
 export type StorageCleanInput = z.infer<typeof StorageCleanBody>;
 
 export interface StorageCleanResultDto {
   removedObjects: number;
   removedBytes: number;
   removedRows: number;
+}
+
+// ── Restructuring stored notes: move and rename, keeping pages ──────────────
+
+/** Move files or folders into another folder (a unit of the same or another course). */
+export const StorageMoveBody = z.object({
+  paths: z.array(z.string().min(1).max(1024)).min(1).max(200),
+  /** The folder they go into, e.g. "drive-imports/23 Batch/DBMS/Unit 3/". */
+  toFolder: z.string().trim().min(1).max(1024),
+  dryRun: z.boolean().default(true),
+});
+export type StorageMoveInput = z.infer<typeof StorageMoveBody>;
+
+/** Rename one file or folder where it is. */
+export const StorageRenameBody = z.object({
+  path: z.string().min(1).max(1024),
+  newName: z.string().trim().min(1).max(120),
+  dryRun: z.boolean().default(true),
+});
+export type StorageRenameInput = z.infer<typeof StorageRenameBody>;
+
+export interface StorageMovePlanDto {
+  moves: {
+    from: string;
+    to: string;
+    /** The site file this storage file is (null: stored but not on the site). */
+    file: { name: string; fromCourse: string; toCourse: string } | null;
+  }[];
+  /** Why it can't be done as asked (nothing is changed then). */
+  blocked: string | null;
+  /** After a real run. */
+  done?: { moved: number; files: number; leftovers: number; coursesUnpublished: number };
 }
 
 // ── Storage tree: every notes file in R2 and what it belongs to ──────────────
@@ -1221,11 +1298,26 @@ export type ContributionReward =
   /** The contributor earns a share of every sale of this course from now on. */
   | { type: 'royalty'; courseId: string; courseTitle: string; sharePercent: number };
 
+/** What the automatic check found in one uploaded file. */
+export interface FileCheckDto {
+  format: 'pdf' | 'word' | 'powerpoint' | 'image' | 'zip' | 'other';
+  /** e.g. "PDF · about 24 pages", "ZIP · 6 files, 5 usable" */
+  label: string;
+  /** Can be turned into pages as it is (a zip: at least one usable file inside). */
+  ok: boolean;
+  /** Why not, in words the admin can pass on to the student. */
+  problem?: string;
+  /** For a zip: what's inside and whether each can become pages. */
+  entries?: { path: string; size: number; ok: boolean; reason?: string }[];
+}
+
 export interface ContributionFileDto {
   index: number;
   name: string;
   size: number;
   type: string;
+  /** Missing for files uploaded before checks existed (the admin can run it). */
+  check?: FileCheckDto;
 }
 
 /** What a student sees about their own contribution. */
@@ -1243,6 +1335,12 @@ export interface MyContributionDto {
   rewardPaidAt: string | null;
   createdAt: string;
   reviewedAt: string | null;
+  /** Where it stands, in the student's words: in review → accepted → in a course → live. */
+  progress: {
+    step: 'review' | 'accepted' | 'filed' | 'live' | 'rejected';
+    courseTitle: string | null;
+    courseSlug: string | null;
+  };
 }
 
 export interface ContributionStatusDto {
@@ -1257,11 +1355,114 @@ export interface ContributionStatusDto {
   royalties: MyRoyaltyDto[];
 }
 
+/** Where an upload is in the pipeline, step by step. */
+export type PipelineStep = 'decide' | 'file' | 'reward' | 'pages' | 'finish' | 'done' | 'rejected';
+
+export interface FiledFileDto {
+  key: string;
+  name: string;
+  /** waiting = pages not made yet; missing = the file is no longer in the course. */
+  status: 'waiting' | 'working' | 'ready' | 'failed' | 'hidden' | 'missing';
+  pages: number;
+}
+
+export interface ContributionPipelineDto {
+  step: PipelineStep;
+  filed: {
+    courseId: string;
+    courseTitle: string;
+    courseSlug: string;
+    courseStatus: 'draft' | 'live' | 'archived';
+    folder: string;
+    at: string;
+    files: FiledFileDto[];
+  } | null;
+  completedAt: string | null;
+}
+
 /** What the admin sees: everything a student sees plus who sent it. */
 export interface AdminContributionDto extends MyContributionDto {
   description: string;
   contributor: { id: string; email: string; name: string | null; blocked: boolean; approvedBefore: number };
   reviewedBy: string | null;
+  pipeline: ContributionPipelineDto;
+}
+
+/** File an upload into a course: the unit folder name is ours ("Unit 2 - SQL"). */
+export const FileContributionBody = z.object({
+  courseId: z.string().min(1).max(64),
+  unit: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .refine((u) => !/[\\/]|\.\./.test(u), 'A unit name cannot contain slashes.'),
+  /** true = only show what would happen. */
+  dryRun: z.boolean().default(true),
+  /**
+   * Per-file choices, keyed by the plan's `from` (an uploaded file, or "archive.zip › inner/path").
+   * unit: put this one in another unit folder · name: its new file name · skip: leave it out.
+   */
+  files: z
+    .array(
+      z.object({
+        from: z.string().min(1).max(600),
+        unit: z.string().trim().max(80).optional(),
+        name: z.string().trim().max(120).optional(),
+        skip: z.boolean().optional(),
+      }),
+    )
+    .max(300)
+    .default([]),
+});
+export type FileContributionInput = z.infer<typeof FileContributionBody>;
+
+export interface FilePlanDto {
+  course: { id: string; title: string; status: 'draft' | 'live' | 'archived' };
+  /** The unit folder, relative to the course ("Unit 2 - SQL/"). */
+  folder: string;
+  /** The course's existing unit folders, to pick from. */
+  units: string[];
+  files: {
+    /** Where it came from: the uploaded file, or "archive.zip › inner/path.pdf". */
+    from: string;
+    /** Its name in the course, relative to the course folder. */
+    to: string;
+    status: 'new' | 'exists' | 'skipped';
+    reason?: string;
+    /** Left out by the admin (can be put back), as opposed to unusable. */
+    leftOut?: boolean;
+  }[];
+  /** After a real run: pages queued. */
+  queued?: number;
+}
+
+export const CompleteContributionBody = z.object({
+  done: z.boolean(),
+  /** Email the student that their notes are live. */
+  notify: z.boolean().default(true),
+});
+
+/** How one contributor is doing, for the admin. */
+export interface ContributorStatsDto {
+  userId: string;
+  email: string;
+  name: string | null;
+  blocked: boolean;
+  uploads: number;
+  accepted: number;
+  rejected: number;
+  waiting: number;
+  /** Files of theirs that students can read now, and their pages. */
+  filesLive: number;
+  pagesLive: number;
+  /** Courses they earn a royalty on, and the sales counted for it. */
+  royaltyCourses: number;
+  royaltySales: number;
+  earnedPaise: number;
+  paidPaise: number;
+  owedPaise: number;
+  lastUploadAt: string;
 }
 
 export const ContributionReviewBody = z.object({

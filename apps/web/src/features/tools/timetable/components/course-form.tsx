@@ -1,4 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { api } from '../../../../lib/api';
 import { Button } from '../../../../shared/ui/button';
 import { Labelled, field } from '../../core/ui';
 import { COLORS, type Course, clashes, expandSlots } from '../domain';
@@ -20,6 +22,9 @@ export function CourseForm({
   onClose: () => void;
 }) {
   const [d, setD] = useState(draft);
+  // Course names from the Scholars Stack catalogue, as suggestions (typing anything still works).
+  const catalogue = useQuery({ queryKey: ['catalogue'], queryFn: api.catalogue, staleTime: 300_000 });
+  const subjects = catalogue.data?.stats?.subjects ?? [];
   const [slotText, setSlotText] = useState(draft.slots.join(' + '));
   const parsed = expandSlots(slotText);
   const clash = clashes(courses, parsed.slots, d.tentative, d.id);
@@ -31,9 +36,15 @@ export function CourseForm({
           <input
             className={field}
             value={d.name}
+            list="timetable-subjects"
             onChange={(e) => setD({ ...d, name: e.target.value })}
             placeholder="e.g. Operating Systems"
           />
+          <datalist id="timetable-subjects">
+            {subjects.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
         </Labelled>
         <Labelled label="Course code">
           <input
@@ -43,11 +54,20 @@ export function CourseForm({
             placeholder="e.g. CSE3003"
           />
         </Labelled>
-        <Labelled label="Faculty (optional)" className="sm:col-span-2">
+        <Labelled label="Faculty (optional)">
           <input
             className={field}
             value={d.teacher}
             onChange={(e) => setD({ ...d, teacher: e.target.value })}
+          />
+        </Labelled>
+        <Labelled label="Room (optional)">
+          <input
+            className={field}
+            value={d.room ?? ''}
+            maxLength={30}
+            onChange={(e) => setD({ ...d, room: e.target.value })}
+            placeholder="e.g. AB1-204"
           />
         </Labelled>
         <Labelled label="Slots" className="sm:col-span-2">

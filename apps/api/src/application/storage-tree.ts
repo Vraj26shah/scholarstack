@@ -2,11 +2,16 @@ import type {
   StorageDeletePreviewDto,
   StorageDeleteResultDto,
   StorageEntryDto,
+  StorageMoveInput,
+  StorageMovePlanDto,
+  StorageRenameInput,
   StorageTreeDto,
 } from '@ss/contracts';
 import type { Course, CourseFile, StoredObject } from '../domain/entities';
 import type { CatalogueWriter, EntitlementRepository, ObjectStore } from '../domain/ports';
 import { fail } from './errors';
+import { hiddenByDefault, parseUnit, unitKindOf, unitSortOf } from './folders';
+import { safeFileName } from './uploads/file-policy';
 
 /** Areas of the bucket that are never notes and never deleted from here. */
 const PROTECTED = /^(pages|contributions|support|_system)\//;
@@ -19,7 +24,7 @@ async function walk(store: ObjectStore, prefix: string): Promise<StoredObject[]>
     const page = await store.listPage(prefix, cursor, 1000);
     out.push(...page.objects);
     if (page.nextCursor && (seen.has(page.nextCursor) || page.nextCursor === cursor))
-      throw fail.syncFailed('R2 repeated a cursor while listing; try again.');
+      throw fail.syncFailed('Storage listing stalled; try again.');
     if (page.nextCursor) seen.add(page.nextCursor);
     cursor = page.nextCursor ?? undefined;
   } while (cursor);
@@ -203,5 +208,177 @@ export class StorageTreeService {
       deletedCourses,
       archivedCourses,
     };
+  }
+
+  // ── Restructuring: move and rename, keeping pages ──
+
+  /** A folder path, cleaned: "a\\b" or "/a//b" → "a/b/". */
+  private folder(raw: string) {
+    const f = raw
+      .trim()
+      .replace(/\\/g, '/')
+      .replace(/\/{2,}/g, '/')
+      .replace(/^\/+/, '');
+    const path = f.endsWith('/') ? f : `${f}/`;
+    if (path === '/' || path.split('/').some((p) => p === '..' || p === '.') || PROTECTED.test(path))
+      throw fail.badRequest('That folder can’t be used.');
+    return path;
+  }
+
+  /** Move files or whole folders into another folder. */
+  move(input: StorageMoveInput) {
+    const to = this.folder(input.toFolder);
+    const pairs = (all: StoredObject[]) =>
+      input.paths.flatMap((raw) => {
+        const path = this.clean(raw);
+        if (path.endsWith('/')) {
+          const name = path.slice(0, -1).split('/').pop()!;
+          return all
+            .filter((o) => o.key.startsWith(path))
+            .map((o) => ({ from: o.key, to: `${to}${name}/${o.key.slice(path.length)}` }));
+        }
+        return [{ from: path, to: `${to}${path.split('/').pop()}` }];
+      });
+    return this.relocate(
+      pairs,
+      input.dryRun,
+      input.paths.map((p) => this.clean(p)),
+      to,
+    );
+  }
+
+  /** Rename one file (its extension is kept) or one folder, where it is. */
+  rename(input: StorageRenameInput) {
+    const path = this.clean(input.path);
+    const isFolder = path.endsWith('/');
+    const base = isFolder ? path.slice(0, -1) : path;
+    const parent = base.slice(0, base.lastIndexOf('/') + 1);
+    const ext = !isFolder && base.includes('.') ? base.slice(base.lastIndexOf('.')) : '';
+    let name = safeFileName(input.newName);
+    if (!isFolder && !/\.[a-z0-9]{2,5}$/i.test(name)) name += ext;
+    if (!name || name === '.') throw fail.badRequest('Give it a name.');
+    const target = isFolder ? `${parent}${name}/` : `${parent}${name}`;
+    const pairs = (all: StoredObject[]) =>
+      isFolder
+        ? all
+            .filter((o) => o.key.startsWith(path))
+            .map((o) => ({ from: o.key, to: target + o.key.slice(path.length) }))
+        : [{ from: path, to: target }];
+    return this.relocate(pairs, input.dryRun, [path], parent);
+  }
+
+  /**
+   * Plan (dry run) or carry out a list of moves. Each file: copy to its new key, point its site
+   * record there (new unit, maybe another course; pages and reading history kept), then delete the
+   * old copy. One file at a time, so a failure leaves every file either fully moved or untouched.
+   */
+  private async relocate(
+    build: (all: StoredObject[]) => { from: string; to: string }[],
+    dryRun: boolean,
+    sources: string[],
+    toFolder: string,
+  ): Promise<StorageMovePlanDto> {
+    const { courses, files, notes } = await this.snapshot();
+    const pairs = build(notes).filter((p) => p.from !== p.to);
+    const present = new Set(notes.map((o) => o.key));
+    const byKey = new Map(files.map((f) => [f.sourceKey, f]));
+    const byPrefix = [...courses].sort((a, b) => b.r2Prefix.length - a.r2Prefix.length);
+    const courseOf = (key: string) => byPrefix.find((c) => c.r2Prefix && key.startsWith(c.r2Prefix)) ?? null;
+
+    let blocked: string | null = null;
+    const ownFolder = courses.find((c) => sources.some((s) => s.endsWith('/') && c.r2Prefix.startsWith(s)));
+    if (ownFolder)
+      blocked = `That includes the whole folder of “${ownFolder.title}”. Use “Move or rename a course's folder” for that.`;
+    else if (sources.some((s) => s.endsWith('/') && toFolder.startsWith(s)))
+      blocked = 'A folder can’t go inside itself.';
+    else if (pairs.length === 0) blocked = 'Nothing to move.';
+    else if (pairs.length > 300) blocked = 'More than 300 files at once. Move smaller folders.';
+    const moves = pairs.map((p) => {
+      const f = byKey.get(p.from);
+      const from = f ? courses.find((c) => c.id === f.courseId) : null;
+      const to = courseOf(p.to);
+      return {
+        ...p,
+        f,
+        toCourse: to,
+        file: f ? { name: f.name, fromCourse: from?.title ?? '', toCourse: to?.title ?? '' } : null,
+      };
+    });
+    if (!blocked) {
+      const missing = moves.find((m) => !present.has(m.from));
+      const clash = moves.find((m) => present.has(m.to));
+      const homeless = moves.find((m) => m.f && !m.toCourse);
+      const busy = moves.find((m) => m.f?.conversionStatus === 'pending');
+      const twice = moves.find((m, i) => moves.findIndex((x) => x.to === m.to) !== i);
+      blocked = missing
+        ? `“${missing.from}” isn't in storage any more. Refresh and try again.`
+        : clash
+          ? `“${clash.to}” already exists. Pick another name or folder.`
+          : twice
+            ? `Two files would both become “${twice.to}”.`
+            : homeless
+              ? `“${homeless.f!.name}” is on the site, so it has to stay inside a course's folder.`
+              : busy
+                ? `Pages are being made for “${busy.f!.name}” right now. Move it once that finishes.`
+                : null;
+    }
+    const plan: StorageMovePlanDto = {
+      moves: moves.map(({ from, to, file }) => ({ from, to, file })),
+      blocked,
+    };
+    if (dryRun || blocked) {
+      if (!dryRun && blocked) throw fail.badRequest(blocked);
+      return plan;
+    }
+
+    let moved = 0;
+    let movedFiles = 0;
+    let leftovers = 0;
+    const touched = new Set<string>();
+    for (const m of moves) {
+      const copy = await this.sources.copy(m.from, m.to);
+      if (m.f && m.toCourse) {
+        const inner = m.to.slice(m.toCourse.r2Prefix.length).split('/');
+        const loose = inner.length === 1;
+        const unit = loose ? { key: 'notes', title: 'Notes' } : parseUnit(inner[0]!);
+        const kind = loose ? 'notes' : unitKindOf(inner[0]!);
+        await this.writer.relocateFile(m.f.id, {
+          courseId: m.toCourse.id,
+          unitKey: unit.key,
+          unitTitle: unit.title,
+          unitKind: kind,
+          unitSort: unitSortOf(kind, unit.key),
+          unitHidden: hiddenByDefault(kind),
+          sourceKey: m.to,
+          sourceEtag: copy.etag,
+          name: inner.slice(1).join(' / ') || inner[0]!,
+        });
+        touched.add(m.f.courseId);
+        movedFiles++;
+      }
+      await this.sources.delete(m.from).catch(() => leftovers++);
+      moved++;
+    }
+    // A live course that lost its last readable file comes off sale.
+    let coursesUnpublished = 0;
+    if (touched.size) {
+      const after = await this.writer.listAllFiles([...touched]);
+      for (const id of touched) {
+        const course = courses.find((c) => c.id === id);
+        const readable = after.some(
+          (f) =>
+            f.courseId === id &&
+            !f.hidden &&
+            !f.unitHidden &&
+            f.conversionStatus === 'ready' &&
+            f.pageCount > 0,
+        );
+        if (course?.status === 'live' && !readable) {
+          await this.writer.updateCourse(id, { status: 'draft' });
+          coursesUnpublished++;
+        }
+      }
+    }
+    return { ...plan, done: { moved, files: movedFiles, leftovers, coursesUnpublished } };
   }
 }

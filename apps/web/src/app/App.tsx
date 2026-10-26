@@ -13,6 +13,7 @@ import { useSession } from '../lib/session';
 import { useTheme } from '../lib/theme';
 import { LinkButton } from '../shared/ui/button';
 import { Page, TabBar } from '../shared/ui/chrome';
+import { ErrorBoundary } from '../shared/ui/error-boundary';
 import { OfflineBanner, Spinner } from '../shared/ui/feedback';
 
 /** Only ever return to a page on this site (never an outside address or "//evil.com"). */
@@ -212,6 +213,7 @@ function NotFound() {
 }
 
 function Shell() {
+  const { pathname: routeKey } = useLocation();
   const bootstrap = useSession((s) => s.bootstrap);
   const status = useSession((s) => s.status);
   useTheme(); // applies the persisted theme
@@ -245,35 +247,37 @@ function Shell() {
       <OfflineBanner />
       <ScrollManager />
       <RootAuthCodeHandler />
-      <Suspense
-        fallback={
-          <div className="min-h-dvh flex items-center justify-center">
-            <Spinner label="Loading" />
-          </div>
-        }
-      >
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/c/:slug" element={<CoursePage />} />
-          <Route path="/b/:slug" element={<BundlePage />} />
-          <Route path="/tools/:key" element={<ToolPage />} />
-          <Route path="/contribute" element={<ContributePage />} />
-          <Route path="/help" element={<HelpPage />} />
-          <Route path="/unsubscribe" element={<UnsubscribePage />} />
-          <Route path="/sign-in" element={<SignInPage />} />
-          <Route path="/admin/login" element={<SignInPage adminMode />} />
-          <Route path="/auth/callback" element={<AuthCallbackPage />} />
-          <Route path="/checkout/:orderId" element={guard(<CheckoutPage />)} />
-          <Route path="/shelf" element={guard(<ShelfPage />)} />
-          <Route path="/read/:fileId" element={guard(<ReaderPage />)} />
-          <Route path="/account" element={guard(<AccountPage />)} />
-          <Route path="/admin" element={guard(<AdminPage />)} />
-          <Route path="/terms" element={<TermsPage />} />
-          <Route path="/privacy" element={<PrivacyPage />} />
-          <Route path="/contact" element={<ContactPage />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </Suspense>
+      <ErrorBoundary resetKey={routeKey}>
+        <Suspense
+          fallback={
+            <div className="min-h-dvh flex items-center justify-center">
+              <Spinner label="Loading" />
+            </div>
+          }
+        >
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/c/:slug" element={<CoursePage />} />
+            <Route path="/b/:slug" element={<BundlePage />} />
+            <Route path="/tools/:key" element={<ToolPage />} />
+            <Route path="/contribute" element={<ContributePage />} />
+            <Route path="/help" element={<HelpPage />} />
+            <Route path="/unsubscribe" element={<UnsubscribePage />} />
+            <Route path="/sign-in" element={<SignInPage />} />
+            <Route path="/admin/login" element={<SignInPage adminMode />} />
+            <Route path="/auth/callback" element={<AuthCallbackPage />} />
+            <Route path="/checkout/:orderId" element={guard(<CheckoutPage />)} />
+            <Route path="/shelf" element={guard(<ShelfPage />)} />
+            <Route path="/read/:fileId" element={guard(<ReaderPage />)} />
+            <Route path="/account" element={guard(<AccountPage />)} />
+            <Route path="/admin" element={guard(<AdminPage />)} />
+            <Route path="/terms" element={<TermsPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
       <TabBar />
       <SessionSheets />
     </>

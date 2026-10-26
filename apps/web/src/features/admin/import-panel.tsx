@@ -520,7 +520,7 @@ export function ImportPanel() {
 
   return (
     <Panel
-      title="Import from R2"
+      title="Add courses"
       aside={
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => void tree.refetch()} disabled={tree.isFetching}>
@@ -537,23 +537,19 @@ export function ImportPanel() {
       }
     >
       <p className="m-0 text-sm text-ink2 max-w-[760px]">
-        Everything under <span className="font-mono">{tree.data?.root ?? 'drive-imports/'}</span> in your
-        bucket. Tick a folder to make it a course: its sub-folders become units ("Module 2 - SQL" → Module 2),
-        loose files go under "Notes". New folders are checked every 30 seconds. Course-code matches preselect
-        the programmes from your branch map. Before importing, review the title, course code, programme, batch
-        year, semester, price and optional draft bundle. Imports and changed R2 files stay private until an
-        admin reviews and publishes them after conversion. Sync checks each file in its own request; complete
-        page maps stay as they are, and failures are listed by file.
+        Tick a folder to make it a course. Its sub-folders become units ("Module 2 - SQL" → Module 2) and
+        loose files go under "Notes". Check the details, then import: new courses stay hidden until you
+        publish them in Courses.
       </p>
       {run.data && <ResultCard r={run.data} title="Imported" />}
-      {rescan.data && <ResultCard r={rescan.data.summary} title="R2 sync" />}
+      {rescan.data && <ResultCard r={rescan.data.summary} title="Storage sync" />}
       {rescanProgress && (
         <section
           className="rounded-[18px] border border-line bg-card p-4 flex flex-col gap-2"
-          aria-label="R2 sync progress"
+          aria-label="Storage sync progress"
         >
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <strong>{rescan.isPending ? 'Checking each R2 file' : 'File sync results'}</strong>
+            <strong>{rescan.isPending ? 'Checking each storage file' : 'File sync results'}</strong>
             <span className="font-mono text-xs text-ink2">
               {rescanProgress.completed} / {rescanProgress.total} files
             </span>
@@ -615,15 +611,15 @@ export function ImportPanel() {
           aria-live="polite"
           className="m-0 rounded-xl border border-teal/40 bg-teal/10 p-3 text-sm text-teal-text"
         >
-          R2 files or folders changed. New folders appear here automatically; rescan imported files to map
-          additions or replacements to their original course folders and queue conversion. Your current
+          Storage files or folders changed. New folders appear here automatically; rescan imported files to
+          map additions or replacements to their original course folders and queue conversion. Your current
           selections stay intact.
         </p>
       )}
       {run.isError && <ErrorState title="Import failed." message={friendly(run.error)} />}
       {rescan.isError && (
         <ErrorState
-          title="R2 inventory could not be read."
+          title="Storage inventory could not be read."
           message={friendly(rescan.error)}
           onRetry={() => rescan.mutate()}
         />
@@ -633,7 +629,7 @@ export function ImportPanel() {
         <Skeleton className="h-80" />
       ) : tree.isError ? (
         <ErrorState
-          title="Couldn't read the bucket."
+          title="Couldn't read storage."
           message={friendly(tree.error)}
           onRetry={() => tree.refetch()}
         />

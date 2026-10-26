@@ -1,4 +1,4 @@
-import type { ContributionReward, SupportStatus, SupportTopic } from '@ss/contracts';
+import type { ContributionReward, FileCheckDto, SupportStatus, SupportTopic } from '@ss/contracts';
 import type {
   AnnouncementStatus,
   ConversionStage,
@@ -275,7 +275,7 @@ export interface Contribution {
   courseHint: string;
   kind: 'notes' | 'pyq' | 'slides' | 'lab' | 'other';
   description: string;
-  files: { index: number; key: string; name: string; size: number; type: string }[];
+  files: { index: number; key: string; name: string; size: number; type: string; check?: FileCheckDto }[];
   totalBytes: number;
   status: 'pending' | 'approved' | 'rejected';
   reviewNote: string;
@@ -285,6 +285,17 @@ export interface Contribution {
   reviewedBy: string | null;
   reviewedAt: Date | null;
   createdAt: Date;
+  /** Where the admin filed it: a course, the folder inside it, and the storage keys written. */
+  filed?: ContributionFiling | null;
+  /** The admin marked the whole job finished. */
+  completedAt?: Date | null;
+}
+
+export interface ContributionFiling {
+  courseId: string;
+  folder: string;
+  keys: string[];
+  at: Date;
 }
 
 /** One row per course: what it sold and what its contributor has earned and been paid. */

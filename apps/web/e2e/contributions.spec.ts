@@ -42,16 +42,38 @@ test('share notes, review them, reward the student', async ({ browser }, info) =
   await row.getByRole('button', { name: 'Download os-unit-3.pdf' }).click();
   expect((await download).suggestedFilename()).toBe('os-unit-3.pdf');
 
-  await row.getByRole('button', { name: 'Review' }).click();
-  await row.getByRole('button', { name: 'Free course' }).click();
-  await row.getByLabel('Course to give, free').selectOption({ index: 1 });
-  await row.getByLabel('Note to the student (optional)').fill('Very clear, thank you!');
-  await row.getByRole('button', { name: 'Accept', exact: true }).last().click();
-  await admin.getByRole('button', { name: 'Accepted' }).click();
-  await expect(admin.getByText('Very clear, thank you!')).toBeVisible();
+  // 1. Checked on upload.
+  await expect(row.getByText(/PDF/).first()).toBeVisible();
+  // 2. Decide.
+  await row.getByRole('button', { name: 'Accept', exact: true }).click();
+  await admin.getByRole('button', { name: 'In progress' }).click();
+  const card = admin.getByRole('listitem').filter({ hasText: 'OS unit 3: scheduling' });
+  // 3. File it into a course, in our layout (the course is guessed from what the student typed).
+  await expect(card.getByLabel('Course')).not.toHaveValue('');
+  await card.getByLabel('Unit folder').fill('Unit 3 - Scheduling');
+  await expect(card.getByLabel('Unit for os-unit-3.pdf')).toHaveValue('Unit 3 - Scheduling');
+  // Rename it on the way in.
+  await card.getByLabel('Name for os-unit-3.pdf').fill('Scheduling notes.pdf');
+  await card.getByRole('button', { name: /File 1 file and make pages/ }).click();
+  // 4. Reward.
+  await card.getByRole('button', { name: 'A free course' }).click();
+  await card.getByLabel('Course to give, free').selectOption({ index: 1 });
+  await card.getByLabel('Note to the student (optional)').fill('Very clear, thank you!');
+  await card.getByRole('button', { name: 'Give reward and email them' }).click();
+  // 5–6. Pages are made, then mark it done.
+  await expect(card.getByRole('button', { name: 'Mark done' })).toBeVisible({ timeout: 30_000 });
+  await card.getByRole('button', { name: 'Mark done' }).click();
+  await admin.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(
+    admin
+      .getByRole('listitem')
+      .filter({ hasText: 'OS unit 3: scheduling' })
+      .getByText(/Done on/),
+  ).toBeVisible();
 
   await student.reload();
   await expect(student.getByText('ACCEPTED', { exact: true })).toBeVisible();
+  await expect(student.getByText('Students are reading it in')).toBeVisible();
   await expect(student.getByText(/Free course:/)).toBeVisible();
 });
 
@@ -94,12 +116,12 @@ test('a student reports a problem with a screenshot; the admin answers from Quer
   await expect(student.getByText('CLOSED', { exact: true })).toBeVisible();
 });
 
-test('admin deletes a folder completely from Storage & health', async ({ browser }, info) => {
+test('admin deletes a folder completely from Storage', async ({ browser }, info) => {
   test.skip(info.project.name !== 'desktop', 'one run is enough');
   const admin = await (await browser.newContext()).newPage();
   await signIn(admin, 'keeper', '/admin');
-  await admin.getByRole('tab', { name: 'Storage & health', exact: true }).click();
-  await expect(admin.getByRole('heading', { name: 'Files & folders' })).toBeVisible();
+  await admin.getByRole('tab', { name: 'Storage', exact: true }).click();
+  await expect(admin.getByRole('heading', { name: 'Files', exact: true })).toBeVisible();
   await admin.getByPlaceholder('Find a folder, file or course').fill('Cloud Computing');
   const folder = admin.getByRole('button', { name: /^Delete .*Cloud Computing\/$/ }).first();
   await folder.click();

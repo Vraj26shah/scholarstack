@@ -13,6 +13,7 @@ import type {
   Branch,
   Bundle,
   Contribution,
+  ContributionFiling,
   Course,
   CourseEarningRow,
   CourseFile,
@@ -80,6 +81,24 @@ export interface CatalogueWriter {
     courseId: string,
     newPrefix: string,
     files: { fileId: string; sourceKey: string; sourceEtag: string }[],
+  ): Promise<void>;
+  /**
+   * Moves or renames one file: new storage key, unit (created if new) and possibly another course,
+   * keeping its pages and reading history. An emptied unit is removed.
+   */
+  relocateFile(
+    fileId: string,
+    to: {
+      courseId: string;
+      unitKey: string;
+      unitTitle: string;
+      unitKind: CourseFile['unitKind'];
+      unitSort: number;
+      unitHidden: boolean;
+      sourceKey: string;
+      sourceEtag: string;
+      name: string;
+    },
   ): Promise<void>;
   /** Removes a course and everything under it. Refused ('sold') when anyone bought or was given it. */
   deleteCourse(courseId: string): Promise<'deleted' | 'sold' | 'not-found'>;
@@ -230,6 +249,11 @@ export interface ContributionRepository {
   /** Accepted contributions with a cash reward, newest first. */
   cashRewards(): Promise<Contribution[]>;
   markRewardPaid(id: string, note: string): Promise<void>;
+  /** Store the automatic file checks (for uploads made before checks existed). */
+  setFileChecks(id: string, files: Contribution['files']): Promise<void>;
+  /** Record where the admin filed it (null clears it). */
+  setFiled(id: string, filed: ContributionFiling | null): Promise<void>;
+  setCompleted(id: string, at: Date | null): Promise<void>;
 }
 
 /** Batch years and branches as the admin manages them (hidden and retired ones included). */

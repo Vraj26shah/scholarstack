@@ -15,7 +15,9 @@ import type {
 import type { RoyaltyStatements } from '../earnings/earnings-service';
 import { fail } from '../errors';
 import { type IncomingFile, deleteFiles, storeFiles } from '../uploads/store-files';
+import { inspectFile } from './inspect';
 import { toMyContribution } from './mappers';
+import { type FiledCourses, progressOf } from './pipeline';
 
 export type { IncomingFile };
 
@@ -35,6 +37,7 @@ export class ContributionService {
     private readonly profiles: ProfileRepository,
     private readonly royalties: RoyaltyStatements,
     private readonly clock: Clock,
+    private readonly filedCourses?: FiledCourses,
   ) {}
 
   async status(principal: Principal): Promise<ContributionStatusDto> {
@@ -45,13 +48,16 @@ export class ContributionService {
       this.repo.listForUser(principal.userId),
       this.royalties.forContributor(principal.userId),
     ]);
+    const filed = this.filedCourses ? await this.filedCourses.load(mine) : null;
     return {
       open,
       blocked,
       pending: counts.pending,
       todayLeft: Math.max(0, CONTRIBUTION_LIMITS.submissionsPerDay - counts.recent),
       limits: CONTRIBUTION_LIMITS,
-      mine: mine.map(toMyContribution),
+      mine: mine.map((c) =>
+        toMyContribution(c, filed ? progressOf(c, filed.course(c), filed.files(c)) : undefined),
+      ),
       royalties,
     };
   }
@@ -86,7 +92,9 @@ export class ContributionService {
       );
 
     const id = crypto.randomUUID();
-    const stored = await storeFiles(this.uploads, `contributions/${principal.userId}/${id}/`, files);
+    const saved = await storeFiles(this.uploads, `contributions/${principal.userId}/${id}/`, files);
+    // The automatic check: what each file is and whether pages can be made from it.
+    const stored = saved.map((f) => ({ ...f, check: inspectFile(f.name, files[f.index - 1]!.bytes) }));
     try {
       const created = await this.repo.create({
         id,

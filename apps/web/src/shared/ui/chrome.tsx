@@ -3,7 +3,7 @@ import { useSession } from '../../lib/session';
 import { LABEL } from '../copy';
 import { StackWord, Wordmark } from './brand';
 import { Button, LinkButton } from './button';
-import { Catalogue, ShelfIcon, Toolbox } from './icons';
+import { Catalogue, ShelfIcon, Toolbox, Upload } from './icons';
 import { ThemeToggle } from './theme-toggle';
 
 function initials(email: string, name: string | null) {
@@ -126,8 +126,14 @@ export function Footer() {
 export function TabBar() {
   const { status } = useSession();
   const { pathname, hash } = useLocation();
-  // The reader has its own controls at the bottom; sign-in is a full-screen card.
-  if (status !== 'ready' || pathname.startsWith('/read/') || pathname === '/sign-in') return null;
+  // Visitors get it too (Shelf asks them to sign in). The reader has its own controls at the
+  // bottom; sign-in is a full-screen card.
+  if (
+    (status !== 'ready' && status !== 'signed-out') ||
+    pathname.startsWith('/read/') ||
+    pathname === '/sign-in'
+  )
+    return null;
   const onToolbox = (pathname === '/' && hash === '#toolbox') || pathname.startsWith('/tools/');
   const tabs = [
     {
@@ -137,6 +143,12 @@ export function TabBar() {
       active: pathname === '/' && !onToolbox,
     },
     { to: '/shelf', label: 'Shelf', icon: <ShelfIcon size={22} />, active: pathname.startsWith('/shelf') },
+    {
+      to: '/contribute',
+      label: 'Earn',
+      icon: <Upload size={22} />,
+      active: pathname.startsWith('/contribute'),
+    },
     { to: '/#toolbox', label: 'Toolbox', icon: <Toolbox size={22} />, active: onToolbox },
   ];
   return (
@@ -144,7 +156,7 @@ export function TabBar() {
       aria-label="App"
       className="md:hidden fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_18px_-14px_var(--shadow)]"
     >
-      <ul className="m-0 p-0 list-none grid grid-cols-3 h-[60px]">
+      <ul className="m-0 p-0 list-none grid grid-cols-4 h-[60px]">
         {tabs.map((t) => (
           <li key={t.label} className="h-full">
             <Link

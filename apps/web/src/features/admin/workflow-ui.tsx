@@ -18,7 +18,7 @@ export function stageLabel(
         ? `Waiting its turn · ${row.queuePosition} of ${row.queueTotal}`
         : 'Waiting its turn';
     case 'downloading_source':
-      return 'Fetching the original from R2';
+      return 'Fetching the original from storage';
     case 'validating_source':
       return 'Checking the file is a real document';
     case 'rendering_pages':
@@ -40,13 +40,13 @@ export function stageLabel(
 
 const ERROR_STAGE: Record<string, string> = {
   dispatch: 'could not reach the page maker',
-  downloading_source: 'while fetching the file from R2',
+  downloading_source: 'while fetching the file from storage',
   validating_source: 'the file itself is not a valid document',
   rendering_pages: 'while turning pages into images',
   clearing_previous_pages: 'while clearing old pages',
   writing_preview: 'while making the cover preview',
-  writing_pages: 'while saving pages to R2',
-  verifying_r2: 'some pages did not save to R2',
+  writing_pages: 'while saving pages to storage',
+  verifying_r2: 'some pages did not save to storage',
   saving_manifest: 'while updating the website',
 };
 export const errorStageLabel = (stage: string | null) => (stage ? (ERROR_STAGE[stage] ?? '') : '');
@@ -149,22 +149,18 @@ export function Notice({ tone = 'info', children }: { tone?: 'info' | 'good' | '
   );
 }
 
-/** Plain-language glossary, so "R2" and "Supabase" never confuse a new admin. */
+/** Plain-language glossary for a new admin; closed by default. */
 export function Glossary() {
   return (
-    <details open className="group rounded-xl border-[1.5px] border-line bg-surface px-4 py-3 text-sm">
+    <details className="group rounded-xl border-[1.5px] border-line bg-surface px-4 py-3 text-sm">
       <summary className="cursor-pointer font-semibold text-ink marker:text-ink2">
         What do these words mean?
       </summary>
       <dl className="mt-3 grid gap-x-6 gap-y-2 text-ink2 sm:grid-cols-[max-content_1fr]">
-        <dt className="font-semibold text-ink">R2</dt>
-        <dd className="m-0">
-          Your file storage on Cloudflare. The original PDFs and slides live here. R2 is always right.
-        </dd>
-        <dt className="font-semibold text-ink">Supabase</dt>
-        <dd className="m-0">
-          The website's database: courses, prices, who bought what, and which pages each file has.
-        </dd>
+        <dt className="font-semibold text-ink">Storage</dt>
+        <dd className="m-0">Where the original PDFs and slides live. It is always right.</dd>
+        <dt className="font-semibold text-ink">Website</dt>
+        <dd className="m-0">Courses, prices, who bought what, and which pages each file has.</dd>
         <dt className="font-semibold text-ink">Pages</dt>
         <dd className="m-0">
           Protected page images made from each file. Students read these, never the original file.

@@ -22,7 +22,7 @@ export function buildTree(
   data: StorageTreeDto,
   filter: (e: StorageEntryDto) => boolean = () => true,
 ): TreeNode {
-  const root: TreeNode = node('R2', '', true);
+  const root: TreeNode = node('Storage', '', true);
   const byPrefix = new Map(data.courses.map((c) => [c.r2Prefix, c]));
   for (const e of data.entries) {
     if (!filter(e)) continue;

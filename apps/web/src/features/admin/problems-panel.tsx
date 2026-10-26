@@ -29,7 +29,7 @@ const KIND: Record<string, { label: string; tone: string; help: string }> = {
   image: {
     label: 'Preview missing',
     tone: 'bg-marigold/25 text-ink',
-    help: 'A page-one preview would not load. Re-make that file’s pages in R2 → Website.',
+    help: 'A page-one preview would not load. Re-make that file’s pages in Make pages.',
   },
   blocked: {
     label: 'Blocked by browser',

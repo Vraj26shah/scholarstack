@@ -233,7 +233,7 @@ export function EarningsPanel() {
   );
   return (
     <Panel
-      title="Earnings & royalties"
+      title="Earnings"
       aside={
         <Button variant="outline" onClick={() => void q.refetch()} disabled={q.isFetching}>
           {q.isFetching ? 'Counting…' : 'Refresh'}

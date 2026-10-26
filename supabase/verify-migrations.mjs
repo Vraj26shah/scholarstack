@@ -797,6 +797,53 @@ check(
   ),
 );
 
+// ── Contribution pipeline: where an upload was filed, and when it was done ──
+{
+  const contribution = await one('select id from public.contributions limit 1');
+  if (contribution) {
+    await db.query(
+      `update public.contributions set filed_course_id = $2, filed_folder = 'Unit 6 - Recovery/',
+         filed_keys = array['k1','k2'], filed_at = now(), completed_at = now() where id = $1`,
+      [contribution.id, course.id],
+    );
+    const row = await one(
+      'select filed_folder, filed_keys, completed_at from public.contributions where id = $1',
+      [contribution.id],
+    );
+    check(
+      'a contribution remembers where it was filed and when it was done',
+      row.filed_folder === 'Unit 6 - Recovery/' && row.filed_keys.length === 2 && row.completed_at !== null,
+    );
+  }
+}
+
+// ── Moving a file keeps its id (and so its pages); an emptied unit goes ──
+{
+  const f = await one('select id, unit_id, course_id from public.course_files limit 1');
+  if (f) {
+    const before = (
+      await one('select count(*)::int n from public.course_files where unit_id = $1', [f.unit_id])
+    ).n;
+    await db.query(
+      `select public.relocate_course_file($1, $2, 'unit-9', 'Extra', 'module', 9, false, 'moved/key.pdf', 'e1', 'key.pdf')`,
+      [f.id, f.course_id],
+    );
+    const moved = await one(
+      'select f.id, f.source_key, u.key from public.course_files f join public.course_units u on u.id = f.unit_id where f.id = $1',
+      [f.id],
+    );
+    const oldUnit = (await one('select count(*)::int n from public.course_units where id = $1', [f.unit_id]))
+      .n;
+    check(
+      'relocate_course_file moves a file (same id) to a new unit; an emptied unit is removed',
+      moved.id === f.id &&
+        moved.source_key === 'moved/key.pdf' &&
+        moved.key === 'unit-9' &&
+        oldUnit === (before === 1 ? 0 : 1),
+    );
+  } else check('relocate_course_file has a file to move', false);
+}
+
 async function denied(sql) {
   try {
     return (await asUser(student, sql)).length === 0;

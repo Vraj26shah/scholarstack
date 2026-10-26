@@ -9,6 +9,8 @@ import type { CheckoutService } from '../application/checkout-service';
 import type { AppConfig } from '../application/config';
 import type { ContributionReviewService } from '../application/contributions/contribution-review-service';
 import type { ContributionService } from '../application/contributions/contribution-service';
+import type { ContributorStatsService } from '../application/contributions/contributor-stats';
+import type { ContributionFilingService } from '../application/contributions/filing';
 import type { EarningsService } from '../application/earnings/earnings-service';
 import type { ProblemService } from '../application/problems';
 import type { ReaderService } from '../application/reader-service';
@@ -47,6 +49,10 @@ export interface Container {
   contributions: ContributionService;
   /** The admin reviewing and rewarding shared notes. */
   contributionReview: ContributionReviewService;
+  /** Turning an accepted upload into course files (our layout), ready for pages. */
+  contributionFiling: ContributionFilingService;
+  /** How each contributor is doing. */
+  contributorStats: ContributorStatsService;
   earnings: EarningsService;
   storageTree: StorageTreeService;
   academic: AcademicService;

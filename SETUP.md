@@ -47,7 +47,7 @@ Dashboard menu names below can move around between releases. If a label doesn't 
 - [ ] In the GitHub repository, add these **Actions repository secrets** (Settings → Secrets and variables → Actions): `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `TILE_SEED_SECRET`, `CONVERTER_CALLBACK_URL`, and `CONVERTER_CALLBACK_SECRET`. Use an R2 token scoped to the `scholarstack` bucket with object read/write access. Set `CONVERTER_CALLBACK_URL` to the deployed Worker's `/api/internal/conversion` URL. Do not use the localhost value from `.env.example`.
 - [ ] Enable Actions for the repository and keep `.github/workflows/convert-pages.yml` on its default branch. It polls R2 manifests every five minutes and can also be started manually from Actions → **Convert queued course files** → **Run workflow**. It processes up to five files per run, then picks up remaining jobs on later runs.
 - [ ] `pnpm secrets:push` configures Worker secrets only. It does not copy credentials to GitHub. Keep the R2 credentials in GitHub Actions secrets for conversion and in your local `.env` only for local operations.
-- [ ] Your notes are already in `scholarstack/drive-imports/23 Batch/…`. Keep adding batches the same way (`drive-imports/24 Batch/<Course>/<Unit>/<file>`). Nothing else to do here: you pick which folders become courses in **Admin → Import** after the first deploy.
+- [ ] Your notes are already in `scholarstack/drive-imports/23 Batch/…`. Keep adding batches the same way (`drive-imports/24 Batch/<Course>/<Unit>/<file>`). Nothing else to do here: you pick which folders become courses in **Admin → Courses → Add courses** after the first deploy.
 
 ## 4. Google sign-in (20 min)
 

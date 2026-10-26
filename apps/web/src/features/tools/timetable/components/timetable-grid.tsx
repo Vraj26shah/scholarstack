@@ -1,5 +1,5 @@
 import { Fragment, useMemo } from 'react';
-import { type Course, GRID, LUNCH_AFTER, PERIODS, occupied } from '../domain';
+import { type Course, GRID, LUNCH_AFTER, PERIODS, PERIOD_TIMES, dayIndex, occupied } from '../domain';
 
 /** The week as a table. Tapping a free slot selects it; tapping a course's slot opens that course. */
 export function TimetableGrid({
@@ -14,6 +14,10 @@ export function TimetableGrid({
   onOpen: (course: Course) => void;
 }) {
   const taken = useMemo(() => occupied(courses), [courses]);
+  const now = new Date();
+  const today = dayIndex(now);
+  const mins = now.getHours() * 60 + now.getMinutes();
+  const currentPeriod = PERIOD_TIMES.findIndex((t) => t.start <= mins && mins < t.end);
   const planned = useMemo(() => {
     const m = new Map<string, Course[]>();
     for (const c of courses) if (c.tentative) for (const s of c.slots) m.set(s, [...(m.get(s) ?? []), c]);
@@ -21,16 +25,19 @@ export function TimetableGrid({
   }, [courses]);
 
   return (
-    <div className="timetable-print overflow-x-auto rounded-[18px] bg-card shadow-[0_18px_34px_-26px_var(--shadow),0_0_0_1px_var(--line)]">
-      <table className="w-full min-w-[860px] border-collapse text-left">
+    <div className="overflow-x-auto rounded-[18px] bg-card shadow-[0_18px_34px_-26px_var(--shadow),0_0_0_1px_var(--line)]">
+      <table className="w-full min-w-[860px] table-fixed border-collapse text-left">
         <thead>
           <tr>
             <th className="sticky left-0 z-10 bg-card w-[104px] p-3 font-mono text-[11px] text-ink2 font-normal">
               DAY
             </th>
-            {PERIODS.map((p) => (
+            {PERIODS.map((p, i) => (
               <Fragment key={p.n}>
-                <th className="p-2 align-bottom">
+                <th
+                  className={`p-2 align-bottom ${i === currentPeriod && today >= 0 ? 'text-teal-text' : ''}`}
+                  aria-current={i === currentPeriod && today >= 0 ? 'time' : undefined}
+                >
                   <span className="block font-semibold text-[14px]">Slot {p.n}</span>
                   <span className="block font-mono text-[11px] text-ink2 font-normal">{p.time}</span>
                 </th>
@@ -41,10 +48,16 @@ export function TimetableGrid({
         </thead>
         <tbody>
           {GRID.map((d, r) => (
-            <tr key={d.day} className="border-t border-line">
-              <th scope="row" className="sticky left-0 z-10 bg-card p-3 text-[14px] font-semibold">
+            <tr key={d.day} className={`border-t border-line ${r === today ? 'bg-mist/25' : ''}`}>
+              <th
+                scope="row"
+                className={`sticky left-0 z-10 p-3 text-[14px] font-semibold ${r === today ? 'bg-mist/40 text-ink' : 'bg-card'}`}
+              >
                 {d.day.slice(0, 3)}
                 <span className="hidden sm:inline">{d.day.slice(3)}</span>
+                {r === today && (
+                  <span className="block font-mono text-[10px] font-normal text-teal-text">TODAY</span>
+                )}
               </th>
               {d.slots.map((slot, i) => {
                 const c = taken.get(slot);
@@ -83,10 +96,17 @@ export function TimetableGrid({
                       >
                         <span className="font-mono text-[11px] opacity-75">{slot}</span>
                         {shown && (
-                          <span className="text-[13px] font-semibold leading-tight [overflow-wrap:anywhere]">
-                            {shown.code || shown.name}
-                            {!c && plans.length > 1 ? ` +${plans.length - 1}` : ''}
-                          </span>
+                          <>
+                            <span className="text-[13px] font-semibold leading-tight [overflow-wrap:anywhere]">
+                              {shown.code || shown.name}
+                              {!c && plans.length > 1 ? ` +${plans.length - 1}` : ''}
+                            </span>
+                            {(shown.code || shown.room) && (
+                              <span className="text-[11.5px] leading-tight opacity-80 line-clamp-2 [overflow-wrap:anywhere]">
+                                {[shown.code ? shown.name : '', shown.room].filter(Boolean).join(' · ')}
+                              </span>
+                            )}
+                          </>
                         )}
                       </button>
                     </td>

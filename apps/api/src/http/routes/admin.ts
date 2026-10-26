@@ -7,6 +7,7 @@ import {
   BranchSaveBody,
   ClearProblemsBody,
   CompareScopeBody,
+  CompleteContributionBody,
   ContributionCopyBody,
   ContributionReviewBody,
   ContributionSettingsBody,
@@ -17,6 +18,7 @@ import {
   ConvertSelectionBody,
   CreateFeatureBody,
   DeleteCourseBody,
+  FileContributionBody,
   ImportBody,
   MoveCourseFolderBody,
   MoveYearBody,
@@ -30,7 +32,9 @@ import {
   SetRoyaltyBody,
   StorageCleanBody,
   StorageDeleteBody,
+  StorageMoveBody,
   StoragePathBody,
+  StorageRenameBody,
   SupportStatusBody,
   UpdateCourseBody,
   YearBody,
@@ -38,6 +42,7 @@ import {
 } from '@ss/contracts';
 import { type Context, Hono } from 'hono';
 import { z } from 'zod';
+import { recentProblems, todaySummary } from '../../application/admin-today';
 import { fail } from '../../application/errors';
 import { safeEqual } from '../../infrastructure/crypto';
 import { type AppEnv, requireLive } from '../helpers';
@@ -87,6 +92,32 @@ adminRoutes.post('/admin/contributions/:id/copy', async (c) => {
   await requireAdmin(c);
   const { folder } = ContributionCopyBody.parse(await c.req.json());
   return c.json(await c.get('container').contributionReview.copyToFolder(c.req.param('id'), folder));
+});
+
+/** Show (dryRun) or do the filing of an accepted upload into a course, in our folder layout. */
+adminRoutes.post('/admin/contributions/:id/file', async (c) => {
+  await requireAdmin(c);
+  const body = FileContributionBody.parse(await c.req.json());
+  return c.json(await c.get('container').contributionFiling.file(c.req.param('id'), body));
+});
+
+/** Run the automatic file check on an upload made before checks existed. */
+adminRoutes.post('/admin/contributions/:id/check', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').contributionReview.checkNow(c.req.param('id')));
+});
+
+/** Tick the whole job off; the student is emailed that their notes are live. */
+adminRoutes.post('/admin/contributions/:id/complete', async (c) => {
+  await requireAdmin(c);
+  const { done, notify } = CompleteContributionBody.parse(await c.req.json());
+  return c.json(await c.get('container').contributionReview.complete(c.req.param('id'), done, notify));
+});
+
+/** Every contributor and how they're doing. */
+adminRoutes.get('/admin/contributors', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').contributorStats.list());
 });
 
 adminRoutes.delete('/admin/contributions/:id', async (c) => {
@@ -240,6 +271,24 @@ adminRoutes.post('/admin/storage-tree/delete', async (c) => {
   return c.json(await c.get('container').storageTree.remove(path));
 });
 
+/** Everything stored that nothing uses, by kind (and folders still waiting to be imported). */
+adminRoutes.get('/admin/storage-unused', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').storageMap.unused());
+});
+
+/** Move files or folders into another folder; dryRun shows the plan. Pages are kept. */
+adminRoutes.post('/admin/storage-tree/move', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').storageTree.move(StorageMoveBody.parse(await c.req.json())));
+});
+
+/** Rename one file or folder where it is; dryRun shows the plan. */
+adminRoutes.post('/admin/storage-tree/rename', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').storageTree.rename(StorageRenameBody.parse(await c.req.json())));
+});
+
 // ── Storage map ──
 
 adminRoutes.get('/admin/storage-map', async (c) => {
@@ -367,6 +416,42 @@ adminRoutes.post('/admin/files/:id/retry-conversion', async (c) => {
 });
 
 // ── Step-by-step workflow ──
+
+/** Everything that needs the admin now, in one call (the first admin screen). */
+adminRoutes.get('/admin/today', async (c) => {
+  await requireAdmin(c);
+  const k = c.get('container');
+  return c.json(
+    await todaySummary({
+      questions: async () => (await k.supportDesk.list('open')).counts.open,
+      uploads: async () => {
+        const [pending, accepted] = await Promise.all([
+          k.contributionReview.list('pending'),
+          k.contributionReview.list('approved'),
+        ]);
+        // New ones, plus accepted ones waiting for the admin's next step (not for pages).
+        const waiting = accepted.items.filter((x) => ['file', 'reward', 'finish'].includes(x.pipeline.step));
+        return pending.items.length + waiting.length;
+      },
+      publish: async () => (await k.admin.overview()).courses.readyToPublish,
+      files: async () => {
+        const f = (await k.admin.overview()).files;
+        return f.failed + f.waiting;
+      },
+      rewards: async () => {
+        const e = await k.earnings.overview();
+        return {
+          count:
+            e.cashRewards.filter((r) => !r.paidAt).length +
+            e.courses.filter((x) => (x.royalty?.owedPaise ?? 0) > 0).length,
+          amountPaise: e.totals.cashOwedPaise + e.totals.royaltyOwedPaise,
+        };
+      },
+      emails: async () => (await k.announcements.list()).filter((a) => a.status === 'sending').length,
+      problems: async () => recentProblems(await k.problems.list()),
+    }),
+  );
+});
 
 adminRoutes.get('/admin/overview', async (c) => {
   await requireAdmin(c);

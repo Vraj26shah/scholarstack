@@ -7,15 +7,16 @@ import { type Browser, type Page, expect, test } from '@playwright/test';
 test.describe.configure({ mode: 'serial' });
 
 let page: Page;
-/** Old section names → [group, view]: the admin is five groups with views inside. */
+/** Old section names → [group, view]: the admin is six groups with views inside. */
 const PATH: Record<string, [string, string?]> = {
-  'Full R2 audit': ['Storage & health', 'Full audit'],
-  Bundles: ['Notes & courses', 'Bundles'],
-  'Import courses': ['Notes & courses', 'Import'],
-  'Courses & publishing': ['Notes & courses', 'Courses'],
-  'Features & email': ['Email & tools'],
-  'R2 → Website': ['Notes & courses', 'R2 → Website'],
-  'Students & access': ['Students & money', 'Access'],
+  'Full R2 audit': ['Storage', 'Full check'],
+  Bundles: ['Courses', 'Bundles'],
+  'Import courses': ['Courses', 'Add courses'],
+  'Courses & publishing': ['Courses', 'All courses'],
+  'Features & email': ['Emails'],
+  'R2 → Website': ['Courses', 'Make pages'],
+  'Students & access': ['Students', 'Access'],
+  Today: ['Today'],
 };
 const groupTab = (name: string) =>
   page.getByRole('tablist', { name: 'Admin sections' }).getByRole('tab', { name, exact: true });
@@ -63,15 +64,19 @@ test('sections open in any order and keep old links working', async () => {
   await page.goto('/admin?section=audit');
   await expect(tab('Full R2 audit').selected).toHaveAttribute('aria-selected', 'true');
   await page.goto('/admin');
+  await expect(tab('Today').selected).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { name: /needs? you/ })).toBeVisible();
+  await tab('R2 → Website').click();
 });
 
-test('health cards report R2, Supabase and the page maker', async () => {
-  await expect(page.getByText('File storage (R2)')).toBeVisible();
-  await expect(page.getByText('Working').first()).toBeVisible({ timeout: 15_000 });
+test('one line says storage, website, page maker and payments are working', async () => {
+  await expect(page.getByText(/Storage, website, page maker and payments.* are all working/)).toBeVisible({
+    timeout: 15_000,
+  });
 });
 
 test('compare everything in R2 and see files that are in no course', async () => {
-  await page.getByRole('radio', { name: /Everything in R2/ }).click();
+  await page.getByRole('radio', { name: /Everything in storage/ }).click();
   await page.getByRole('button', { name: 'Next: compare with the website' }).click();
   await expect(page.getByText('Not in any course')).toBeVisible({ timeout: 20_000 });
   const stage2 = page.locator('section[aria-labelledby="stage-2"]');
@@ -88,20 +93,22 @@ test('compare one folder, one file, and a mix', async () => {
   const stage2 = page.locator('section[aria-labelledby="stage-2"]');
   await expect(stage2.getByText('Database Management Systems')).toBeVisible({ timeout: 20_000 });
   // R2 differences (drift servers) are copied across; otherwise it already matches.
-  const fix = stage2.getByRole('button', { name: 'Make website match R2' }).first();
+  const fix = stage2.getByRole('button', { name: 'Make website match storage' }).first();
   if (await fix.isVisible()) {
     await fix.click();
     await expect(stage2.getByText(/^Done: /)).toBeVisible({ timeout: 60_000 });
   }
-  await expect(stage2.getByText('The website already matches R2 for everything you chose.')).toBeVisible({
-    timeout: 20_000,
-  });
+  await expect(stage2.getByText('The website already matches storage for everything you chose.')).toBeVisible(
+    {
+      timeout: 20_000,
+    },
+  );
 
   // Search, then a single file only.
   await page.getByRole('button', { name: /Remove 25 Batch\/Database Management Systems/ }).click();
-  await page.getByLabel('Find a folder or file in R2').fill('SQL-practice');
+  await page.getByLabel('Find a folder or file in storage').fill('SQL-practice');
   await page.getByRole('checkbox', { name: /Select file SQL-practice-queries\.pdf/ }).check();
-  await page.getByLabel('Find a folder or file in R2').fill('');
+  await page.getByLabel('Find a folder or file in storage').fill('');
   await page.getByRole('checkbox', { name: 'Select folder Compiler Design' }).check();
   await expect(page.getByText('Chosen: 2 items')).toBeVisible();
   await page.getByRole('button', { name: 'Next: compare with the website' }).click();
@@ -121,7 +128,7 @@ test('make pages for the selection with a bar per file', async () => {
   await expect(stage3.getByText(/Done · \d+ pages/).first()).toBeVisible({ timeout: 60_000 });
 });
 
-test('import a new course from R2', async () => {
+test('import a new course from storage', async () => {
   await tab('Import courses').click();
   const pick = page.getByRole('checkbox', { name: 'Import Big Data Analytics as a course' });
   await expect(pick).toBeVisible({ timeout: 15_000 });
@@ -155,7 +162,7 @@ test('edit, hide, audit, publish and unpublish a course', async () => {
   await expect(row.getByRole('button', { name: 'Save changes' })).toBeHidden();
 
   // Hide a unit, then show it again.
-  await row.getByRole('button', { name: 'Manage files' }).click();
+  await row.getByRole('button', { name: 'Files', exact: true }).click();
   const unitSwitch = row.getByRole('switch', { name: /^Hadoop basics: on the site/ });
   await expect(unitSwitch).toBeVisible({ timeout: 15_000 });
   await unitSwitch.click();
@@ -164,16 +171,22 @@ test('edit, hide, audit, publish and unpublish a course', async () => {
   await expect(row.getByRole('switch', { name: /^Hadoop basics: on the site/ })).toBeVisible();
   await row.getByRole('button', { name: 'Close files' }).click();
 
-  // Per-course R2 audit.
-  await row.getByRole('button', { name: 'R2 audit' }).click();
-  await expect(row.getByText(/R2 files · \d+ registered/)).toBeVisible({ timeout: 20_000 });
-  await row.getByRole('button', { name: 'Close audit' }).click();
+  // Per-course file check.
+  await row.getByRole('button', { name: 'Check files' }).click();
+  await expect(row.getByText(/storage files · \d+ registered/)).toBeVisible({ timeout: 20_000 });
+  await row.getByRole('button', { name: 'Close check' }).click();
 
   // Price and publish (pages convert instantly in the e2e demo).
   await row.getByLabel('Price in rupees for Big Data Analytics').fill('59');
   await expect(row.getByRole('button', { name: 'Publish', exact: true })).toBeEnabled({ timeout: 30_000 });
   await row.getByRole('button', { name: 'Publish', exact: true }).click();
   await expect(row.getByText('live', { exact: true })).toBeVisible({ timeout: 15_000 });
+
+  // Changing the price of a live course keeps it on sale.
+  await row.getByLabel('Price in rupees for Big Data Analytics').fill('69');
+  await row.getByRole('button', { name: 'Save price' }).click();
+  await expect(row.getByRole('button', { name: 'Save price' })).toBeHidden({ timeout: 15_000 });
+  await expect(row.getByText('live', { exact: true })).toBeVisible();
   await page.goto('/?batch=2023#catalogue');
   await expect(page.locator('#catalogue').getByRole('link', { name: /Big Data Analytics/ })).toBeVisible({
     timeout: 15_000,

@@ -195,6 +195,7 @@ body {
   cursor: grabbing;
 }
 
+/* Notes are never printable. (The timetable prints from its own frame, which this doesn't touch.) */
 @media print {
   body * {
     visibility: hidden !important;
@@ -902,27 +903,5 @@ nav.font-mono {
   .hl {
     background: none;
     font-weight: 700;
-  }
-}
-
-/* Timetable maker: "Print or PDF" prints only the grid, landscape. */
-@media print {
-  @page {
-    size: landscape;
-    margin: 10mm;
-  }
-  body * {
-    visibility: hidden;
-  }
-  .timetable-print,
-  .timetable-print * {
-    visibility: visible;
-  }
-  .timetable-print {
-    position: absolute;
-    inset: 0 auto auto 0;
-    width: 100%;
-    overflow: visible !important;
-    box-shadow: none !important;
   }
 }

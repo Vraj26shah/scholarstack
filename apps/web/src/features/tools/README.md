@@ -7,7 +7,7 @@ sent to the server.
 |---|---|---|
 | `cgpa/` | CGPA calculator: this semester, overall, what you need next | `cgpa` |
 | `attendance/` | Attendance calculator: exam eligibility, classes you can miss, marks | `attendance` |
-| `timetable/` | Timetable maker: VIT Bhopal slot grid, clashes, image/PDF | `timetable` |
+| `timetable/` | Timetable maker: VIT Bhopal slot grid, clashes, now/next, day view, PDF/image/calendar/print, share links | `timetable` |
 
 ## How it's organised (SOLID)
 

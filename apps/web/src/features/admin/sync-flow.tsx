@@ -202,36 +202,29 @@ export function SyncFlow({ onGoImport }: { onGoImport: () => void }) {
     scope.length === 0
       ? ''
       : scope.includes('')
-        ? 'everything in R2'
+        ? 'everything in storage'
         : scope.length === 1
           ? `“${scopeLabel(scope[0]!, root)}”`
           : `${scope.length} items`;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 rounded-2xl border-[1.5px] border-line bg-surface p-5 sm:p-6">
-        <h2 className="m-0 font-display text-[28px] font-extrabold leading-none tracking-[-0.04em]">
-          Keep the website in step with R2
-        </h2>
-        <p className="m-0 max-w-[78ch] text-[15px] leading-relaxed text-ink2">
-          Your files live in R2, and <strong className="text-ink">R2 is always right</strong>. Work top to
-          bottom: <strong className="text-ink">1</strong> choose what to look at: everything, some folders, or
-          single files; <strong className="text-ink">2</strong> compare it with the website and copy R2's
-          changes across; <strong className="text-ink">3</strong> make the readable pages. Everything happens
-          only for what you chose. Publishing is separate and up to you, in <em>Courses &amp; publishing</em>.
-        </p>
-      </div>
+      <p className="m-0 max-w-[78ch] text-[15px] leading-relaxed text-ink2">
+        Three steps, only for what you pick: <strong className="text-ink">choose</strong> folders or files,{' '}
+        <strong className="text-ink">compare</strong> them with the website, then{' '}
+        <strong className="text-ink">make pages</strong>. Publishing is separate, in Courses.
+      </p>
 
       <Health health={health.data} />
       {health.isError && <Notice tone="bad">{friendly(health.error)}</Notice>}
 
       <Stage
         n={1}
-        title="Choose what to check in R2"
-        what="Pick the whole bucket, or open folders and tick only the folders or files you care about. A ticked folder includes everything inside it."
+        title="Choose what to check in storage"
+        what="Pick everything, or open folders and tick only the folders or files you care about. A ticked folder includes everything inside it."
         done={scope.length ? `Chosen: ${scopeSummary}` : null}
       >
-        {tree.isLoading && <Notice>Reading the folders in R2…</Notice>}
+        {tree.isLoading && <Notice>Reading the folders in storage…</Notice>}
         {tree.isError && <Notice tone="bad">{friendly(tree.error)}</Notice>}
         {tree.data && <ScopePicker tree={tree.data} scope={scope} onChange={setScope} />}
         <div className="mt-4 flex flex-wrap justify-end gap-2">
@@ -249,9 +242,9 @@ export function SyncFlow({ onGoImport }: { onGoImport: () => void }) {
       <Stage
         innerRef={stage2}
         n={2}
-        title="Compare with the website (Supabase)"
-        what="See what is new, changed or gone in R2 compared with the website. Then copy R2's version across. Original files in R2 are never touched; a file gone from R2 is only taken off sale."
-        done={inSync ? 'Website matches R2 for this selection' : null}
+        title="Compare with the website"
+        what="See what is new, changed or gone in storage compared with the website. Then copy storage's version across. Original files in storage are never touched; a file gone from storage is only taken off sale."
+        done={inSync ? 'Website matches storage for this selection' : null}
         locked={scope.length ? null : 'Choose something in step 1 first.'}
       >
         {!compare && (
@@ -272,17 +265,17 @@ export function SyncFlow({ onGoImport }: { onGoImport: () => void }) {
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <Stat
-                label="New in R2"
+                label="New in storage"
                 value={compare.totals.newInR2}
                 tone={compare.totals.newInR2 ? 'warn' : 'plain'}
               />
               <Stat
-                label="Changed in R2"
+                label="Changed in storage"
                 value={compare.totals.changedInR2}
                 tone={compare.totals.changedInR2 ? 'warn' : 'plain'}
               />
               <Stat
-                label="Gone from R2"
+                label="Gone from storage"
                 value={compare.totals.missingFromR2}
                 tone={compare.totals.missingFromR2 ? 'bad' : 'plain'}
               />
@@ -325,9 +318,9 @@ export function SyncFlow({ onGoImport }: { onGoImport: () => void }) {
               <div className="flex flex-col gap-3 rounded-xl border-[1.5px] border-brand/40 bg-sunk p-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="m-0 text-sm">
                   <strong>{plural(changed.length, 'course')}</strong>{' '}
-                  {changed.length === 1 ? 'differs' : 'differ'} from R2 in this selection. Pressing the button
-                  copies R2's version to the website, one file at a time. Those courses pause sales until new
-                  pages are made.
+                  {changed.length === 1 ? 'differs' : 'differ'} from storage in this selection. Pressing the
+                  button copies storage's version to the website, one file at a time. Those courses pause
+                  sales until new pages are made.
                 </p>
                 <button
                   type="button"
@@ -335,11 +328,11 @@ export function SyncFlow({ onGoImport }: { onGoImport: () => void }) {
                   disabled={busy}
                   onClick={() => applyR2(changed)}
                 >
-                  Make website match R2
+                  Make website match storage
                 </button>
               </div>
             ) : compare.courses.length > 0 ? (
-              <Notice tone="good">The website already matches R2 for everything you chose.</Notice>
+              <Notice tone="good">The website already matches storage for everything you chose.</Notice>
             ) : null}
 
             {progress && (
@@ -358,7 +351,7 @@ export function SyncFlow({ onGoImport }: { onGoImport: () => void }) {
                   </span>
                 </div>
                 <ProgressBar
-                  label="Copying R2 changes to the website"
+                  label="Copying storage changes to the website"
                   value={Math.round((progress.completed / Math.max(1, progress.total)) * 100)}
                 />
                 {progress.currentKey && (

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { AccessPanel } from './access-panel';
 import { BundlesPanel } from './bundles-panel';
 import { ContributionsPanel } from './contributions-panel';
+import { ContributorsPanel } from './contributors-panel';
 import { CoursesPanel } from './courses-panel';
 import { EarningsPanel } from './earnings-panel';
 import { ImportPanel } from './import-panel';
@@ -12,6 +13,7 @@ import { StorageMapPanel } from './storage-map-panel';
 import { StorageTreePanel } from './storage-tree-panel';
 import { SupportPanel } from './support-panel';
 import { SyncFlow } from './sync-flow';
+import { TodayPanel } from './today-panel';
 import { U } from './ui';
 import { YearsBranchesPanel } from './years-branches-panel';
 
@@ -29,41 +31,53 @@ export interface Group {
   views: View[];
 }
 
-/** Five places, each with a few views. Adding a screen means adding a view here, nothing else. */
+/** Six places, each with a few views. Adding a screen means adding a view here, nothing else. */
 export const GROUPS: Group[] = [
   {
-    key: 'notes',
-    label: 'Notes & courses',
+    key: 'today',
+    label: 'Today',
     views: [
       {
-        key: 'sync',
-        label: 'R2 → Website',
+        key: 'today',
+        label: 'Today',
+        note: <>Only what needs you; everything else is in the tabs.</>,
+        render: (go) => <TodayPanel go={go} />,
+      },
+    ],
+  },
+  {
+    key: 'notes',
+    label: 'Courses',
+    views: [
+      {
+        key: 'courses',
+        label: 'All courses',
         note: (
           <>
-            Pick files in R2 and <U>make their pages</U> so students can read them.
+            Change prices and details, and <U>publish when ready</U>.
           </>
         ),
-        render: (go) => <SyncFlow onGoImport={() => go('import')} />,
+        render: () => <CoursesPanel />,
       },
       {
         key: 'import',
-        label: 'Import',
+        label: 'Add courses',
         note: (
           <>
-            Turn R2 folders into courses; <U>new courses start as drafts</U>.
+            Tick an uploaded folder to make it a course; <U>new courses start as drafts</U>.
           </>
         ),
         render: () => <ImportPanel />,
       },
       {
-        key: 'courses',
-        label: 'Courses',
+        key: 'sync',
+        label: 'Make pages',
         note: (
           <>
-            Edit, hide units and <U>publish when ready</U>.
+            Turn uploaded files into <U>pages students can read</U>.
           </>
         ),
-        render: () => <CoursesPanel />,
+        render: (go) => <SyncFlow onGoImport={() => go('import')} />,
       },
       {
         key: 'bundles',
@@ -80,7 +94,7 @@ export const GROUPS: Group[] = [
         label: 'Years & branches',
         note: (
           <>
-            Add a new batch year or branch, and <U>move a whole year's courses in one step</U>.
+            Add a batch year or branch, or <U>move a whole year's courses at once</U>.
           </>
         ),
         render: () => <YearsBranchesPanel />,
@@ -89,7 +103,7 @@ export const GROUPS: Group[] = [
   },
   {
     key: 'students',
-    label: 'Students & money',
+    label: 'Students',
     views: [
       {
         key: 'access',
@@ -103,13 +117,23 @@ export const GROUPS: Group[] = [
       },
       {
         key: 'earnings',
-        label: 'Earnings & royalties',
+        label: 'Earnings',
         note: (
           <>
             What each course earned, and <U>what you owe contributors</U>.
           </>
         ),
         render: () => <EarningsPanel />,
+      },
+      {
+        key: 'contributors',
+        label: 'Contributors',
+        note: (
+          <>
+            Who shares notes, what's live and <U>what each of them is owed</U>.
+          </>
+        ),
+        render: () => <ContributorsPanel />,
       },
     ],
   },
@@ -119,7 +143,7 @@ export const GROUPS: Group[] = [
     views: [
       {
         key: 'queries',
-        label: 'Questions & suggestions',
+        label: 'Questions',
         note: (
           <>
             Answer here and <U>the student gets an email</U>.
@@ -129,10 +153,10 @@ export const GROUPS: Group[] = [
       },
       {
         key: 'contributions',
-        label: 'Uploaded notes',
+        label: 'Uploads',
         note: (
           <>
-            Download, decide and <U>reward the good ones</U>.
+            Each upload goes <U>check → decide → file → reward → pages → done</U>.
           </>
         ),
         render: () => <ContributionsPanel />,
@@ -141,15 +165,14 @@ export const GROUPS: Group[] = [
   },
   {
     key: 'email',
-    label: 'Email & tools',
+    label: 'Emails',
     views: [
       {
         key: 'features',
-        label: 'Email & tools',
+        label: 'Emails & tools',
         note: (
           <>
-            To announce a tool, press <U>Launch</U> on it (the email is written for you); for anything else,
-            press <U>Write an email</U>.
+            To announce a tool, press <U>Launch</U> on it; for anything else, <U>Write an email</U>.
           </>
         ),
         render: () => <MailPanel />,
@@ -158,14 +181,14 @@ export const GROUPS: Group[] = [
   },
   {
     key: 'storage',
-    label: 'Storage & health',
+    label: 'Storage',
     views: [
       {
         key: 'files',
-        label: 'Files & folders',
+        label: 'Files',
         note: (
           <>
-            Every file in R2 and its course; <U>deleting removes it from R2 and Supabase</U>.
+            Every uploaded file and its course. <U>Deleting is permanent</U>.
           </>
         ),
         render: () => <StorageTreePanel />,
@@ -175,7 +198,7 @@ export const GROUPS: Group[] = [
         label: 'Clean-up',
         note: (
           <>
-            Remove <U>leftover pages and unpaid checkouts</U>, and see database sizes.
+            Find and remove <U>what nothing on the site uses</U>.
           </>
         ),
         render: () => <StorageMapPanel />,
@@ -192,10 +215,10 @@ export const GROUPS: Group[] = [
       },
       {
         key: 'audit',
-        label: 'Full audit',
+        label: 'Full check',
         note: (
           <>
-            Object-by-object check of <U>R2 against Supabase</U>.
+            File-by-file check that <U>storage and the website agree</U>.
           </>
         ),
         render: () => <StorageAuditPanel />,
@@ -206,6 +229,7 @@ export const GROUPS: Group[] = [
 
 /** Links from before the regrouping (?section=, ?tab=, ?step=) still land in the right place. */
 export const LEGACY: Record<string, string> = {
+  today: 'today',
   sync: 'sync',
   pages: 'sync',
   import: 'import',
@@ -217,6 +241,7 @@ export const LEGACY: Record<string, string> = {
   earnings: 'earnings',
   queries: 'queries',
   contributions: 'contributions',
+  contributors: 'contributors',
   features: 'features',
   tools: 'features',
   storage: 'files',
@@ -228,7 +253,7 @@ export const LEGACY: Record<string, string> = {
 };
 
 export function findView(key: string | null) {
-  const want = LEGACY[key ?? ''] ?? 'sync';
+  const want = LEGACY[key ?? ''] ?? 'today';
   for (const g of GROUPS) for (const v of g.views) if (v.key === want) return { group: g, view: v };
   return { group: GROUPS[0]!, view: GROUPS[0]!.views[0]! };
 }

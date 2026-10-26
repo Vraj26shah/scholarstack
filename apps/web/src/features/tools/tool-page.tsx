@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Suspense } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { useSession } from '../../lib/session';
 import { BackLink } from '../../shared/ui/back-link';
 import { LinkButton } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
@@ -16,6 +17,7 @@ export function ToolPage() {
   const q = useQuery({ queryKey: ['features'], queryFn: api.features, staleTime: 60_000 });
   const feature = q.data?.find((f) => f.key === key);
   const Screen = toolModule(key)?.screen;
+  const { me } = useSession();
 
   if (q.isLoading)
     return (
@@ -24,10 +26,18 @@ export function ToolPage() {
       </Page>
     );
 
-  if (feature?.status === 'live' && Screen)
+  // Admins can try a built tool before launching it; students still see "coming soon".
+  const preview = me?.isAdmin && feature?.status !== 'live' && Screen;
+  if ((feature?.status === 'live' || preview) && Screen)
     return (
       <Page wide>
-        <Suspense fallback={<Spinner label={`Loading ${feature.title}`} />}>
+        {preview && (
+          <p className="m-0 mt-4 rounded-xl bg-marigold-soft px-4 py-3 text-[14px] text-marigold-text">
+            <strong>Admin preview.</strong> Students see "Coming soon" until you press Launch in Admin ›
+            Emails.
+          </p>
+        )}
+        <Suspense fallback={<Spinner label={`Loading ${feature?.title ?? 'the tool'}`} />}>
           <Screen />
         </Suspense>
       </Page>

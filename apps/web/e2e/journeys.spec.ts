@@ -243,19 +243,23 @@ test.describe('account and admin', () => {
   test('admin imports a Drive folder as a course, then publishes it', async ({ page }, info) => {
     await signIn(page, 'admin', '/admin');
     const tabs = page.getByRole('tablist', { name: 'Admin sections' });
-    await expect(page.getByRole('heading', { name: 'Keep the website in step with R2' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /needs? you/ })).toBeVisible();
+    await tabs.getByRole('tab', { name: 'Courses', exact: true }).click();
+    await page.getByRole('tab', { name: 'Make pages', exact: true }).click();
     // Pick one folder only, compare it, and see the page-making stage for that folder.
     await page.getByRole('radio', { name: /Only some folders or files/ }).click();
     await page.getByRole('checkbox', { name: 'Select folder Database Management Systems' }).check();
     await page.getByRole('button', { name: 'Next: compare with the website' }).click();
-    await expect(page.getByText('The website already matches R2 for everything you chose.')).toBeVisible({
-      timeout: 20_000,
-    });
+    await expect(page.getByText('The website already matches storage for everything you chose.')).toBeVisible(
+      {
+        timeout: 20_000,
+      },
+    );
     await expect(page.getByText(/Every file here has its pages|Done \d+/).first()).toBeVisible();
-    await tabs.getByRole('tab', { name: 'Email & tools' }).click();
+    await tabs.getByRole('tab', { name: 'Emails' }).click();
     await expect(page.getByRole('heading', { name: 'Tools on the home page' })).toBeVisible();
-    await tabs.getByRole('tab', { name: 'Notes & courses' }).click();
-    await page.getByRole('tab', { name: 'Import', exact: true }).click();
+    await tabs.getByRole('tab', { name: 'Courses', exact: true }).click();
+    await page.getByRole('tab', { name: 'Add courses', exact: true }).click();
     const pick = page.getByRole('checkbox', { name: 'Import Network Security as a course' });
     await expect(pick).toBeVisible();
     await pick.check();
@@ -268,8 +272,8 @@ test.describe('account and admin', () => {
     await expect(page.getByRole('status').filter({ hasText: 'Imported' })).toBeVisible();
     await shot(page, 'admin-imported', info);
 
-    await tabs.getByRole('tab', { name: 'Notes & courses' }).click();
-    await page.getByRole('tab', { name: 'Courses', exact: true }).click();
+    await tabs.getByRole('tab', { name: 'Courses', exact: true }).click();
+    await page.getByRole('tab', { name: 'All courses', exact: true }).click();
     const panel = page.locator('#admin-panel');
     await expect(page.getByRole('heading', { name: 'Courses', exact: true })).toBeVisible();
     const search = page.getByRole('searchbox', { name: 'Search courses' });
@@ -290,8 +294,8 @@ test.describe('account and admin', () => {
     if (await publish.isVisible()) await publish.click(); // a second run finds it already live
     await expect(row.getByText('live', { exact: true })).toBeVisible({ timeout: 10_000 });
 
-    await tabs.getByRole('tab', { name: 'Storage & health' }).click();
-    await page.getByRole('tab', { name: 'Full audit', exact: true }).click();
+    await tabs.getByRole('tab', { name: 'Storage' }).click();
+    await page.getByRole('tab', { name: 'Full check', exact: true }).click();
     await page.getByLabel('Scan scope').selectOption('course');
     const scanControls = page.locator('section').filter({ hasText: 'Scan scope' }).first();
     const courseSelect = scanControls.locator('select').nth(1);

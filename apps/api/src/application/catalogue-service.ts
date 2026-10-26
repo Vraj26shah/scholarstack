@@ -230,6 +230,7 @@ export class CatalogueService {
     const branch = branches.find((b) => b.slug === course.branchSlug);
     return {
       ...toCard(course, files, branch),
+      ...(course.status !== 'live' ? { preview: true } : {}),
       description: course.description,
       branchName: branch?.name ?? course.branchSlug,
       units: toUnits(files),
@@ -252,10 +253,13 @@ export class CatalogueService {
     return cards.filter((c) => c.courseCount > 1);
   }
 
-  async bundle(idOrSlug: string, userId: string | null): Promise<BundleDetailDto> {
+  async bundle(idOrSlug: string, userId: string | null, isAdmin = false): Promise<BundleDetailDto> {
     const bundle = await this.bundles.find(idOrSlug);
-    if (!bundle || bundle.status !== 'live') throw fail.notFound('That bundle');
-    const courses = (await this.catalogue.coursesByIds(bundle.courseIds)).filter((c) => c.status === 'live');
+    // Admins can look at a draft bundle (and its draft courses) before publishing it.
+    if (!bundle || (bundle.status !== 'live' && !isAdmin)) throw fail.notFound('That bundle');
+    const courses = (await this.catalogue.coursesByIds(bundle.courseIds)).filter(
+      (c) => c.status === 'live' || (isAdmin && c.status === 'draft'),
+    );
     const [files, branches, ownedIds] = await Promise.all([
       this.catalogue.listFiles(courses.map((c) => c.id)),
       this.catalogue.listBranches(),
@@ -275,6 +279,9 @@ export class CatalogueService {
     );
     return {
       ...toBundleCard(bundle, readableCourses, files),
+      ...(bundle.status !== 'live' || readableCourses.some((c) => c.status !== 'live')
+        ? { preview: true }
+        : {}),
       courses: readableCourses
         .sort((a, b) => a.semester - b.semester || a.title.localeCompare(b.title))
         .map((c) => ({

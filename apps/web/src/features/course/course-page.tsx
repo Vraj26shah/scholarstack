@@ -14,6 +14,7 @@ import { Page } from '../../shared/ui/chrome';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { ArrowRight, Check, Cross, Devices, FilePlus, Lock, ShelfIcon } from '../../shared/ui/icons';
 import { U } from '../../shared/ui/note';
+import { PreviewBar } from '../../shared/ui/preview-bar';
 import { PaymentProblem } from '../checkout/payment-problem';
 import { useBuy } from '../checkout/use-buy';
 import { PreviewGallery } from './preview-gallery';
@@ -310,6 +311,7 @@ function CourseView({
   const openIndex = open ?? Math.min(2, c.units.length - 1);
   return (
     <Page wide>
+      {c.preview && <PreviewBar what="course" section="courses" />}
       <nav
         aria-label="Breadcrumb"
         className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[13px] sm:text-[14px] text-ink2 mb-6 mt-2"
@@ -356,12 +358,18 @@ function CourseView({
         />
       </article>
 
-      <PreviewGallery
-        units={c.units}
-        owned={c.owned}
-        onBuy={buyState.buy}
-        buyLabel={buyState.signedIn ? `Buy for ${formatRupees(c.pricePaise)}` : 'Sign in to buy'}
-      />
+      {c.preview ? (
+        <p className="mt-10 mb-0 text-[15px] text-ink2">
+          Page-one previews show here once the course is published.
+        </p>
+      ) : (
+        <PreviewGallery
+          units={c.units}
+          owned={c.owned}
+          onBuy={buyState.buy}
+          buyLabel={buyState.signedIn ? `Buy for ${formatRupees(c.pricePaise)}` : 'Sign in to buy'}
+        />
+      )}
 
       <div className="mt-12 flex flex-wrap items-start gap-11">
         <div className="flex-[999_1_600px] min-w-0">

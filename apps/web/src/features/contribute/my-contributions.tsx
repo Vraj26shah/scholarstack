@@ -1,4 +1,5 @@
 import type { MyContributionDto } from '@ss/contracts';
+import { Link } from 'react-router-dom';
 import { friendly } from '../../lib/api';
 import { rewardText } from './rewards';
 import { KIND_LABEL, formatBytes } from './rules';
@@ -11,6 +12,31 @@ const STAMP: Record<MyContributionDto['status'], { label: string; tone: string }
 };
 
 const day = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+
+const TRACK = [
+  ['review', 'In review'],
+  ['accepted', 'Accepted'],
+  ['filed', 'In a course'],
+  ['live', 'Live'],
+] as const;
+
+/** Where the notes are: in review → accepted → in a course → live. */
+function Track({ p }: { p: MyContributionDto['progress'] }) {
+  if (p.step === 'rejected') return null;
+  const at = TRACK.findIndex(([k]) => k === p.step);
+  return (
+    <ol aria-label="Progress" className="m-0 p-0 list-none grid grid-cols-4 gap-1">
+      {TRACK.map(([k, label], i) => (
+        <li key={k} aria-current={i === at ? 'step' : undefined} className="flex flex-col gap-1">
+          <span className={`h-1 rounded-full ${i <= at ? 'bg-teal' : 'bg-line'}`} />
+          <span className={`font-mono text-[10.5px] ${i <= at ? 'text-ink font-semibold' : 'text-ink2'}`}>
+            {label}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
 
 function Slip({ c, i }: { c: MyContributionDto; i: number }) {
   const withdraw = useWithdrawContribution();
@@ -38,6 +64,16 @@ function Slip({ c, i }: { c: MyContributionDto; i: number }) {
         {c.courseHint ? `${c.courseHint} · ` : ''}
         {c.files.length} file{c.files.length === 1 ? '' : 's'} · {formatBytes(c.totalBytes)}
       </span>
+      <Track p={c.progress} />
+      {c.progress.courseSlug && (
+        <span className="text-[13px] text-ink2">
+          {c.progress.step === 'live' ? 'Students are reading it in ' : 'Being added to '}
+          <Link to={`/c/${c.progress.courseSlug}`} className="font-semibold text-teal-text">
+            {c.progress.courseTitle}
+          </Link>
+          .
+        </span>
+      )}
       {reward && (
         <span className="self-start rounded-md bg-mist text-on-mist px-2.5 py-1 text-[13px] font-semibold">
           {reward}

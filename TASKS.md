@@ -39,15 +39,18 @@ Everything marked done is covered by an automated test (see QA_REPORT.md).
 - [x] **Me** **Toolbox** (CGPA calculator, timetable maker as "coming soon") + **announcement emails** via Brevo with daily cap, hourly resume, one-click unsubscribe, account opt-out
 - [x] **Me** New logo and favicon, legible stacked type, animations (letter drop, card shuffle, stamp thud, dealt cards, tilt), marigold "buy/save" colour
 - [x] 0.12.0: sign-in check (college or admin list) with 24-hour network block; 3 months of access per purchase with countdown and end email; give access by email before sign-up; per-batch email counts; course update emails; cash rewards and yearly top-contributor bonus; one set of site labels
+- [x] 0.13.0: admin Today screen, plain section names, live courses stay on sale when edited, crash page, simpler course cards and clean-up
+- [x] 0.14.0: upload pipeline (check, file into our layout, reward, pages, done), contributor tracking, timetable rebuilt with PDF, print, calendar and share links
+- [x] 0.15.0: per-file filing, move/rename stored notes keeping pages, unused storage by kind, admin previews of drafts, Earn on phones, plainer Contribute page, upload and zip hardening
 
 ## Waiting on you (SETUP.md)
 - [ ] Set the GitHub secret `CONVERTER_CALLBACK_URL` to the public `https://<site>/api/internal/conversion` (not localhost) so production progress bars move
 
 - [ ] **You** Steps 0–7: GitHub repo, Supabase, Cloudflare (R2 bucket, Turnstile, Workers Paid), Google OAuth, Brevo SMTP, Razorpay test keys, generated secrets
 - [ ] **You** Step 9: GitHub secrets/variables + `pnpm secrets:push`
-- [ ] **You** Admin → Import: tick the `23 Batch` course folders, set branch/semester/price, import; check previews; publish
+- [ ] **You** Admin → Courses → Add courses: tick the `23 Batch` course folders, set branch/semester/price, import; check previews; publish
 - [ ] **You** Admin → Bundles: "Add every live 2023 course" → price it → live
-- [ ] **You** Apply migrations 0500–0700 (`pnpm ops db:apply`) before deploying 0.12.0
+- [ ] **You** Apply migrations `20261027000100_contribution_pipeline.sql` and `20261027000200_relocate_file.sql` (`pnpm ops db:apply`) before deploying 0.15.0
 - [ ] **You** Brevo API key + verified sender (`BREVO_API_KEY`, `EMAIL_FROM`)
 - [ ] **You** Replace `[YOUR CONTACT EMAIL]` in `apps/web/src/features/legal/legal-pages.tsx` (Razorpay KYC needs a reachable contact)
 - [ ] **You** Domain, attach to the Worker, switch Razorpay to live keys

@@ -13,7 +13,9 @@ const sizeLabel = (bytes: number) =>
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 export const scopeLabel = (entry: string, root: string) =>
-  entry === '' ? 'Everything in R2' : entry.slice(root.length).replace(/\/$/, '') || 'Everything in R2';
+  entry === ''
+    ? 'Everything in storage'
+    : entry.slice(root.length).replace(/\/$/, '') || 'Everything in storage';
 
 /** Is this key already covered by a ticked folder (or "everything")? */
 function coveredBy(scope: Scope, key: string): string | null {
@@ -215,7 +217,7 @@ export function ScopePicker({
       <div role="radiogroup" aria-label="What to check" className="grid gap-2 sm:grid-cols-2">
         {(
           [
-            [true, 'Everything in R2', `All ${plural(tree.totalFiles, 'file')} under ${tree.root}`],
+            [true, 'Everything in storage', `All ${plural(tree.totalFiles, 'file')} under ${tree.root}`],
             [false, 'Only some folders or files', 'Tick exactly what you want below'],
           ] as const
         ).map(([all, title, hint]) => {
@@ -251,7 +253,7 @@ export function ScopePicker({
           <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
             <input
               type="search"
-              aria-label="Find a folder or file in R2"
+              aria-label="Find a folder or file in storage"
               placeholder="Find a folder or file…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -274,7 +276,7 @@ export function ScopePicker({
           </div>
           <ul
             className="m-0 max-h-[440px] list-none overflow-auto p-0 py-1"
-            aria-label="R2 folders and files"
+            aria-label="Storage folders and files"
           >
             {matches ? (
               <>
@@ -301,7 +303,7 @@ export function ScopePicker({
                   </li>
                 )}
                 {!matches.folders.length && !matches.files.length && (
-                  <li className="px-4 py-6 text-sm text-ink2">Nothing in R2 matches “{query}”.</li>
+                  <li className="px-4 py-6 text-sm text-ink2">Nothing in storage matches “{query}”.</li>
                 )}
               </>
             ) : (

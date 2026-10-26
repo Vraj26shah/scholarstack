@@ -76,23 +76,24 @@ function progress(file: AuditFile): number {
 }
 
 const STAGE_LABELS: Record<string, string> = {
-  downloading_source: 'Reading original from R2',
+  downloading_source: 'Reading original from storage',
   validating_source: 'Checking file type and integrity',
   rendering_pages: 'Counting and rendering pages',
   clearing_previous_pages: 'Replacing old generated pages',
-  writing_preview: 'Saving the preview to R2',
-  writing_pages: 'Saving protected pages to R2',
-  verifying_r2: 'Checking each generated object in R2',
-  saving_manifest: 'Saving the page map in Supabase',
-  complete: 'Pages verified in R2 and mapped in Supabase',
+  writing_preview: 'Saving the preview to storage',
+  writing_pages: 'Saving protected pages to storage',
+  verifying_r2: 'Checking each generated object in storage',
+  saving_manifest: 'Saving the page map in the database',
+  complete: 'Pages verified in storage and mapped in the database',
 };
 
 function processLabel(file: AuditFile): string {
   if (file.sourceIssue && isZipArchive(file)) {
-    return 'ZIP archive: extract its documents into this R2 folder before conversion';
+    return 'ZIP archive: extract its documents into this storage folder before conversion';
   }
-  if (file.sourceIssue) return 'R2 source failed its content check; replace the original before conversion';
-  if (file.pageMappingIssues?.length) return 'Supabase page map does not match the expected R2 page keys';
+  if (file.sourceIssue)
+    return 'Storage source failed its content check; replace the original before conversion';
+  if (file.pageMappingIssues?.length) return 'The saved page list doesn’t match the pages in storage';
   if (file.hidden && file.conversionStatus === 'pending') {
     return 'Paused while hidden; show the file to resume conversion';
   }
@@ -103,7 +104,7 @@ function processLabel(file: AuditFile): string {
     return 'Generated pages are outside this scope; scan the course, its folder, or the whole bucket';
   }
   if (file.conversionStatus === 'ready' && (file.missingPageNumbers.length > 0 || !file.previewPresent)) {
-    return 'Conversion finished, but the R2 audit found missing objects';
+    return 'Conversion finished, but the storage audit found missing objects';
   }
   if (file.conversionStage === 'failed') {
     const failedAt =
@@ -118,10 +119,10 @@ function processLabel(file: AuditFile): string {
   if (file.conversionStage && STAGE_LABELS[file.conversionStage]) {
     return STAGE_LABELS[file.conversionStage] ?? 'Conversion in progress';
   }
-  if (file.status === 'changed') return 'R2 source changed; sync this file to refresh its record';
-  if (file.status === 'unimported') return 'R2 file is not registered; sync this file to map it';
+  if (file.status === 'changed') return 'Storage source changed; sync this file to refresh its record';
+  if (file.status === 'unimported') return 'Storage file is not registered; sync this file to map it';
   if (file.status === 'unsupported') return 'Unsupported source format; conversion cannot start';
-  if (file.status === 'missing-source') return 'Source missing from R2; re-upload or remove the record';
+  if (file.status === 'missing-source') return 'Source missing from storage; re-upload or remove the record';
   if (file.status === 'ignored') return 'Ignored by import rules';
   if (file.conversionStatus === 'ready') return 'Converted pages are registered';
   return 'Not queued for conversion';
@@ -340,7 +341,7 @@ function AuditFileRow({
             <strong>{file.conversionErrorStage ? `${processLabel(file)}: ` : 'Problem: '}</strong>
             {file.conversionError}
             {file.conversionError.startsWith('Broken source:') && (
-              <div className="mt-1">Replace the original object in R2, then sync this course.</div>
+              <div className="mt-1">Replace the original object in storage, then sync this course.</div>
             )}
           </div>
         )}
@@ -349,11 +350,11 @@ function AuditFileRow({
             className="mt-2 rounded-lg border border-blush bg-blush/40 px-3 py-2 text-xs leading-relaxed text-blush-text"
             role="alert"
           >
-            <strong>R2 source check:</strong> {file.sourceIssue.replace(/^Broken source:\s*/i, '')}
+            <strong>Storage source check:</strong> {file.sourceIssue.replace(/^Broken source:\s*/i, '')}
             <div className="mt-1">
               {isZipArchive(file)
-                ? 'Upload the extracted PDFs, PowerPoint, and Word files into this R2 folder, keep their subfolders, then rescan. Take the ZIP offline after checking the extracted files.'
-                : 'Replace the original file in R2, then rescan this scope.'}
+                ? 'Upload the extracted PDFs, PowerPoint, and Word files into this storage folder, keep their subfolders, then rescan. Take the ZIP offline after checking the extracted files.'
+                : 'Replace the original file in storage, then rescan this scope.'}
             </div>
           </div>
         )}
@@ -362,7 +363,7 @@ function AuditFileRow({
             className="mt-2 rounded-lg border border-blush bg-blush/40 px-3 py-2 text-xs leading-relaxed text-blush-text"
             role="alert"
           >
-            <strong>Supabase page map:</strong>
+            <strong>Saved page list:</strong>
             <ul className="mb-0 mt-1 list-disc pl-5">
               {file.pageMappingIssues.map((issue) => (
                 <li key={issue}>{issue}</li>
@@ -625,7 +626,7 @@ function pageObjectStatus(object: BucketObject, recordsById: Map<string, BucketR
   const [, fileId, relative] = match;
   if (!fileId || !relative) return 'invalid page path';
   const record = recordsById.get(fileId);
-  if (!record) return 'orphan: no Supabase file record';
+  if (!record) return 'orphan: no file record on the website';
   if (record.previewKey === object.key) return 'preview object';
   const pageNo = /^([1-9]\d*)\.webp$/.exec(relative)?.[1];
   if (!pageNo) return 'unexpected page object';
@@ -639,7 +640,7 @@ function syncOutcomeLabel(status: R2FileSyncProgress['outcomes'][number]['status
     case 'queued':
       return 'Waiting';
     case 'syncing':
-      return 'Checking R2 and updating its record';
+      return 'Checking storage and updating its record';
     case 'checked':
       return 'Already in sync';
     case 'added':
@@ -733,16 +734,16 @@ function BucketInventoryPanel() {
             if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
           }
         }
-        if (!page) throw lastError instanceof Error ? lastError : new Error('R2 inventory page failed.');
+        if (!page) throw lastError instanceof Error ? lastError : new Error('Storage inventory page failed.');
         if (page.scopePrefix !== scopePrefix) {
           throw new Error(
-            'R2 returned a different prefix than the one requested; this scan cannot be trusted.',
+            'Storage returned a different prefix than the one requested; this scan cannot be trusted.',
           );
         }
         for (const object of page.objects) {
           if (seenObjectKeys.has(object.key)) {
             throw new Error(
-              `R2 returned the object ${object.key} more than once. Restart the scan before syncing.`,
+              `Storage returned the object ${object.key} more than once. Restart the scan before syncing.`,
             );
           }
           seenObjectKeys.add(object.key);
@@ -768,7 +769,7 @@ function BucketInventoryPanel() {
         if (!page.nextCursor) break;
         if (knownCursors.has(page.nextCursor) || page.nextCursor === cursor) {
           throw new Error(
-            'R2 returned a repeated continuation cursor. Restart the scan to avoid skipping objects.',
+            'Storage returned a repeated continuation cursor. Restart the scan to avoid skipping objects.',
           );
         }
         knownCursors.add(page.nextCursor);
@@ -799,16 +800,16 @@ function BucketInventoryPanel() {
               }
             }
             if (!page) {
-              const reason = lastError instanceof Error ? lastError.message : 'R2 page listing failed';
+              const reason = lastError instanceof Error ? lastError.message : 'Storage page listing failed';
               throw new Error(`Generated pages for ${record.sourceKey} could not be checked: ${reason}`);
             }
             if (page.scopePrefix !== pagePrefix) {
-              throw new Error(`R2 returned the wrong prefix while checking ${record.sourceKey}.`);
+              throw new Error(`Storage returned the wrong prefix while checking ${record.sourceKey}.`);
             }
             for (const object of page.objects) {
               if (seenObjectKeys.has(object.key)) {
                 throw new Error(
-                  `R2 returned the object ${object.key} more than once. Restart the scan before syncing.`,
+                  `Storage returned the object ${object.key} more than once. Restart the scan before syncing.`,
                 );
               }
               seenObjectKeys.add(object.key);
@@ -826,7 +827,7 @@ function BucketInventoryPanel() {
             if (!page.nextCursor) break;
             if (pageCursors.has(page.nextCursor) || page.nextCursor === pageCursor) {
               throw new Error(
-                `R2 repeated a page cursor while checking generated pages for ${record.sourceKey}.`,
+                `Storage repeated a page cursor while checking generated pages for ${record.sourceKey}.`,
               );
             }
             pageCursors.add(page.nextCursor);
@@ -858,7 +859,10 @@ function BucketInventoryPanel() {
     } catch (error) {
       setScan((current) =>
         current
-          ? { ...current, error: error instanceof Error ? error : new Error('R2 inventory scan failed.') }
+          ? {
+              ...current,
+              error: error instanceof Error ? error : new Error('Storage inventory scan failed.'),
+            }
           : current,
       );
     } finally {
@@ -938,7 +942,7 @@ function BucketInventoryPanel() {
   const scopeCanRun = scopeKind === 'bucket' || (scopeKind === 'import-root' && !!importRoot) || !!scanPrefix;
   const scanTargetLabel =
     scopeKind === 'bucket'
-      ? 'all R2'
+      ? 'all storage'
       : scopeKind === 'import-root'
         ? 'the import root'
         : scopeKind === 'course'
@@ -1103,7 +1107,7 @@ function BucketInventoryPanel() {
 
   return (
     <Panel
-      title="R2 storage inventory"
+      title="Full check"
       aside={
         <Button
           variant="outline"
@@ -1112,7 +1116,7 @@ function BucketInventoryPanel() {
           disabled={actionsBusy || !scopeCanRun}
         >
           {isScanning
-            ? 'Scanning R2…'
+            ? 'Scanning storage…'
             : scan?.scopePrefix === scanPrefix && !scan.complete
               ? 'Retry this scan'
               : scan?.scopePrefix === scanPrefix
@@ -1131,7 +1135,7 @@ function BucketInventoryPanel() {
           <div>
             <h3 className="m-0 text-sm font-semibold">Sync systems</h3>
             <p className="m-0 mt-1 text-xs text-ink2">
-              R2 sources map into Supabase; converted page objects are written back to R2.
+              Original files are listed on the website; their pages are saved back to storage.
             </p>
           </div>
           <Button
@@ -1154,12 +1158,12 @@ function BucketInventoryPanel() {
           <div className="grid gap-2 md:grid-cols-3">
             {[
               {
-                name: 'R2 storage',
+                name: 'Storage',
                 status: syncHealthQuery.data.r2.status,
                 detail: `${syncHealthQuery.data.r2.message}${syncHealthQuery.data.r2.sampleObjects === null ? '' : ` (${syncHealthQuery.data.r2.sampleObjects} sample object${syncHealthQuery.data.r2.sampleObjects === 1 ? '' : 's'} read)`}`,
               },
               {
-                name: 'Supabase mapping',
+                name: 'Website records',
                 status: syncHealthQuery.data.supabase.status,
                 detail: `${syncHealthQuery.data.supabase.message}${syncHealthQuery.data.supabase.courses === null ? '' : ` ${syncHealthQuery.data.supabase.courses} courses · ${syncHealthQuery.data.supabase.fileRecords} source records.`}`,
               },
@@ -1187,12 +1191,12 @@ function BucketInventoryPanel() {
             })}
           </div>
         ) : (
-          <p className="m-0 text-sm text-ink2">Checking R2, Supabase, and the conversion queue…</p>
+          <p className="m-0 text-sm text-ink2">Checking storage, the database, and the conversion queue…</p>
         )}
         {syncHealthQuery.data && (
           <p className="mb-0 mt-2 text-[11px] text-ink2">
             Checked {new Date(syncHealthQuery.data.checkedAt).toLocaleString()}. A completed scope scan
-            reconciles every source key against its Supabase record and generated pages.
+            reconciles every source key against its website record and generated pages.
           </p>
         )}
       </section>
@@ -1262,7 +1266,7 @@ function BucketInventoryPanel() {
             {scopeKind === 'folder'
               ? 'Run a course scan first to load every module and nested folder. Then select one folder to inspect its full subtree.'
               : scopeKind === 'bucket'
-                ? 'Includes source files, folder markers, converted pages, and internal R2 objects.'
+                ? 'Includes source files, folder markers, converted pages, and internal storage objects.'
                 : 'Reads every object under the selected prefix, including nested folders.'}
           </div>
         </div>
@@ -1278,16 +1282,16 @@ function BucketInventoryPanel() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-card p-3">
         <p className="m-0 max-w-[75ch] text-xs leading-relaxed text-ink2">
           Sync applies only after this scope has been fully scanned. Sources missing from this scope go
-          offline; only their generated page objects are removed, while Supabase reading history is retained.
+          offline; only their generated page objects are removed, while students’ reading history is kept.
         </p>
         <Button onClick={() => syncSelectedScope.mutate(scanPrefix)} disabled={actionsBusy || !canApplyScope}>
-          {syncSelectedScope.isPending ? 'Applying R2 changes…' : 'Sync this scope'}
+          {syncSelectedScope.isPending ? 'Applying storage changes…' : 'Sync this scope'}
         </Button>
       </div>
       {scopeSyncProgress && syncSelectedScope.isPending && (
         <section
           className="mb-4 rounded-xl border border-line bg-card p-3 flex flex-col gap-2"
-          aria-label="Scoped R2 sync progress"
+          aria-label="Scoped storage sync progress"
         >
           <div className="flex justify-between gap-2 text-sm">
             <strong>Syncing each source file separately</strong>
@@ -1337,7 +1341,7 @@ function BucketInventoryPanel() {
                       className="col-span-2 h-1.5 overflow-hidden rounded-full bg-sunk"
                       role="progressbar"
                       tabIndex={0}
-                      aria-label={`R2 sync progress for ${outcome.key}`}
+                      aria-label={`Storage sync progress for ${outcome.key}`}
                       aria-valuemin={0}
                       aria-valuemax={100}
                       aria-valuenow={outcome.status === 'syncing' ? 50 : percent}
@@ -1374,7 +1378,7 @@ function BucketInventoryPanel() {
           role="status"
           aria-live="polite"
         >
-          <strong>R2 scope applied · {scopeSyncResult.prefix || 'entire bucket'}</strong>
+          <strong>Storage scope applied · {scopeSyncResult.prefix || 'everything'}</strong>
           <p className="mb-0 mt-1 text-ink2">
             {scopeSyncResult.result.summary.filesAdded} added · {scopeSyncResult.result.summary.filesChanged}{' '}
             changed · {scopeSyncResult.result.summary.filesRetired} missing source
@@ -1437,7 +1441,7 @@ function BucketInventoryPanel() {
       {!scan && (
         <div className="rounded-xl border border-line bg-surface p-4 text-sm leading-relaxed text-ink2">
           No scan has run in this session. Choose a scope above and start a scan. Incomplete scans stay marked
-          incomplete until the final R2 cursor has been read.
+          incomplete until the final storage cursor has been read.
         </div>
       )}
       {scan && (
@@ -1449,21 +1453,21 @@ function BucketInventoryPanel() {
                   ? 'Scan incomplete'
                   : scan.complete
                     ? scan.scopePrefix
-                      ? 'Scoped R2 scan complete'
+                      ? 'Scoped storage scan complete'
                       : 'Full bucket scan complete'
                     : isScanning
-                      ? 'Scanning this R2 scope'
+                      ? 'Scanning this storage scope'
                       : 'Scan incomplete'}
               </strong>
               <span className="font-mono text-xs text-ink2">
-                {scan.objects.length} R2 objects | {scan.requestCount} R2 list requests
+                {scan.objects.length} storage objects | {scan.requestCount} storage list requests
               </span>
             </div>
             <div
               className="mt-3 h-2 overflow-hidden rounded-full bg-sunk"
               role="progressbar"
               tabIndex={0}
-              aria-label="R2 scan progress"
+              aria-label="Storage scan progress"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={scan.complete ? 100 : undefined}
@@ -1526,8 +1530,8 @@ function BucketInventoryPanel() {
               className="rounded-xl border border-marigold/40 bg-marigold-soft/30 p-3 text-sm text-ink2"
               role="status"
             >
-              A file action changed the catalogue or generated pages after this scan. Open that course’s R2
-              audit for live progress, or recheck this scope to refresh the snapshot.
+              A file action changed the catalogue or generated pages after this scan. Open that course’s
+              storage audit for live progress, or recheck this scope to refresh the snapshot.
             </div>
           )}
 
@@ -1585,7 +1589,7 @@ function BucketInventoryPanel() {
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
                 {[
                   {
-                    label: 'R2 source files',
+                    label: 'Storage source files',
                     value: sourceCount,
                     detail:
                       scan.scopePrefix === ''
@@ -1610,13 +1614,13 @@ function BucketInventoryPanel() {
                       : 'Run the page audit to count them',
                   },
                   { label: 'Internal objects', value: systemCount },
-                  { label: 'DB files missing in R2', value: missingSourceCount },
+                  { label: 'Website files with no original', value: missingSourceCount },
                   {
-                    label: 'Invalid R2 sources',
+                    label: 'Invalid storage sources',
                     value: scan.objects.filter((object) => !!object.sourceIssue).length,
                   },
                   {
-                    label: 'Invalid Supabase page maps',
+                    label: 'Page lists that don’t match',
                     value: scan.records.filter((record) => record.pageMappingIssues.length > 0).length,
                   },
                   { label: 'Files needing action', value: fileIssues },
@@ -1631,18 +1635,18 @@ function BucketInventoryPanel() {
             </section>
           ) : (
             <p className="m-0 text-xs text-ink2">
-              Scope totals appear after the final R2 page is read; partial counts are not presented as
+              Scope totals appear after the final storage page is read; partial counts are not presented as
               complete.
             </p>
           )}
           {scan.complete && scan.scopePrefix === '' && unassignedSupportedCount > 0 && (
             <div className="rounded-xl border border-marigold/40 bg-marigold/10 p-3 text-sm" role="status">
-              <strong>{unassignedSupportedCount} supported R2 files have no course mapping.</strong>{' '}
+              <strong>{unassignedSupportedCount} supported storage files have no course mapping.</strong>{' '}
               {unassignedOutsideImportRootCount > 0 &&
                 `${unassignedOutsideImportRootCount} are outside ${scan.importRoot} and cannot be converted by a course-scoped sync. `}
               Use the “Not mapped to a course” filter to review them. The object audit marks files with the
-              same R2 size and ETag as a registered source, so existing copies can be distinguished from files
-              that still need review.
+              same storage size and ETag as a registered source, so existing copies can be distinguished from
+              files that still need review.
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Link
                   to="/admin?tab=import"
@@ -1665,8 +1669,8 @@ function BucketInventoryPanel() {
           )}
           {scan.complete && (unresolvedPageCount > 0 || missingSourceCount > 0) && (
             <p className="m-0 rounded-xl border border-blush bg-blush/30 p-3 text-sm text-blush-text">
-              {unresolvedPageCount} page objects do not map to a registered file; {missingSourceCount}{' '}
-              Supabase file records have no matching source key in R2. Review the rows below.
+              {unresolvedPageCount} page objects do not map to a registered file; {missingSourceCount} Some
+              files on the website have no original in storage. Review the rows below.
             </p>
           )}
 
@@ -1711,17 +1715,17 @@ function BucketInventoryPanel() {
                 <option value="ready">Ready conversion records</option>
                 <option value="offline">Offline or hidden</option>
                 <option value="failed">Conversion failed</option>
-                <option value="changed">Changed in R2</option>
+                <option value="changed">Changed in storage</option>
                 <option value="unimported">Not mapped yet</option>
                 <option value="unsupported">Unsupported format</option>
-                <option value="missing-source">Missing from R2</option>
+                <option value="missing-source">Missing from storage</option>
                 <option value="invalid-source">Bad source contents</option>
-                <option value="invalid-mapping">Supabase page map mismatch</option>
+                <option value="invalid-mapping">Page list mismatch</option>
                 <option value="ignored">Ignored by import rules</option>
               </select>
             </label>
             <label className="flex flex-col gap-1.5 text-xs font-medium text-ink2">
-              R2 object type
+              Storage object type
               <select
                 className="h-10 rounded-lg border border-line bg-surface px-3 text-sm text-ink"
                 value={objectKind}
@@ -1730,7 +1734,7 @@ function BucketInventoryPanel() {
                   setVisibleObjects(100);
                 }}
               >
-                <option value="all">All R2 objects</option>
+                <option value="all">All storage objects</option>
                 <option value="source">Source files</option>
                 <option value="folder">Folder markers</option>
                 <option value="page">Converted pages and previews</option>
@@ -1781,7 +1785,7 @@ function BucketInventoryPanel() {
 
           <details className="rounded-xl border border-line bg-surface p-3 sm:p-4" open={!scan.complete}>
             <summary className="cursor-pointer font-semibold">
-              Every R2 object key ({matchingObjects.length} matching
+              Every storage object key ({matchingObjects.length} matching
               {scan.complete ? '' : ', scan in progress'})
             </summary>
             <div className="mt-3 overflow-x-auto">
@@ -1789,7 +1793,7 @@ function BucketInventoryPanel() {
                 <thead>
                   <tr className="border-b border-line text-ink2">
                     <th className="p-2">Type</th>
-                    <th className="p-2">R2 key</th>
+                    <th className="p-2">Storage key</th>
                     <th className="p-2">Audit result</th>
                     <th className="p-2 text-right">Size</th>
                   </tr>
@@ -1803,11 +1807,11 @@ function BucketInventoryPanel() {
                         : object.kind === 'source'
                           ? record
                             ? record.sourceEtag === object.etag && record.sizeBytes === object.sizeBytes
-                              ? 'registered in Supabase'
-                              : 'R2 source changed'
+                              ? 'registered in the database'
+                              : 'Storage source changed'
                             : object.etag &&
                                 registeredSourceByFingerprint.has(`${object.sizeBytes}:${object.etag}`)
-                              ? `same R2 size + ETag as ${registeredSourceByFingerprint.get(`${object.sizeBytes}:${object.etag}`)}`
+                              ? `same storage size + ETag as ${registeredSourceByFingerprint.get(`${object.sizeBytes}:${object.etag}`)}`
                               : (object.unregisteredStatus ?? 'needs review')
                           : object.kind === 'folder'
                             ? 'explicit folder marker'

@@ -5,6 +5,9 @@ import type {
   StorageCleanResultDto,
   StorageFolderDto,
   StorageMapDto,
+  StorageUnusedDto,
+  UnusedGroupDto,
+  UnusedGroupKey,
 } from '@ss/contracts';
 import type { StoredObject } from '../domain/entities';
 import type { CatalogueWriter, DatabaseHousekeeping, ObjectStore } from '../domain/ports';
@@ -52,7 +55,7 @@ async function walk(
     const page = await store.listPage(prefix, cursor, 1000);
     for (const o of page.objects) if (keep(o)) out.push(o);
     if (page.nextCursor && (seen.has(page.nextCursor) || page.nextCursor === cursor))
-      throw fail.syncFailed('R2 repeated a cursor while mapping storage; try again.');
+      throw fail.syncFailed('Storage listing stalled; try again.');
     if (page.nextCursor) seen.add(page.nextCursor);
     cursor = page.nextCursor ?? undefined;
   } while (cursor);
@@ -74,7 +77,91 @@ export class StorageMapService {
     private readonly db: DatabaseHousekeeping,
     private readonly cleanOrphanPages: () => Promise<number>,
     private readonly importRoot = 'drive-imports/',
+    /** Which upload and help-desk files the site still points at. */
+    private readonly owners?: {
+      uploads(): Promise<{ all: Set<string>; finished: Set<string> }>;
+      support(): Promise<Set<string>>;
+    },
   ) {}
+
+  /**
+   * Every stored object nothing uses, by kind. Folders not imported yet are listed apart: they are
+   * waiting, not unused, and are never deleted from here.
+   */
+  async unused(): Promise<StorageUnusedDto> {
+    const scan = await this.scanUnused();
+    return {
+      scannedAt: new Date().toISOString(),
+      groups: scan.groups.map((g) => ({
+        ...g,
+        items: [...g.items].sort((a, b) => b.bytes - a.bytes).slice(0, 200),
+      })),
+      notImported: scan.notImported,
+    };
+  }
+
+  private async scanUnused() {
+    const { courses, files } = await this.catalogue();
+    const referenced = new Set(files.map((f) => f.sourceKey));
+    const liveFileIds = new Set(files.filter((f) => !f.sourceMissingAt).map((f) => f.id));
+    const [notes, pageObjects, uploads, support, owned] = await Promise.all([
+      walk(this.sources, '', (o) => !/^(pages|contributions|support|_system)\//.test(o.key)),
+      walk(this.pages, 'pages/', () => true),
+      walk(this.sources, 'contributions/', () => true),
+      walk(this.sources, 'support/', () => true),
+      Promise.all([
+        this.owners?.uploads() ?? Promise.resolve(null),
+        this.owners?.support() ?? Promise.resolve(null),
+      ]),
+    ]);
+    const [uploadKeys, supportKeys] = owned;
+    const byPrefix = [...courses].sort((a, b) => b.r2Prefix.length - a.r2Prefix.length);
+    const group = (key: UnusedGroupKey): UnusedGroupDto => ({ key, objects: 0, bytes: 0, items: [] });
+    const groups = {
+      pages: group('pages'),
+      leftovers: group('leftovers'),
+      'uploads-orphan': group('uploads-orphan'),
+      'uploads-finished': group('uploads-finished'),
+      'support-orphan': group('support-orphan'),
+    };
+    const add = (g: UnusedGroupDto, key: string, bytes: number) => {
+      g.objects++;
+      g.bytes += bytes;
+      g.items.push({ key, bytes });
+    };
+    const waiting = new Map<string, { folder: string; objects: number; bytes: number }>();
+    const depth = this.importRoot.split('/').filter(Boolean).length + 2;
+    for (const o of notes) {
+      if (referenced.has(o.key)) continue;
+      if (byPrefix.some((c) => c.r2Prefix && o.key.startsWith(c.r2Prefix)))
+        add(groups.leftovers, o.key, o.size);
+      else {
+        const folder = `${o.key.split('/').slice(0, depth).join('/')}/`;
+        const w = waiting.get(folder) ?? { folder, objects: 0, bytes: 0 };
+        w.objects++;
+        w.bytes += o.size;
+        waiting.set(folder, w);
+      }
+    }
+    const pageFolders = new Map<string, number>();
+    for (const o of pageObjects) {
+      const id = /^pages\/([^/]+)\//.exec(o.key)?.[1];
+      if (id && !liveFileIds.has(id)) pageFolders.set(id, (pageFolders.get(id) ?? 0) + o.size);
+    }
+    for (const [id, bytes] of pageFolders) add(groups.pages, `pages/${id}/`, bytes);
+    // Without the owners lists nothing in these areas is called unused (better safe than sorry).
+    if (uploadKeys)
+      for (const o of uploads) {
+        if (!uploadKeys.all.has(o.key)) add(groups['uploads-orphan'], o.key, o.size);
+        else if (uploadKeys.finished.has(o.key)) add(groups['uploads-finished'], o.key, o.size);
+      }
+    if (supportKeys)
+      for (const o of support) if (!supportKeys.has(o.key)) add(groups['support-orphan'], o.key, o.size);
+    return {
+      groups: Object.values(groups),
+      notImported: [...waiting.values()].sort((a, b) => a.folder.localeCompare(b.folder)),
+    };
+  }
 
   /** "23 Batch\\DBMS" or "/drive-imports//23 Batch/DBMS" → "drive-imports/23 Batch/DBMS/". */
   normaliseFolder(raw: string): string {
@@ -115,7 +202,7 @@ export class StorageMapService {
       throw fail.badRequest('Pages are being made for this course right now. Move it once they finish.');
     const target = await this.sources.listPage(to, undefined, 1);
     if (target.objects.length)
-      throw fail.badRequest('The new folder already has files in R2. Pick an empty folder.');
+      throw fail.badRequest('The new folder already has files. Pick an empty folder.');
     const objects = await walk(this.sources, from, () => true);
     if (objects.length > 250)
       throw fail.badRequest(
@@ -238,6 +325,18 @@ export class StorageMapService {
   }
 
   async clean(input: StorageCleanInput): Promise<StorageCleanResultDto> {
+    if (input.what === 'unused') {
+      // Worked out again now, so anything put back in use since the report is never removed.
+      const g = (await this.scanUnused()).groups.find((x) => x.key === input.group)!;
+      let removedObjects = 0;
+      let removedBytes = 0;
+      for (const item of g.items) {
+        await this.sources.delete(item.key);
+        removedObjects++;
+        removedBytes += item.bytes;
+      }
+      return { removedObjects, removedBytes, removedRows: 0 };
+    }
     if (input.what === 'orders') {
       return {
         removedObjects: 0,

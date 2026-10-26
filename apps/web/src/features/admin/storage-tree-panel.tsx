@@ -5,6 +5,7 @@ import { api, friendly } from '../../lib/api';
 import { Button } from '../../shared/ui/button';
 import { Sheet, Skeleton } from '../../shared/ui/feedback';
 import { ChevronRight } from '../../shared/ui/icons';
+import { MoveSheet, RenameSheet } from './storage-actions';
 import { MoveFolderCard, bytes } from './storage-map-panel';
 import { type TreeNode, buildTree } from './storage-tree';
 import { Panel, StatusPill, U, input, plural } from './ui';
@@ -14,8 +15,8 @@ type Show = 'all' | 'unused' | 'missing';
 
 const STATE = {
   used: { label: 'in use', tone: 'text-teal-text' },
-  unused: { label: 'unused', tone: 'text-marigold-text' },
-  missing: { label: 'gone from R2', tone: 'text-blush-text' },
+  unused: { label: 'not on the site', tone: 'text-marigold-text' },
+  missing: { label: 'gone from storage', tone: 'text-blush-text' },
 } as const;
 
 /** Shows exactly what goes, then asks for DELETE. */
@@ -47,9 +48,9 @@ function DeleteSheet({ path, onClose }: { path: string; onClose: () => void }) {
       {del.isSuccess ? (
         <>
           <p className="m-0 text-[15px]">
-            Removed <U>{plural(del.data.removedObjects, 'file')}</U> ({bytes(del.data.removedBytes)}) from R2,{' '}
-            {plural(del.data.removedPageObjects, 'page')} and {plural(del.data.removedFiles, 'record')} from
-            Supabase.
+            Removed <U>{plural(del.data.removedObjects, 'file')}</U> ({bytes(del.data.removedBytes)}) from
+            storage, {plural(del.data.removedPageObjects, 'page')} and{' '}
+            {plural(del.data.removedFiles, 'record')} from the database.
             {del.data.deletedCourses ? ` ${plural(del.data.deletedCourses, 'course')} deleted.` : ''}
             {del.data.archivedCourses
               ? ` ${plural(del.data.archivedCourses, 'sold course')} archived (sales kept).`
@@ -65,11 +66,11 @@ function DeleteSheet({ path, onClose }: { path: string; onClose: () => void }) {
               <U>
                 {plural(p.r2Objects, 'file')} ({bytes(p.r2Bytes)})
               </U>{' '}
-              from R2,{' '}
+              from storage,{' '}
               <U>
                 {plural(p.pageObjects, 'page')} ({bytes(p.pageBytes)})
               </U>{' '}
-              and <U>{plural(p.files, 'record')}</U> from Supabase.
+              and <U>{plural(p.files, 'record')}</U> from the database.
             </p>
             {p.courses.map((c) => (
               <p key={c.id} className="m-0 text-[14px] text-ink2">
@@ -117,20 +118,19 @@ function DeleteSheet({ path, onClose }: { path: string; onClose: () => void }) {
   );
 }
 
-function Row({
-  n,
-  depth,
-  open,
-  toggle,
-  onDelete,
-}: {
-  n: TreeNode;
-  depth: number;
+interface RowActions {
   open: Set<string>;
   toggle: (path: string) => void;
   onDelete: (path: string) => void;
-}) {
+  onRename: (path: string) => void;
+  picked: Set<string>;
+  onPick: (path: string) => void;
+}
+
+function Row({ n, depth, ...a }: { n: TreeNode; depth: number } & RowActions) {
+  const { open, toggle, onDelete, onRename, picked, onPick } = a;
   const expanded = open.has(n.path);
+  const editable = n.path.split('/').filter(Boolean).length >= 2;
   const state = n.entry ? STATE[n.entry.state] : null;
   return (
     <li>
@@ -138,6 +138,15 @@ function Row({
         className="group flex items-center gap-2 min-h-11 pr-2 rounded-lg hover:bg-sunk"
         style={{ paddingLeft: 8 + depth * 18 }}
       >
+        {editable && (
+          <input
+            type="checkbox"
+            className="size-4 flex-none accent-teal"
+            aria-label={`Select ${n.path}`}
+            checked={picked.has(n.path)}
+            onChange={() => onPick(n.path)}
+          />
+        )}
         {n.isFolder ? (
           <button
             type="button"
@@ -172,13 +181,23 @@ function Row({
           {n.isFolder && (n.unused || n.missing) ? (
             <span className="text-marigold-text">
               {' '}
-              · {n.unused ? `${n.unused} unused` : ''}
+              · {n.unused ? `${n.unused} not on the site` : ''}
               {n.unused && n.missing ? ', ' : ''}
               {n.missing ? `${n.missing} gone` : ''}
             </span>
           ) : null}
         </span>
-        {n.path.split('/').filter(Boolean).length >= 2 && (
+        {editable && n.entry?.state !== 'missing' && (
+          <button
+            type="button"
+            onClick={() => onRename(n.path)}
+            aria-label={`Rename ${n.path}`}
+            className="flex-none h-8 px-2.5 rounded-full text-[12.5px] font-semibold text-ink2 hover:text-ink hover:bg-sunk sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
+          >
+            Rename
+          </button>
+        )}
+        {editable && (
           <button
             type="button"
             onClick={() => onDelete(n.path)}
@@ -192,7 +211,7 @@ function Row({
       {n.isFolder && expanded && (
         <ul className="m-0 p-0 list-none">
           {n.children.map((c) => (
-            <Row key={c.path} n={c} depth={depth + 1} open={open} toggle={toggle} onDelete={onDelete} />
+            <Row key={c.path} n={c} depth={depth + 1} {...a} />
           ))}
         </ul>
       )}
@@ -200,7 +219,7 @@ function Row({
   );
 }
 
-/** Every notes file in R2 as folders, with its course; deleting removes it from R2 and Supabase. */
+/** Every notes file as folders, with its course: tick to move, rename or delete, all kept in step. */
 export function StorageTreePanel() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: KEY, queryFn: api.adminStorageTree, staleTime: 2 * 60_000 });
@@ -208,6 +227,16 @@ export function StorageTreePanel() {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const pick = (path: string) =>
+    setPicked((all) => {
+      const next = new Set(all);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
   const data: StorageTreeDto | undefined = q.data;
   const tree = useMemo(() => {
     if (!data) return null;
@@ -247,10 +276,10 @@ export function StorageTreePanel() {
 
   return (
     <Panel
-      title="Files & folders"
+      title="Files"
       aside={
         <Button variant="outline" onClick={() => void q.refetch()} disabled={q.isFetching}>
-          {q.isFetching ? 'Scanning R2…' : 'Scan again'}
+          {q.isFetching ? 'Scanning storage…' : 'Scan again'}
         </Button>
       }
     >
@@ -263,12 +292,12 @@ export function StorageTreePanel() {
             {bytes(data.totals.pageBytes)} of reader pages
             {data.totals.unused ? (
               <>
-                ; <U>{data.totals.unused} unused</U>
+                ; <U>{data.totals.unused} not on the site</U> (not imported yet, or leftovers)
               </>
             ) : null}
             {data.totals.missing ? (
               <>
-                ; <U>{data.totals.missing} gone from R2</U> but still in Supabase
+                ; <U>{data.totals.missing} gone from storage</U> but still in the database
               </>
             ) : null}
             .
@@ -277,8 +306,8 @@ export function StorageTreePanel() {
             {(
               [
                 ['all', 'Everything'],
-                ['unused', `Unused (${data.totals.unused})`],
-                ['missing', `Gone from R2 (${data.totals.missing})`],
+                ['unused', `Not on the site (${data.totals.unused})`],
+                ['missing', `Gone from storage (${data.totals.missing})`],
               ] as const
             ).map(([k, label]) => (
               <button
@@ -299,13 +328,39 @@ export function StorageTreePanel() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          {picked.size > 0 && (
+            <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-xl bg-ink px-4 py-2.5 text-bg">
+              <span className="text-[14px] font-semibold">{plural(picked.size, 'item')} ticked</span>
+              <span className="flex-1" />
+              <Button size="sm" variant="mist" onClick={() => setMoving(true)}>
+                Move to…
+              </Button>
+              <button
+                type="button"
+                onClick={() => setPicked(new Set())}
+                className="text-[13px] font-semibold underline"
+              >
+                Clear
+              </button>
+            </div>
+          )}
           <div className="rounded-2xl bg-card shadow-[0_0_0_1px_var(--line)] p-2 max-h-[620px] overflow-y-auto">
             {tree.children.length === 0 ? (
               <p className="m-0 p-4 text-ink2">Nothing matches.</p>
             ) : (
               <ul className="m-0 p-0 list-none">
                 {tree.children.map((c) => (
-                  <Row key={c.path} n={c} depth={0} open={openSet} toggle={toggle} onDelete={setDeleting} />
+                  <Row
+                    key={c.path}
+                    n={c}
+                    depth={0}
+                    open={openSet}
+                    toggle={toggle}
+                    onDelete={setDeleting}
+                    onRename={setRenaming}
+                    picked={picked}
+                    onPick={pick}
+                  />
                 ))}
               </ul>
             )}
@@ -319,6 +374,17 @@ export function StorageTreePanel() {
         </>
       )}
       {deleting && <DeleteSheet path={deleting} onClose={() => setDeleting(null)} />}
+      {renaming && <RenameSheet path={renaming} onClose={() => setRenaming(null)} />}
+      {moving && data && (
+        <MoveSheet
+          paths={[...picked]}
+          data={data}
+          onClose={() => {
+            setMoving(false);
+            setPicked(new Set());
+          }}
+        />
+      )}
     </Panel>
   );
 }

@@ -18,7 +18,7 @@ open a public issue for a security bug.
 | Converter | Report conversion results and progress | Anything without the shared `x-ss-converter` secret (403, constant-time compare) |
 | Razorpay | Mark orders paid via the webhook | Anything without a valid HMAC signature over the raw body; amounts are checked against the order |
 
-All 76 admin routes go through `requireAdmin`; the two converter callbacks check the converter secret. `apps/api/test/security.test.ts` checks each
+All 84 admin routes go through `requireAdmin`; the two converter callbacks check the converter secret. `apps/api/test/security.test.ts` checks each
 one for 401 (visitor) and 403 (student).
 
 Two public routes take input without a sign-in, by design:

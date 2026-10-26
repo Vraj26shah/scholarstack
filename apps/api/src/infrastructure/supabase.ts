@@ -17,6 +17,7 @@ import type {
   Branch,
   Bundle,
   Contribution,
+  ContributionFiling,
   Course,
   CourseFile,
   Device,
@@ -255,6 +256,23 @@ export class SupabaseCatalogue implements CatalogueReader, CatalogueWriter {
           source_key: f.sourceKey,
           source_etag: f.sourceEtag,
         })),
+      }),
+    );
+  }
+
+  async relocateFile(fileId: string, to: Parameters<CatalogueWriter['relocateFile']>[1]) {
+    must(
+      await this.db.rpc('relocate_course_file', {
+        p_file_id: fileId,
+        p_course_id: to.courseId,
+        p_unit_key: to.unitKey,
+        p_unit_title: to.unitTitle,
+        p_unit_kind: to.unitKind,
+        p_unit_sort: to.unitSort,
+        p_unit_hidden: to.unitHidden,
+        p_source_key: to.sourceKey,
+        p_source_etag: to.sourceEtag,
+        p_name: to.name,
       }),
     );
   }
@@ -1485,6 +1503,15 @@ const toContribution = (r: Row): Contribution => ({
   reviewedBy: (r.reviewed_by as string) ?? null,
   reviewedAt: r.reviewed_at ? new Date(r.reviewed_at as string) : null,
   createdAt: new Date(r.created_at as string),
+  filed: r.filed_course_id
+    ? {
+        courseId: r.filed_course_id as string,
+        folder: (r.filed_folder as string) ?? '',
+        keys: (r.filed_keys as string[]) ?? [],
+        at: new Date(r.filed_at as string),
+      }
+    : null,
+  completedAt: r.completed_at ? new Date(r.completed_at as string) : null,
 });
 
 export class SupabaseContributions implements ContributionRepository {
@@ -1607,6 +1634,33 @@ export class SupabaseContributions implements ContributionRepository {
       await this.db
         .from('contributions')
         .update({ reward_paid_at: new Date().toISOString(), reward_paid_note: note })
+        .eq('id', id),
+    );
+  }
+  async setFileChecks(id: string, files: Contribution['files']) {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return;
+    must(await this.db.from('contributions').update({ files }).eq('id', id));
+  }
+  async setFiled(id: string, filed: ContributionFiling | null) {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return;
+    must(
+      await this.db
+        .from('contributions')
+        .update({
+          filed_course_id: filed?.courseId ?? null,
+          filed_folder: filed?.folder ?? '',
+          filed_keys: filed?.keys ?? [],
+          filed_at: filed?.at.toISOString() ?? null,
+        })
+        .eq('id', id),
+    );
+  }
+  async setCompleted(id: string, at: Date | null) {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return;
+    must(
+      await this.db
+        .from('contributions')
+        .update({ completed_at: at?.toISOString() ?? null })
         .eq('id', id),
     );
   }

@@ -381,7 +381,7 @@ function StudentsCard({ courses }: { courses: AdminCourseDto[] }) {
 export function AccessPanel() {
   const courses = useQuery({ queryKey: ['admin-courses'], queryFn: api.adminCourses });
   return (
-    <Panel title="Students & access">
+    <Panel title="Access">
       {courses.isLoading ? (
         <Skeleton className="h-80" />
       ) : courses.isError ? (

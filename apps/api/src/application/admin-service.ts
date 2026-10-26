@@ -986,7 +986,11 @@ export class AdminService {
   }
 
   /** Reconcile one selected R2 folder and its descendants; unrelated course files are untouched. */
-  async rescanFolder(courseId: string, prefix: string): Promise<SyncResultDto> {
+  async rescanFolder(
+    courseId: string,
+    prefix: string,
+    opts: { keepLiveForNewFiles?: boolean } = {},
+  ): Promise<SyncResultDto> {
     const course = await this.reader.findCourse(courseId);
     if (!course) throw fail.notFound('That course');
     if (
@@ -998,7 +1002,7 @@ export class AdminService {
     }
     const objects = await this.sources.list(prefix);
     this.assertInlineSyncSize(objects, `folder ${prefix}`);
-    return this.syncSelectedObjects(course, objects, prefix);
+    return this.syncSelectedObjects(course, objects, prefix, opts);
   }
 
   private assertInlineSyncSize(objects: StoredObject[], scope: string): void {
@@ -1010,10 +1014,16 @@ export class AdminService {
     }
   }
 
+  /**
+   * `keepLiveForNewFiles`: brand-new files (already reviewed, e.g. a filed contribution) don't take
+   * a live course off sale; students only see them once their pages are ready. Changed or
+   * missing files still do, as before.
+   */
   private async syncSelectedObjects(
     course: Course,
     stored: StoredObject[],
     reconcilePrefix?: string,
+    opts: { keepLiveForNewFiles?: boolean } = {},
   ): Promise<SyncResultDto> {
     const result = emptyResult();
     const conversionJobs: { fileId: string; sourceKey: string }[] = [];
@@ -1065,7 +1075,9 @@ export class AdminService {
             !previous.unitHidden &&
             !looksLikeTextbook(fileName))
         : !(previousUnit?.unitHidden ?? hiddenByDefault(unitKind)) && !looksLikeTextbook(fileName);
-      if (willBeVisible && (metadataChanged || sourceIssue)) await this.takeCourseOffline(course.id);
+      const reviewedAddition = opts.keepLiveForNewFiles === true && !previous && !sourceIssue;
+      if (willBeVisible && (metadataChanged || sourceIssue) && !reviewedAddition)
+        await this.takeCourseOffline(course.id);
       if (previous && metadataChanged) {
         result.pageObjectsRemoved += await this.clearGeneratedPages(previous.id);
       }
@@ -1110,7 +1122,7 @@ export class AdminService {
         }
         continue;
       }
-      sourceChanged = true;
+      if (!(reviewedAddition && change === 'added')) sourceChanged = true;
       if (isVisible(current)) {
         conversionJobs.push({ fileId: current.id, sourceKey: current.sourceKey });
       } else {
@@ -1163,8 +1175,7 @@ export class AdminService {
   ): Promise<string | null> {
     if (sizeBytes <= 0) return `${BROKEN_SOURCE} the R2 source is empty.`;
     const source = await this.sources.get(key);
-    if (!source)
-      throw new Error(`R2 source ${key} disappeared during this inventory scan. Recheck the scope.`);
+    if (!source) throw new Error(`The file ${key} disappeared from storage during this scan. Check again.`);
     if (
       (source.etag !== undefined && source.etag !== etag) ||
       (source.size !== undefined && source.size !== sizeBytes)
@@ -1394,7 +1405,7 @@ export class AdminService {
       for (const key of deleteKeys) await this.pages.delete(key);
       removed += deleteKeys.length;
       if (page.nextCursor && (seenCursors.has(page.nextCursor) || page.nextCursor === cursor)) {
-        throw fail.syncFailed('R2 repeated a cursor during page-object cleanup; retry the bucket sync.');
+        throw fail.syncFailed('Storage listing stalled while cleaning pages; try again.');
       }
       if (page.nextCursor) seenCursors.add(page.nextCursor);
       cursor = page.nextCursor ?? undefined;
@@ -2862,7 +2873,7 @@ export class AdminService {
       this.sources.get(file.sourceKey),
       this.sources.list(file.sourceKey),
     ]);
-    if (!source) throw fail.notFound('The R2 source file');
+    if (!source) throw fail.notFound('The original file');
     const metadata = listed.find((object) => object.key === file.sourceKey);
     if (!metadata || metadata.etag !== file.sourceEtag || metadata.size !== file.sizeBytes) {
       throw fail.badRequest(

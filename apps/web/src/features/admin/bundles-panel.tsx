@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { formatRupees } from '../../lib/format';
-import { Button } from '../../shared/ui/button';
+import { Button, LinkButton } from '../../shared/ui/button';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { Field, Panel, StatusPill, input, plural, rupeesToPaise } from './ui';
 
@@ -370,6 +370,11 @@ function BundleRow({ b, onEdit }: { b: AdminBundleDto; onEdit: () => void }) {
           Save {formatRupees(Math.max(0, b.listPricePaise - b.pricePaise))} · {b.savePercent}%
         </span>
       </div>
+      {b.status !== 'live' && (
+        <LinkButton to={`/b/${b.slug}`} variant="outline">
+          Preview
+        </LinkButton>
+      )}
       <Button variant="outline" onClick={onEdit}>
         Edit
       </Button>

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
-import { Button } from '../../shared/ui/button';
+import { Button, LinkButton } from '../../shared/ui/button';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { BranchPicker } from './branch-picker';
 import { DeleteCourse } from './delete-course';
@@ -13,15 +13,15 @@ import { UnitsManager } from './units-manager';
 
 const CONVERSION_PHASES: Record<string, string> = {
   queued: 'Waiting in the sequential queue',
-  downloading_source: 'Reading original from R2',
+  downloading_source: 'Reading original from storage',
   validating_source: 'Checking file type and integrity',
   rendering_pages: 'Counting and rendering pages',
-  clearing_previous_pages: 'Removing stale generated pages from R2',
-  writing_preview: 'Writing page-one preview to R2',
-  writing_pages: 'Writing protected page objects to R2',
-  verifying_r2: 'Verifying all page objects in R2',
-  saving_manifest: 'Registering the page map in Supabase',
-  complete: 'Conversion complete · R2 and Supabase checked',
+  clearing_previous_pages: 'Removing stale generated pages from storage',
+  writing_preview: 'Writing page-one preview to storage',
+  writing_pages: 'Writing protected page objects to storage',
+  verifying_r2: 'Verifying all page objects in storage',
+  saving_manifest: 'Registering the page map in the database',
+  complete: 'Conversion complete · storage and the database checked',
   failed: 'Conversion failed',
 };
 
@@ -126,22 +126,12 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
               {c.title}
             </Link>
           </div>
-          {c.courseCode && <div className="font-mono text-xs text-ink2 mt-1">{c.courseCode}</div>}
-          <div className="font-mono text-xs text-ink2 mt-1 truncate" title={c.r2Prefix}>
-            {c.callNo} · {c.batchYear} · {c.r2Prefix}
-          </div>
-          <div className="font-mono text-[11px] text-teal-text mt-1">
-            {c.branchSlugs
-              .map(
-                (slug) =>
-                  index.data?.branches.find((branch) => branch.slug === slug)?.code ?? slug.toUpperCase(),
-              )
-              .join(' · ')}
+          <div className="font-mono text-xs text-ink2 mt-1">
+            {[c.courseCode, c.callNo, String(c.batchYear)].filter(Boolean).join(' · ')}
           </div>
         </div>
         <div className="font-mono text-xs text-ink2 min-w-0">
-          {plural(c.unitCount, 'unit')} · {plural(c.fileCount, 'file')} · {c.pageCount} pp · {c.previewCount}{' '}
-          previews
+          {plural(c.fileCount, 'file')} · {c.pageCount} pages
           {(c.hiddenUnits > 0 || c.hiddenFiles > 0) && (
             <div>
               {plural(c.hiddenFiles, 'file')} kept off the site
@@ -149,10 +139,10 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
             </div>
           )}
           {c.pendingFiles > 0 && (
-            <div className="text-marigold-text">{c.pendingFiles} waiting for conversion</div>
+            <div className="text-marigold-text">{plural(c.pendingFiles, 'file')} waiting for pages</div>
           )}
           {c.failedFiles > 0 && (
-            <div className="text-blush-text">{c.failedFiles} failed (skipped from reader)</div>
+            <div className="text-blush-text">{plural(c.failedFiles, 'file')} couldn't be made into pages</div>
           )}
         </div>
         {/* Phones: a tidy two-column grid (price + main action, then pairs of buttons).
@@ -171,15 +161,15 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
           </label>
           {c.status === 'live' ? (
             <>
-              <Button
-                variant="outline"
-                aria-label="Save price and unpublish"
-                disabled={!priceOk || save.isPending || rupeesToPaise(rupees) === c.pricePaise}
-                onClick={() => save.mutate({ pricePaise: rupeesToPaise(rupees) })}
-              >
-                <span className="sm:hidden">Save price</span>
-                <span className="hidden sm:inline">Save & unpublish</span>
-              </Button>
+              {rupeesToPaise(rupees) !== c.pricePaise && (
+                <Button
+                  variant="brand"
+                  disabled={!priceOk || save.isPending}
+                  onClick={() => save.mutate({ pricePaise: rupeesToPaise(rupees), status: 'live' })}
+                >
+                  Save price
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={() => save.mutate({ status: 'draft' })}
@@ -189,24 +179,29 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
               </Button>
             </>
           ) : (
-            <Button
-              variant="brand"
-              disabled={!priceOk || !ready || save.isPending}
-              title={ready ? undefined : 'Wait until pages are converted'}
-              onClick={() => save.mutate({ pricePaise: rupeesToPaise(rupees), status: 'live' })}
-            >
-              Publish
-            </Button>
+            <>
+              <LinkButton to={`/c/${c.slug}`} variant="outline">
+                Preview
+              </LinkButton>
+              <Button
+                variant="brand"
+                disabled={!priceOk || !ready || save.isPending}
+                title={ready ? undefined : 'Wait until every file has its pages'}
+                onClick={() => save.mutate({ pricePaise: rupeesToPaise(rupees), status: 'live' })}
+              >
+                Publish
+              </Button>
+            </>
           )}
           <Button variant="outline" onClick={() => setShowFiles(!showFiles)} aria-expanded={showFiles}>
-            {showFiles ? 'Close files' : 'Manage files'}
+            {showFiles ? 'Close files' : 'Files'}
           </Button>
           <Button
             variant="outline"
             onClick={() => setShowInventory((value) => !value)}
             aria-expanded={showInventory}
           >
-            {showInventory ? 'Close audit' : 'R2 audit'}
+            {showInventory ? 'Close check' : 'Check files'}
           </Button>
           <Button variant="outline" onClick={() => setEditing(!editing)} aria-expanded={editing}>
             Edit
@@ -215,12 +210,9 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
       </div>
       {editing && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 p-4 rounded-2xl bg-sunk">
-          {c.status === 'live' && (
-            <p className="m-0 text-sm text-ink2 sm:col-span-2 md:col-span-4">
-              Saving changes to a published course will move it to drafts until you review and publish it
-              again.
-            </p>
-          )}
+          <p className="m-0 font-mono text-xs text-ink2 sm:col-span-2 md:col-span-4 break-all">
+            Folder: {c.r2Prefix}
+          </p>
           <Field label="Title" className="sm:col-span-2 md:col-span-1">
             <input
               className={input}
@@ -288,6 +280,8 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
                   batchYear: Number(form.batchYear),
                   branchSlugs: form.branchSlugs,
                   semester: Number(form.semester),
+                  // A live course stays on sale (the server re-checks it can be sold).
+                  ...(c.status === 'live' ? { status: 'live' as const } : {}),
                 })
               }
               disabled={save.isPending || form.title.trim().length < 2 || !formOk}
@@ -307,30 +301,30 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
       {showInventory && (
         <section
           className="rounded-2xl border border-line bg-sunk p-4 flex flex-col gap-3"
-          aria-label={`R2 inventory for ${c.title}`}
+          aria-label={`File check for ${c.title}`}
         >
           <div className="flex flex-wrap items-center gap-2">
-            <strong className="mr-auto">R2 files and page status</strong>
+            <strong className="mr-auto">Uploaded files and their pages</strong>
             <span
               className={`text-sm font-semibold ${inventory.data?.complete ? 'text-teal-text' : 'text-blush-text'}`}
             >
               {inventory.isFetching
-                ? 'Checking R2…'
+                ? 'Checking…'
                 : inventory.data?.complete
                   ? 'All source files matched'
                   : 'Needs attention'}
             </span>
             <Button variant="outline" onClick={() => syncCourse.mutate()} disabled={syncCourse.isPending}>
-              {syncCourse.isPending ? 'Scanning R2…' : 'Sync R2 + convert'}
+              {syncCourse.isPending ? 'Checking for changes…' : 'Pick up changes and make pages'}
             </Button>
             <Button variant="ghost" onClick={() => void inventory.refetch()} disabled={inventory.isFetching}>
-              Refresh audit
+              Check again
             </Button>
           </div>
           <p className="m-0 font-mono text-xs text-ink2 break-all">{inventory.data?.prefix ?? c.r2Prefix}</p>
           <p className="m-0 text-sm text-ink2">
-            R2 sync registers new and changed source files. Conversion creates protected page objects; files
-            already converted with complete pages are left alone.
+            Storage sync registers new and changed source files. Conversion creates protected page objects;
+            files already converted with complete pages are left alone.
             {import.meta.env.DEV &&
               ' In local development, conversion runs on this computer, not GitHub Actions.'}
           </p>
@@ -412,10 +406,11 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
           {inventory.data && (
             <>
               <p className="m-0 text-sm text-ink2">
-                {inventory.data.totals.files} R2 files · {inventory.data.totals.registered} registered ·{' '}
-                {inventory.data.totals.changed} changed in R2 · {inventory.data.totals.unmapped} unimported ·{' '}
-                {inventory.data.totals.unsupported} unsupported · {inventory.data.totals.missingInR2} missing
-                from R2 · {inventory.data.totals.invalidSources} invalid source bytes ·{' '}
+                {inventory.data.totals.files} storage files · {inventory.data.totals.registered} registered ·{' '}
+                {inventory.data.totals.changed} changed in storage · {inventory.data.totals.unmapped}{' '}
+                unimported · {inventory.data.totals.unsupported} unsupported ·{' '}
+                {inventory.data.totals.missingInR2} missing from storage ·{' '}
+                {inventory.data.totals.invalidSources} invalid source bytes ·{' '}
                 {inventory.data.totals.pageMappingsInvalid} broken page maps · {inventory.data.totals.pending}{' '}
                 pending · {inventory.data.totals.failed} failed · checked{' '}
                 {new Date(inventory.data.checkedAt).toLocaleString()}
@@ -429,7 +424,7 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
                         {folder.empty ? 'empty folder' : `${folder.fileCount} files`}
                       </span>
                       {folder.missingCount > 0 && (
-                        <span className="text-blush-text">{folder.missingCount} missing in R2</span>
+                        <span className="text-blush-text">{folder.missingCount} missing in storage</span>
                       )}
                     </li>
                   ))}
@@ -449,7 +444,7 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
                     : 0;
                   const conversionStep =
                     object.conversionStatus === 'ready' && object.pageAssetsComplete === false
-                      ? 'Conversion finished · audit found missing R2 objects'
+                      ? 'Conversion finished · audit found missing storage objects'
                       : object.conversionStage === 'failed'
                         ? `Failed at ${object.conversionErrorStage === 'dispatch' ? 'converter dispatch' : (CONVERSION_PHASES[object.conversionErrorStage ?? ''] ?? 'conversion')}`
                         : (CONVERSION_PHASES[object.conversionStage ?? ''] ?? null);
@@ -532,7 +527,7 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
                                     ? 'Ignored by import rules'
                                     : (conversionStep ??
                                       (expectedPages
-                                        ? `${foundPages}/${expectedPages} pages present in R2`
+                                        ? `${foundPages}/${expectedPages} pages present in storage`
                                         : object.conversionStatus === 'failed'
                                           ? 'Conversion failed'
                                           : 'Not objectified yet'));
@@ -559,7 +554,7 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
                                   {object.conversionProgressTotal && !auditPages
                                     ? ` · ${now}/${max} (${pageProgress}%)`
                                     : auditPages
-                                      ? ` · ${foundPages}/${expectedPages} pages in R2 (${pageProgress}%)`
+                                      ? ` · ${foundPages}/${expectedPages} pages in storage (${pageProgress}%)`
                                       : ''}
                                 </span>
                               </>
@@ -575,14 +570,14 @@ function CourseRow({ c }: { c: AdminCourseDto }) {
                       )}
                       {object.pageAssetsComplete === false && (
                         <span className="col-span-2 text-blush-text">
-                          Converted page or preview files are missing from R2.
+                          Converted page or preview files are missing from storage.
                         </span>
                       )}
                     </li>
                   );
                 })}
                 {inventory.data.objects.length === 0 && (
-                  <li className="text-ink2">No objects found under this R2 prefix.</li>
+                  <li className="text-ink2">No files found in this course's folder.</li>
                 )}
                 {setFileVisibility.isError && (
                   <li className="text-sm text-blush-text">{friendly(setFileVisibility.error)}</li>

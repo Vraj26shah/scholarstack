@@ -13,6 +13,7 @@ import type {
   Branch,
   Bundle,
   Contribution,
+  ContributionFiling,
   Course,
   CourseFile,
   CourseRoyalty,
@@ -185,6 +186,37 @@ export class MemoryCatalogue implements CatalogueReader, CatalogueWriter {
       if (file && file.courseId === courseId)
         this.db.files.set(f.fileId, { ...file, sourceKey: f.sourceKey, sourceEtag: f.sourceEtag });
     }
+  }
+
+  async relocateFile(fileId: string, to: Parameters<CatalogueWriter['relocateFile']>[1]) {
+    const f = this.db.files.get(fileId);
+    if (!f) throw new Error('file not found');
+    const unitKey = `${to.courseId}|${to.unitKey}`;
+    if (!this.db.units.has(unitKey))
+      this.db.units.set(unitKey, {
+        title: to.unitTitle,
+        kind: to.unitKind,
+        sort: to.unitSort,
+        hidden: to.unitHidden,
+      });
+    this.db.files.set(fileId, {
+      ...f,
+      courseId: to.courseId,
+      unitKey: to.unitKey,
+      unitTitle: to.unitTitle,
+      unitKind: to.unitKind,
+      unitSort: to.unitSort,
+      sourceKey: to.sourceKey,
+      sourceEtag: to.sourceEtag,
+      name: to.name,
+      sourceMissingAt: null,
+    });
+    const oldUnit = `${f.courseId}|${f.unitKey}`;
+    if (
+      oldUnit !== unitKey &&
+      ![...this.db.files.values()].some((x) => `${x.courseId}|${x.unitKey}` === oldUnit)
+    )
+      this.db.units.delete(oldUnit);
   }
 
   async deleteFiles(fileIds: string[]) {
@@ -1130,6 +1162,18 @@ export class MemoryContributions implements ContributionRepository {
   async markRewardPaid(id: string, note: string) {
     const c = this.db.contributions.get(id);
     if (c) this.db.contributions.set(id, { ...c, rewardPaidAt: new Date(), rewardPaidNote: note });
+  }
+  async setFileChecks(id: string, files: Contribution['files']) {
+    const c = this.db.contributions.get(id);
+    if (c) this.db.contributions.set(id, { ...c, files });
+  }
+  async setFiled(id: string, filed: ContributionFiling | null) {
+    const c = this.db.contributions.get(id);
+    if (c) this.db.contributions.set(id, { ...c, filed });
+  }
+  async setCompleted(id: string, at: Date | null) {
+    const c = this.db.contributions.get(id);
+    if (c) this.db.contributions.set(id, { ...c, completedAt: at });
   }
 }
 

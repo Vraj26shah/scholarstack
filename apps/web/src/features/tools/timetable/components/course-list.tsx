@@ -1,7 +1,33 @@
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { api } from '../../../../lib/api';
 import { Button } from '../../../../shared/ui/button';
 import { ToolCard } from '../../core/ui';
 import { type Course, clashes } from '../domain';
+
+/** If Scholars Stack sells notes for this course, a link to them (looked up by name, quietly). */
+function NotesLink({ course }: { course: Course }) {
+  const name = course.name.trim();
+  const q = useQuery({
+    queryKey: ['timetable-notes', name.toLowerCase()],
+    queryFn: () => api.search(name),
+    enabled: name.length >= 4,
+    staleTime: 600_000,
+    retry: false,
+  });
+  const want = name.toLowerCase();
+  // Only a real match: same title, or one contains the other ("DBMS" alone is too loose).
+  const hit =
+    q.data?.courses.find((c) => c.title.toLowerCase() === want) ??
+    q.data?.courses.find((c) => c.title.toLowerCase().includes(want) || want.includes(c.title.toLowerCase()));
+  if (!hit) return null;
+  return (
+    <Link to={`/c/${hit.slug}`} className="text-[13px] font-semibold text-teal-text">
+      Notes for this →
+    </Link>
+  );
+}
 
 /** Every course as a card: edit it, register a planned one, or clear them all (asks first). */
 export function CourseList({
@@ -37,7 +63,12 @@ export function CourseList({
                   {c.tentative && <span className="ml-2 text-[12px] font-mono text-ink2">PLANNED</span>}
                 </p>
                 <p className="m-0 text-[13px] text-ink2 font-mono break-all">{c.slots.join(' ')}</p>
-                {c.teacher && <p className="m-0 text-[13px] text-ink2">{c.teacher}</p>}
+                {(c.teacher || c.room) && (
+                  <p className="m-0 text-[13px] text-ink2">
+                    {[c.room, c.teacher].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+                <NotesLink course={c} />
               </div>
               <div className="flex flex-col gap-1 flex-none">
                 <Button variant="ghost" size="sm" onClick={() => onEdit(c)}>

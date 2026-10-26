@@ -7,27 +7,24 @@ import { Page } from '../../shared/ui/chrome';
 import { GROUPS, findView } from './admin-sections';
 import { Note } from './ui';
 
-/** Small counts on the groups that need you: pages to make, people waiting, problems. */
+/** Small counts on the tabs that need you, from the same check the Today screen uses. */
 function useBadges(enabled: boolean, o?: AdminOverviewDto) {
-  const support = useQuery({
-    queryKey: ['admin', 'support', 'open'],
-    queryFn: () => api.adminSupport('open'),
+  const today = useQuery({
+    queryKey: ['admin-today'],
+    queryFn: api.adminToday,
     refetchInterval: 60_000,
     enabled,
   });
-  const uploads = useQuery({
-    queryKey: ['admin', 'contributions', 'pending'],
-    queryFn: () => api.adminContributions('pending'),
-    refetchInterval: 60_000,
-    enabled,
-  });
-  const waiting = (support.data?.counts.open ?? 0) + (uploads.data?.items.length ?? 0);
+  const n = (key: string) => today.data?.items.find((i) => i.key === key)?.count ?? 0;
+  const busy = today.data?.items.filter((i) => (i.count ?? 0) > 0).length ?? 0;
   return {
+    today: busy,
     notes: o && o.files.waiting + o.files.working ? o.files.waiting + o.files.working : 0,
-    inbox: waiting,
-    storage: o?.files.failed ?? 0,
-    queries: support.data?.counts.open ?? 0,
-    contributions: uploads.data?.items.length ?? 0,
+    inbox: n('questions') + n('uploads'),
+    storage: n('problems'),
+    queries: n('questions'),
+    contributions: n('uploads'),
+    problems: n('problems'),
   } as Record<string, number>;
 }
 
@@ -78,7 +75,7 @@ export function AdminPage() {
           <div
             role="tablist"
             aria-label="Admin sections"
-            className="flex gap-1 overflow-x-auto [scrollbar-width:none] border-b border-line"
+            className="grid grid-cols-3 sm:flex sm:gap-1 sm:overflow-x-auto [scrollbar-width:none] border-b border-line"
           >
             {GROUPS.map((g) => {
               const n = badges[g.key] ?? 0;
@@ -91,7 +88,7 @@ export function AdminPage() {
                   aria-selected={selected}
                   aria-controls="admin-panel"
                   onClick={() => go(g.views[0]!.key)}
-                  className={`-mb-px flex min-h-12 shrink-0 items-center gap-2 border-b-[3px] px-4 text-[15px] transition-colors ${
+                  className={`-mb-px flex min-h-12 shrink-0 items-center justify-center sm:justify-start gap-2 border-b-[3px] px-2 sm:px-4 text-[15px] transition-colors ${
                     selected
                       ? 'border-teal font-semibold text-ink'
                       : 'border-transparent font-medium text-ink2 hover:text-ink'

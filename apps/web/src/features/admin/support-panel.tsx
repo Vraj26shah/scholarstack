@@ -154,7 +154,7 @@ export function SupportPanel() {
   const ideas = all.filter((x) => x.topic === 'suggestion').length;
   return (
     <Panel
-      title="Questions & suggestions"
+      title="Questions"
       aside={
         <Button variant="outline" onClick={() => void q.refetch()} disabled={q.isFetching}>
           {q.isFetching ? 'Checking…' : 'Refresh'}

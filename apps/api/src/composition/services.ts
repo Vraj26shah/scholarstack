@@ -9,6 +9,9 @@ import { CheckoutService } from '../application/checkout-service';
 import type { AppConfig } from '../application/config';
 import { ContributionReviewService } from '../application/contributions/contribution-review-service';
 import { ContributionService } from '../application/contributions/contribution-service';
+import { ContributorStatsService } from '../application/contributions/contributor-stats';
+import { ContributionFilingService } from '../application/contributions/filing';
+import { FiledCourses } from '../application/contributions/pipeline';
 import { EarningsService } from '../application/earnings/earnings-service';
 import { StudentMailer } from '../application/notify/student-mailer';
 import { ProblemService } from '../application/problems';
@@ -93,7 +96,8 @@ export interface Ports {
   entitlements: EntitlementRepository;
   progress: ProgressRepository;
   accessLog: AccessLog;
-  sources: ObjectStore;
+  /** The notes bucket: read for syncing, written when an upload is filed into a course. */
+  sources: ObjectStore & UploadStore;
   pages: ObjectStore;
   queue: ConversionQueue;
   gateway: PaymentGateway;
@@ -138,6 +142,7 @@ export function buildServices(p: Ports, config: AppConfig) {
     p.clock,
     p.contributions,
   );
+  const filedCourses = new FiledCourses(p.catalogueReader, p.catalogueWriter);
   return {
     limiter: p.limiter,
     earnings,
@@ -153,7 +158,17 @@ export function buildServices(p: Ports, config: AppConfig) {
       p.profiles,
       earnings,
       p.clock,
+      filedCourses,
     ),
+    contributionFiling: new ContributionFilingService(
+      p.contributions,
+      p.sources,
+      p.catalogueReader,
+      p.catalogueWriter,
+      (courseId, prefix) => admin.rescanFolder(courseId, prefix, { keepLiveForNewFiles: true }),
+      p.clock,
+    ),
+    contributorStats: new ContributorStatsService(p.contributions, filedCourses, earnings),
     contributionReview: new ContributionReviewService(
       p.contributions,
       p.uploads,
@@ -164,6 +179,7 @@ export function buildServices(p: Ports, config: AppConfig) {
       p.earnings,
       studentMail,
       p.clock,
+      filedCourses,
     ),
     catalogue: new CatalogueService(p.catalogueReader, p.bundles, p.entitlements, p.pages, config),
     admins,
@@ -201,6 +217,18 @@ export function buildServices(p: Ports, config: AppConfig) {
       p.housekeeping,
       () => admin.cleanOrphanPageObjects(),
       config.importRoot,
+      {
+        uploads: async () => {
+          const list = await p.contributions.list('all', 10_000);
+          const all = new Set(list.flatMap((c) => c.files.map((f) => f.key)));
+          const finished = new Set(
+            list.filter((c) => c.completedAt && c.filed).flatMap((c) => c.files.map((f) => f.key)),
+          );
+          return { all, finished };
+        },
+        support: async () =>
+          new Set((await p.support.list('all', 10_000)).flatMap((q) => q.files.map((f) => f.key))),
+      },
     ),
     announcements: new AnnouncementService(
       p.announcements,

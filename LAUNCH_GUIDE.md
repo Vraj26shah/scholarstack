@@ -84,7 +84,7 @@ The site runs on the Cloudflare Worker and private R2 bucket. The page converter
 
 ## 4. Put your notes on sale (staging)
 
-1. **Admin → Import.**
+1. **Admin → Courses → Add courses.**
    - The folder tree refreshes when opened, on focus, and every 30 seconds; **Check for new folders** refreshes it on demand.
    - Tick each folder that is a course. Review or edit its title and course code; course codes preselect matching programmes. Choose the branch set, batch year, semester, price, and an existing draft bundle (or leave bundle membership for the Bundles tab), then **Import**.
    - Imported courses start as drafts. R2 stores each conversion job; GitHub Actions converts one file at a time and reports progress back to this panel.
@@ -182,7 +182,7 @@ After that:
 
 - **Backups:** keep a scheduled database backup in Supabase or another storage account.
 - **Uptime:** point UptimeRobot (free) at `https://your-domain.in/api/health`.
-- **New batch:** upload `drive-imports/24 Batch/…` to R2, then Admin → Import → tick the folders → Import → wait for conversion → Publish → (optional) bundle → announce.
+- **New batch:** upload `drive-imports/24 Batch/…` to R2, then Admin → Courses → Add courses → tick the folders → Import → wait for conversion → Publish → (optional) bundle → announce.
 - **Changes to a course:** add or replace files in its R2 folder, then **Rescan imported courses**. Buyers get the new files automatically.
 - **Problems:** check Admin → Storage audit for R2/Supabase/queue status and per-file progress, then Actions → **Convert queued course files** for runner logs.
 
@@ -216,27 +216,32 @@ Free tools (CGPA calculator, timetable maker, attendance tracker, …) live in t
 To hide a tool again, set its status to **Hidden**.
 
 
-## 10. Running the tools and contributions from Admin
+## 10. Tools, uploads and contributors
 
-**Tools (CGPA, attendance, timetable).** Admin → Features & email. Each tool starts as "coming soon" on the home page. Open it yourself at `/tools/<key>` to try it. When you're happy, press **Launch & draft the email**, check the preview, then **Send**: the tool goes live and opted-in students get the email. Use **Hide** to take a tool off the home page.
+**Tools (CGPA, attendance, timetable).** Admin → Emails. Each tool starts as "coming soon" on the home page. As an admin you can already open and use it at `/tools/<key>` (a yellow "Admin preview" bar shows). When you're happy, press **Launch & draft the email**, check the preview, then **Send**: the tool goes live and opted-in students get the email. Use **Hide** to take a tool off the home page.
 
-**Contributions.** Admin → Contributions.
-1. **To review** lists new contributions, oldest first. Each shows who sent it, how many of theirs you accepted before, and the files.
-2. Press **Download** on each file and open it on your computer. Files always download, never open inside the site, so nothing in them can run.
-3. Press **Review**. Choose **Accept** or **Reject**.
-   - Accept: pick a reward. **Free course** gives that course immediately (it appears on their shelf). **Cash** records the amount and tells the student you'll be in touch; you pay them by UPI yourself and reply to the email. **Thank-you only** or **No reward** are fine too.
-   - Reject: write the reason (the student sees it), e.g. "copied from the textbook".
-   - Leave **Email … about this** ticked to tell the student.
-4. For accepted notes, type a course folder in **Add these files to an R2 folder** (e.g. `drive-imports/24 Batch/DBMS/Unit 2/`) and press **Copy**. Then go to **R2 → Website**, pick that folder and make its pages, as with your own uploads.
-5. Someone sending spam or copied material: **Block this student from sharing**. Their courses are untouched; only uploads stop. **Allow sharing again** undoes it.
-6. Too many to review: **Pause sharing** at the top. Students see "paused" until you press **Open sharing**.
-7. **Delete** removes a contribution and its files from R2 for good (after Copy, the copied files stay in the course folder).
+**Timetable maker.** Students tap slots (or type `A1 + B2`), name the course (suggested from your catalogue) and add a room. They see what's on **now** and **next**, a **Day** view on phones, and a **Notes for this →** link when you sell that course. **Download PDF** makes a one-page A4 file in the browser; **Image**, **Add to calendar** (`.ics`, weekly repeats for Google/Apple Calendar), **Print** (prints exactly the PDF picture, one page) and **Share link** (a friend opens it and can use or add your timetable). Every export carries "Made free with Scholars Stack" and the site address. Notes pages still can't be printed.
+
+**Uploads from students.** Admin → Inbox → Uploads. Every upload moves through six steps, shown as a bar on its card; only the current step's buttons are open.
+1. **Check** (automatic, on upload): each file's type, roughly how many pages, a locked PDF, a fake Word/PowerPoint, and what's inside a ZIP. Older uploads have a **Check these files** button. Press **Download** to read a file on your computer.
+2. **Decide**: **Accept** (no email yet) or **Reject…** with a reason (emailed).
+3. **File**: pick the course (guessed from what the student typed) and the unit folder (pick an existing one or type e.g. `Unit 3 - Scheduling`). The preview shows exactly where each file goes: `Course / Unit / file`. ZIPs are unpacked, anything that can't become pages is left out, nothing is overwritten. **File N files and make pages** writes them and starts their pages. A live course stays on sale; the new pages appear for students once ready.
+4. **Reward**: **Royalty** (50% of every sale of the course it was filed into, by default), **Money (UPI)**, **A free course** or **Thank-you only**. This sends the one email: accepted, and what they get. Change it any time.
+5. **Pages**: each file's state (waiting, making pages, readable). The card refreshes itself.
+6. **Done**: **Mark done**; the student gets "Your notes are live in <course>" once.
+Filters: **To review**, **In progress**, **Done**, **Rejected**, **All**. Today counts uploads waiting for any of your steps. Students see their own progress on the Contribute page: in review → accepted → in a course → live.
+
+**Per-file choices when filing.** In the File step each row has a unit menu, a name box and **Leave out** / **Put back**. The course and unit at the top are the default for every file.
+
+**Contributors.** Admin → Students → Contributors: every contributor with uploads, acceptance rate, files and pages live, royalty sales, earned, paid and owed, most valuable first. Pay what's owed in Earnings.
+
+**Block** someone sending spam or copied material (**Block this student from sharing**; **Allow sharing again** undoes it). **Pause sharing** at the top stops all uploads. **Delete upload** removes the upload's own files (files already filed into a course stay there).
 
 Limits students can't get around (all checked on the server): 5 files and 60 MB per send, 25 MB per file, 3 sends a day, 5 waiting at once, only PDF/PowerPoint/Word/ZIP/JPG/PNG checked by their contents.
 
 ## 11. Earnings, royalties and queries
 
-**How much each course earned.** Admin → Earnings & royalties. The four figures at the top are the whole site. Each course row shows Sold (paid orders that included it), Buyers (different students), Free (access you gave), Earned. "Sold at least once" is the default view; switch to All courses, With a royalty or Money owed. Who exactly has a course is still in Students & access.
+**How much each course earned.** Admin → Students → Earnings. The four figures at the top are the whole site. Each course row shows Sold (paid orders that included it), Buyers (different students), Free (access you gave), Earned. "Sold at least once" is the default view; switch to All courses, With a royalty or Money owed. Who exactly has a course is in Students → Access.
 
 **Paying a contributor 50%.**
 1. When you accept a contribution that is a whole subject's notes, choose **Royalty (50% of sales)** and the course built from it. Or, in Earnings, press **Give royalty** on a course and type the student's college email (they must have signed in once).
@@ -250,15 +255,22 @@ Limits students can't get around (all checked on the server): 5 files and 60 MB 
 
 | Where | What you do there |
 |---|---|
-| **Notes & courses** | R2 → Website (make pages), Import (folders → courses), Courses (edit, publish), Bundles, **Years & branches** |
-| **Students & money** | Access (who has what, term ends), Earnings & royalties |
-| **Inbox** | Questions & suggestions (reply; they're emailed), Uploaded notes (accept, reward) |
-| **Email & tools** | Write an email to students; Launch a tool (drafts the announcement) |
-| **Storage & health** | Files & folders (tree + complete delete), Clean-up, Problems, Full audit |
+| **Today** | The first screen: only what needs you (questions, uploads, courses ready to publish, files students can't open, money owed, emails going out, problems), each with a button to the right place |
+| **Courses** | All courses (price, edit, publish), Add courses (folders → courses), Make pages, Bundles, **Years & branches** |
+| **Students** | Access (who has what, give by email, block, extend), Earnings, Contributors |
+| **Inbox** | Questions (reply; they're emailed), Uploads (check → decide → file → reward → pages → done) |
+| **Emails** | Write an email to students; Launch a tool (drafts the announcement) |
+| **Storage** | Files (tree + complete delete), Clean-up, Problems, Full check |
 
-**Restructuring R2.** To move or rename a course folder use *Files & folders → Move or rename a course's folder* (never the Cloudflare dashboard). To get rid of something, find it in the tree and press **Delete**: the preview lists the R2 files, reader pages and Supabase records that go; type DELETE. If you already deleted files in the Cloudflare dashboard, filter **Gone from R2** and delete those entries to clear their records from Supabase.
+Changing the price or details of a live course keeps it on sale. To take one off sale, press **Unpublish**.
 
-**A new academic year.** Notes & courses → Years & branches: **Add year**, then (only if needed) **Move a year's courses** from one year to another, for all branches or one. Hide a year to take it off the catalogue without deleting anything. New branches: fill the last row and press **Add**; untick **Shown** to retire one.
+**Restructuring stored notes.** Admin → Storage → Files. Tick files or folders, press **Move to…**, pick the course and a unit (or type a new one, e.g. `Unit 7 - Practice`): the preview lists every old → new path; **Move** does it. **Rename** on any row renames a file (its type is kept) or a unit folder (that's the name students see). Pages are kept, students keep reading, and links keep working. To move or rename a whole course's folder, use *Move or rename a course's folder* at the bottom. **Delete** removes a file or folder completely (storage, pages and records), after a preview and typing DELETE.
+
+**What nothing uses.** Admin → Storage → Clean-up → **Unused storage** lists, by kind: pages of deleted files, leftovers in course folders, uploads with no record, originals of finished uploads, help-desk attachments with no question. **Show** lists them; **Delete** removes that group after checking again. Folders waiting to be imported are listed apart and never deleted from there.
+
+**Preview before publishing.** A draft course or bundle has a **Preview** button in Admin; it opens the real page with a yellow "Admin preview" bar and buying switched off. Students can't open it until you publish.
+
+**A new academic year.** Courses → Years & branches: **Add year**, then (only if needed) **Move a year's courses** from one year to another, for all branches or one. Hide a year to take it off the catalogue without deleting anything. New branches: fill the last row and press **Add**; untick **Shown** to retire one.
 
 ## 13. Admins, sign-in, email delivery and access
 
@@ -270,13 +282,13 @@ Limits students can't get around (all checked on the server): 5 files and 60 MB 
 
 **Who can sign in.** Only exact `@vitbhopal.ac.in` addresses, plus the admin list. Any other address is refused before an email is sent. If one network gets 5 refusals within 24 hours, it can't ask for links for 24 hours (the IP is stored only as a one-way code and cleared after a day).
 
-**Who got an email.** Admin → Email & tools. Each email shows how many got it, how many are still to go, and the same split **per batch** (2023, 2024, … from the college email). Nobody gets the same email twice; students who opt in later are picked up automatically. The line at the top says how many more can go today; 20 a day are kept for receipts and replies.
+**Who got an email.** Admin → Emails. Each email shows how many got it, how many are still to go, and the same split **per batch** (2023, 2024, … from the college email). Nobody gets the same email twice; students who opt in later are picked up automatically. The line at the top says how many more can go today; 20 a day are kept for receipts and replies.
 
 **Emails to one course's students.** In the composer, **Who gets it → Students who have <course>**. When you add new readable files to a live course, its current students get "New notes in <course>" automatically within the hour, tracked the same way.
 
 **How long access lasts.** Every purchase is 3 months from the day it is bought. The course page counts the days left, and when it ends the student gets an email saying their access has ended. Admin → Access → **Give access** works by email, even before the student has signed up: it's on their shelf the moment they sign in.
 
-**Rewards and the yearly bonus.** Admin → Inbox → Uploaded notes: accept with a **Cash** reward and the amount; the student sees it on their Contribute page. Pay by UPI, then **Mark paid** in Earnings → Cash rewards. **Give royalty** maps a contribution to a course; sales then count automatically. Type a course name in **Find a course** to see what it earned. Royalties last until you replace that course. Earnings → **Top contributors, last 12 months**: pay the #1 the same amount again and press **Mark bonus paid** (once per year).
+**Rewards and the yearly bonus.** Admin → Inbox → Uploads: accept with a **Cash** reward and the amount; the student sees it on their Contribute page. Pay by UPI, then **Mark paid** in Earnings → Cash rewards. **Give royalty** maps a contribution to a course; sales then count automatically. Type a course name in **Find a course** to see what it earned. Royalties last until you replace that course. Earnings → **Top contributors, last 12 months**: pay the #1 the same amount again and press **Mark bonus paid** (once per year).
 
 ## GitHub Actions (automatic deploys)
 

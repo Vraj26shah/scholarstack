@@ -10,6 +10,7 @@ import type {
   AdminOverviewDto,
   AdminSupportQueryDto,
   AdminSyncHealthDto,
+  AdminTodayDto,
   AdminUnitDto,
   AnnouncementDto,
   ApiErrorBody,
@@ -21,6 +22,7 @@ import type {
   ContributionMetaInput,
   ContributionReviewInput,
   ContributionStatusDto,
+  ContributorStatsDto,
   ConversionBoardDto,
   ConvertScopeInput,
   ConvertScopeResultDto,
@@ -34,6 +36,7 @@ import type {
   ErrorCode,
   FeatureDto,
   FeatureStatus,
+  FilePlanDto,
   HeartbeatDto,
   ImportCourseInput,
   ImportTreeDto,
@@ -56,7 +59,9 @@ import type {
   StorageDeleteResultDto,
   StorageInventoryPageDto,
   StorageMapDto,
+  StorageMovePlanDto,
   StorageTreeDto,
+  StorageUnusedDto,
   SupportCreateInput,
   SupportQueryDto,
   SyncResultDto,
@@ -315,6 +320,20 @@ export class ApiClient {
   adminDownloadContribution = (id: string, index: number, name: string) =>
     this.download(`/admin/contributions/${id}/files/${index}`, name);
 
+  adminFileContribution = (
+    id: string,
+    body: {
+      courseId: string;
+      unit: string;
+      dryRun: boolean;
+      files?: { from: string; unit?: string; name?: string; skip?: boolean }[];
+    },
+  ) => this.request<FilePlanDto>('POST', `/admin/contributions/${id}/file`, body);
+  adminCheckContribution = (id: string) =>
+    this.request<AdminContributionDto>('POST', `/admin/contributions/${id}/check`);
+  adminCompleteContribution = (id: string, body: { done: boolean; notify: boolean }) =>
+    this.request<AdminContributionDto>('POST', `/admin/contributions/${id}/complete`, body);
+  adminContributors = () => this.request<ContributorStatsDto[]>('GET', '/admin/contributors');
   adminRewardPaid = (contributionId: string, note: string) =>
     this.request<{ ok: true }>('POST', `/admin/contributions/${contributionId}/reward-paid`, { note });
   adminRecordBonus = (body: { userId: string; year: number; amountRupees: number; note: string }) =>
@@ -358,6 +377,10 @@ export class ApiClient {
     this.request<StorageDeletePreviewDto>('POST', '/admin/storage-tree/preview', { path });
   adminStorageDelete = (path: string) =>
     this.request<StorageDeleteResultDto>('POST', '/admin/storage-tree/delete', { path, confirm: 'DELETE' });
+  adminStorageMove = (body: { paths: string[]; toFolder: string; dryRun: boolean }) =>
+    this.request<StorageMovePlanDto>('POST', '/admin/storage-tree/move', body);
+  adminStorageRename = (body: { path: string; newName: string; dryRun: boolean }) =>
+    this.request<StorageMovePlanDto>('POST', '/admin/storage-tree/rename', body);
   adminAcademic = () => this.request<AcademicDto>('GET', '/admin/academic');
   adminAddYear = (year: number) => this.request<AcademicDto>('POST', '/admin/academic/years', { year });
   adminSetYearVisible = (year: number, visible: boolean) =>
@@ -368,11 +391,13 @@ export class ApiClient {
   adminMoveYear = (body: { fromYear: number; toYear: number; branchSlug?: string }) =>
     this.request<AcademicDto & { moved: number }>('POST', '/admin/academic/move-year', body);
   adminStorageMap = () => this.request<StorageMapDto>('GET', '/admin/storage-map');
+  adminStorageUnused = () => this.request<StorageUnusedDto>('GET', '/admin/storage-unused');
   adminMoveCourseFolder = (input: MoveCourseFolderInput) =>
     this.request<MoveCourseFolderResultDto>('POST', '/admin/storage-map/move-course', input);
   adminStorageClean = (input: StorageCleanInput) =>
     this.request<StorageCleanResultDto>('POST', '/admin/storage-map/clean', input);
   adminOverview = () => this.request<AdminOverviewDto>('GET', '/admin/overview');
+  adminToday = () => this.request<AdminTodayDto>('GET', '/admin/today');
   adminStorageCompare = () => this.request<StorageCompareDto>('GET', '/admin/storage-compare');
   adminConversions = (courseId?: string) =>
     this.request<ConversionBoardDto>(

@@ -14,7 +14,10 @@ import { fail } from '../errors';
 import type { StudentMailer } from '../notify/student-mailer';
 import { safeFileName } from '../uploads/file-policy';
 import { OPEN_SETTING } from './contribution-service';
+import { toBytes } from './filing';
+import { inspectFile } from './inspect';
 import { toMyContribution } from './mappers';
+import { type FiledCourses, pipelineOf, progressOf } from './pipeline';
 
 /**
  * The admin side: see what students sent, download it, decide, reward, put good notes into a
@@ -31,14 +34,21 @@ export class ContributionReviewService {
     private readonly earnings: EarningsRepository,
     private readonly mail: StudentMailer,
     private readonly clock: Clock,
+    private readonly filedCourses: FiledCourses,
   ) {}
 
   private async toDto(list: Contribution[]): Promise<AdminContributionDto[]> {
-    const people = await this.repo.contributors([...new Set(list.map((c) => c.userId))]);
+    const [people, filed] = await Promise.all([
+      this.repo.contributors([...new Set(list.map((c) => c.userId))]),
+      this.filedCourses.load(list),
+    ]);
     return list.map((c) => {
       const p = people.get(c.userId);
+      const course = filed.course(c);
+      const files = filed.files(c);
       return {
-        ...toMyContribution(c),
+        ...toMyContribution(c, progressOf(c, course, files)),
+        pipeline: pipelineOf(c, course, files),
         description: c.description,
         reviewedBy: c.reviewedBy,
         contributor: {
@@ -184,6 +194,72 @@ export class ContributionReviewService {
       copied.push(to);
     }
     return { copied };
+  }
+
+  /** Run the automatic check on files uploaded before checks existed. */
+  async checkNow(id: string): Promise<AdminContributionDto> {
+    const c = await this.repo.find(id);
+    if (!c) throw fail.notFound('That upload');
+    const files = [];
+    for (const f of c.files) {
+      if (f.check) {
+        files.push(f);
+        continue;
+      }
+      const obj = await this.uploads.get(f.key);
+      files.push({
+        ...f,
+        check: obj
+          ? inspectFile(f.name, await toBytes(obj.body))
+          : {
+              format: 'other' as const,
+              label: 'Missing',
+              ok: false,
+              problem: 'The upload is gone from storage.',
+            },
+      });
+    }
+    await this.repo.setFileChecks(id, files);
+    return (await this.toDto([{ ...c, files }]))[0]!;
+  }
+
+  /** Tick the whole job off (or take the tick back). Ticking emails the student once. */
+  async complete(id: string, done: boolean, notify: boolean): Promise<AdminContributionDto> {
+    const c = await this.repo.find(id);
+    if (!c) throw fail.notFound('That upload');
+    if (done && (c.status !== 'approved' || !c.filed))
+      throw fail.badRequest('Accept the upload and file it into a course first.');
+    const at = done ? this.clock.now() : null;
+    await this.repo.setCompleted(id, at);
+    const next = { ...c, completedAt: at };
+    const dto = (await this.toDto([next]))[0]!;
+    if (done && !c.completedAt && notify && dto.pipeline.filed) {
+      const person = (await this.repo.contributors([c.userId])).get(c.userId);
+      const f = dto.pipeline.filed;
+      const pages = f.files.filter((x) => x.status === 'ready').reduce((t, x) => t + x.pages, 0);
+      if (person?.email)
+        await this.mail
+          .send(
+            { userId: c.userId, email: person.email, name: person.name },
+            {
+              subject: `Your notes are live in ${f.courseTitle}`,
+              heading: 'Your notes are live',
+              paragraphs: [
+                `“${c.title}” is now part of ${f.courseTitle}${pages ? `: ${pages} pages students can read` : ''}.`,
+                c.reward?.type === 'royalty'
+                  ? `You earn ${c.reward.sharePercent}% of every sale of ${f.courseTitle}, for as long as your notes are the ones being sold.`
+                  : '',
+                'Thank you for helping your batch. Have more? Share them any time.',
+              ],
+              ctaLabel: 'See the course',
+              ctaUrl: `/c/${f.courseSlug}`,
+              kicker: 'NOTES LIVE',
+              reason: 'You are getting this because you shared notes on Scholars Stack.',
+            },
+          )
+          .catch(() => {});
+    }
+    return dto;
   }
 
   /** Remove a contribution and its files for good. */

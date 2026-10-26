@@ -42,9 +42,9 @@ export function DeleteCourse({ course }: { course: AdminCourseDto }) {
             onChange={(e) => setNotes(e.target.checked)}
           />
           <span>
-            Also delete its uploaded notes from R2
+            Also delete its uploaded notes from storage
             <span className="block text-ink2">
-              Leave this off to keep the original files in R2 (you can import them again later).
+              Leave this off to keep the original files in storage (you can import them again later).
             </span>
           </span>
         </label>

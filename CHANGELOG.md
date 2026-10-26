@@ -2,6 +2,65 @@
 
 All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.15.0] — 2026-10-26
+
+### Added
+- **Filing uploads, file by file.** In an upload's File step every file (and every file inside a ZIP) can go to its own unit, get a new name, or be left out (and put back), with the exact result shown before anything is written.
+- **Restructure stored notes** (Admin › Storage › Files): tick files or folders and **Move to…** any unit of any course (or a new unit), or **Rename** a file (its type is kept) or a unit folder. A preview shows every old → new path first. Storage and the database change together, one file at a time: pages are kept (nothing is re-made), students keep reading, and a live course that loses its last readable file comes off sale. A course's own folder still moves with "Move or rename a course's folder". New database function `relocate_course_file` (migration `20261027000200_relocate_file.sql`).
+- **Unused storage** (Admin › Storage › Clean-up), by kind, each with what it is, its size, the list, and a safe delete that re-checks first: pages of deleted files, leftovers in course folders, uploads with no record, originals of finished uploads, help-desk attachments with no question. Folders waiting to be imported are listed apart and never deleted from here.
+- **Admin preview before publishing** for draft courses and bundles: a yellow bar, buying off, and **Preview** buttons in All courses and Bundles. (Tools already had it; emails have Preview and Send me a test.)
+- **Earn** in the phone tab bar, and the tab bar for visitors who aren't signed in.
+
+### Changed
+- The Contribute page's rate card is plain, like every other card on the site (no tilted stamps or ruled paper), and shows at once on phones. The "paid to you" stamp no longer covers the amount.
+- Storage wording is exact: files in no course are "not on the site" (not imported yet, or leftovers), not "unused".
+- Admin error messages no longer name storage or database vendors.
+
+### Security
+- Uploads are read with a byte limit, so a request that lies about (or leaves out) its size can't make the server read more.
+- ZIPs from students are unpacked one file at a time, at most 40 MB each, and unpacking stops the moment a file grows past what the archive declared.
+- Catalogue search is rate-limited per network.
+- Checked under the production content-security policy: timetable PDF, print and downloads work with no violations.
+
+## [0.14.0] — 2026-10-26
+
+### Added
+- **Upload pipeline.** Every student upload moves through Check → Decide → File → Reward → Pages → Done, shown as a bar on its card with only the current step open.
+  - **Check** runs on upload: file type, about how many pages, locked PDFs, fake Word/PowerPoint files, and a ZIP's contents (system files ignored; nested archives and `.txt` flagged). Older uploads can be checked on demand.
+  - **File** turns the upload into our layout, `Course / Unit / file`, with an exact preview first. ZIPs are unpacked on the server (no library; capped at 300 files and 200 MB unpacked), nothing is overwritten, and pages start being made at once. The course is guessed from what the student typed (short forms like DBMS, OS, CN understood).
+  - Filing into a **live** course keeps it on sale: new files appear to students when their pages are ready (changed or deleted files still pause sales, as before).
+  - **Reward** defaults to a 50% royalty on the course it was filed into and sends the one "accepted" email; **Done** sends "Your notes are live in <course>" once.
+  - Filters: To review, In progress, Done, Rejected, All. Today counts uploads waiting for any admin step.
+- **Contributors** (Admin → Students): each contributor's uploads, acceptance rate, files and pages live, royalty sales, earned, paid and owed, most valuable first.
+- Students see their notes' progress on the Contribute page: in review → accepted → in a course → live, with the course linked.
+- **Timetable maker, rebuilt.**
+  - **Download PDF**: a real one-page A4 PDF made in the browser (no library), branded, with code, name, room and lecturer.
+  - **Print** now works: it prints exactly the PDF picture from a hidden frame, one page; notes still can't be printed.
+  - **Add to calendar** (`.ics`, weekly repeats) and **Share link**: a friend can use it or add it as planned courses, offered and never applied silently.
+  - **Now / Next** card, today's row and the current period highlighted, a **Day** view (the default on phones), a Room field, and course names suggested from the catalogue with a **Notes for this →** link to the matching course.
+- Admins can use a tool before launching it ("Admin preview"); students still see "coming soon".
+- Migration `20261027000100_contribution_pipeline.sql` (filed course, folder, keys, filed and completed times).
+
+### Changed
+- "Copy to a storage folder" on uploads is replaced by the File step (the API route stays for scripts).
+
+## [0.13.0] — 2026-10-26
+
+### Added
+- **Today** is the first admin screen: only what needs you (questions, uploads, courses ready to publish, files students can't open, money owed to contributors, emails still going out, problems in the last day), each with one button to the right place. One server call (`GET /admin/today`); a part that fails shows "couldn't check" instead of breaking the screen. The tab badges use the same check.
+- A calm page for crashes instead of a blank screen ("Something went wrong on this page. Nothing is lost."), with the details sent to Admin → Problems. After a new deploy, an open tab reloads itself once to pick up the new version.
+- Emails to students when an admin blocks, restores or changes their access, and a fix for sending mail from the Cloudflare Worker (from your commits after 0.12.0).
+
+### Changed
+- Admin sections renamed in plain words: Today · Courses (All courses, Add courses, Make pages, Bundles, Years & branches) · Students (Access, Earnings) · Inbox (Questions, Uploads) · Emails · Storage (Files, Clean-up, Problems, Full check). Old links still work.
+- No vendor names in the admin's text (storage, website, payments instead of R2, Supabase, Cloudflare).
+- Changing a live course's price or details keeps it on sale (it used to unpublish the course and its bundles). Unpublish is its own button.
+- Course cards: no storage paths, "N files · N pages", and Save price only appears when the price changed. The folder is shown in Edit.
+- Make pages: a short intro, and one line when storage, website, page maker and payments all work (a card only for one that doesn't). The glossary starts closed.
+- Clean-up: the database table list is folded away; unpaid checkouts have their own short section.
+- Panel headings match their tab names; on phones the six sections show as two rows of three.
+- Students and visitors only see calm, short error messages; admins keep the details (from your commits after 0.12.0).
+
 ## [0.12.0] — 2026-10-26
 
 ### Added

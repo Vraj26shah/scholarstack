@@ -51,12 +51,6 @@ function StatementSlip() {
           ₹{earned.toLocaleString('en-IN')}
         </span>
       </div>
-      <span
-        aria-hidden="true"
-        className="absolute -right-3 bottom-16 rotate-[-12deg] rounded-md border-2 border-teal-text px-2 py-0.5 font-mono text-[11.5px] font-semibold tracking-[0.06em] text-teal-text bg-card"
-      >
-        PAID TO YOU
-      </span>
     </figure>
   );
 }
