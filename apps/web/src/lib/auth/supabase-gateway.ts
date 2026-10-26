@@ -4,7 +4,10 @@ import type { AuthGateway } from './gateway';
 
 /** True when the current page is part of the admin area. */
 function isAdminContext(): boolean {
-  return typeof window !== 'undefined' && window.location?.pathname.startsWith('/admin');
+  return (
+    typeof window !== 'undefined' &&
+    (window.location?.pathname.startsWith('/admin') || window.location?.search.includes('admin=1'))
+  );
 }
 
 /**
@@ -54,7 +57,7 @@ export class SupabaseAuthGateway implements AuthGateway {
     return data.session?.user.email ?? null;
   }
 
-  async startEmail(email: string, captchaToken?: string) {
+  async startEmail(email: string, captchaToken?: string, adminOverride?: boolean) {
     const { error } = await (await this.client).auth.signInWithOtp({
       email,
       options: {
@@ -66,7 +69,7 @@ export class SupabaseAuthGateway implements AuthGateway {
     if (error) {
       const code = 'code' in error && typeof error.code === 'string' ? error.code : '';
       const message = error.message.toLowerCase();
-      const admin = isAdminContext();
+      const admin = adminOverride ?? isAdminContext();
       if (code.includes('captcha') || message.includes('captcha'))
         throw new Error(
           admin

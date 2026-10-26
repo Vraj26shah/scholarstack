@@ -4,7 +4,7 @@ export interface AuthGateway {
   /** Current access token, refreshed if needed. */
   token(): Promise<string | null>;
   email(): Promise<string | null>;
-  startEmail(email: string, captchaToken?: string): Promise<void>;
+  startEmail(email: string, captchaToken?: string, admin?: boolean): Promise<void>;
   startGoogle(admin?: boolean): Promise<void>;
   /** Called on /auth/callback after Supabase redirects back. */
   completeRedirect(): Promise<boolean>;

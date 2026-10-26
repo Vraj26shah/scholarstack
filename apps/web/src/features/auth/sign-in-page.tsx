@@ -114,11 +114,11 @@ export function SignInPage({ adminMode: adminProp = false }: { adminMode?: boole
       // and blocks a network that keeps trying addresses that can't.
       await api.checkSignInEmail(email);
       sessionStorage.setItem('auth_next', returnTo);
-      await authGateway.startEmail(email, captcha);
+      await authGateway.startEmail(email, captcha, isAdmin);
       if (isDemo) await finish();
       else setStep('link-sent');
     } catch (err) {
-      setError(friendly(err));
+      setError(err instanceof ApiError ? friendly(err) : (err as Error).message || friendly(err));
     } finally {
       setBusy(false);
       setCaptcha(undefined);
