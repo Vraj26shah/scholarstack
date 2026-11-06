@@ -1,0 +1,128 @@
+name: Convert queued course files
+
+on:
+  schedule:
+    # Immediate dispatch normally wakes the runner. This five-minute poll recovers missed dispatches.
+    # Avoid GitHub's busiest minute; the Worker Cron also retries queued manifests.
+    - cron: '3-58/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conversion-poller
+  cancel-in-progress: false
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    # Large lecture PDFs can take longer than the default 20-minute run. Every finished job is
+    # checkpointed, so this gives one ordered batch time to finish without losing prior work.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      # The pnpm version comes from package.json ("packageManager"), like every other workflow.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Missing secrets don't fail the run every five minutes (and flood your inbox): the run says
+      # exactly which ones to add, in its summary and as a warning, and skips the rest.
+      - name: Check required repository secrets
+        id: secrets
+        shell: bash
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          TILE_SEED_SECRET: ${{ secrets.TILE_SEED_SECRET }}
+          CONVERTER_CALLBACK_URL: ${{ secrets.CONVERTER_CALLBACK_URL }}
+          CONVERTER_CALLBACK_SECRET: ${{ secrets.CONVERTER_CALLBACK_SECRET }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://scholarstack.campusnotes.workers.dev' }}
+        run: |
+          # Results go to the live site. A missing or local callback secret falls back to SITE_URL.
+          url="$(printf '%s' "${CONVERTER_CALLBACK_URL:-}" | tr -d '[:space:]')"
+          if [[ -z "$url" || "$url" != https://* || "$url" == *localhost* || "$url" == *127.0.0.1* ]]; then
+            url="${SITE_URL%/}/api/internal/conversion"
+            echo "::notice title=Callback address::Using $url (set CONVERTER_CALLBACK_URL to override)."
+          fi
+          echo "CONVERTER_CALLBACK_URL=$url" >> "$GITHUB_ENV"
+          CONVERTER_CALLBACK_URL="$url"
+          absent=()
+          for name in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET TILE_SEED_SECRET CONVERTER_CALLBACK_URL CONVERTER_CALLBACK_SECRET; do
+            if [[ -z "${!name:-}" ]]; then absent+=("$name"); fi
+          done
+          if (( ${#absent[@]} )); then
+            echo "::warning title=Page maker is off::Add these repository secrets (Settings > Secrets and variables > Actions), or run pnpm github:secrets: ${absent[*]}"
+            {
+              echo "### Page maker is off: secrets missing"
+              echo ""
+              echo "Add these under **Settings → Secrets and variables → Actions**, or run \`pnpm github:secrets\` on your computer:"
+              echo ""
+              for n in "${absent[@]}"; do echo "- \`$n\`"; done
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          url="$(printf '%s' "${CONVERTER_CALLBACK_URL:-}" | tr -d '[:space:]')"
+          if [[ -n "$url" && ( "$url" != https://* || "$url" == *localhost* || "$url" == *127.0.0.1* ) ]]; then
+            echo "::warning title=Wrong CONVERTER_CALLBACK_URL::It must be your live site, like https://<your-site>/api/internal/conversion (not localhost)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install the converter dependencies
+        if: steps.secrets.outputs.ready == 'true'
+        run: pnpm install --filter @ss/converter... --frozen-lockfile
+
+      - name: Check R2 for queued files
+        id: queue
+        if: steps.secrets.outputs.ready == 'true'
+        run: pnpm --filter @ss/converter queue:check
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          TILE_SEED_SECRET: ${{ secrets.TILE_SEED_SECRET }}
+          CONVERTER_CALLBACK_SECRET: ${{ secrets.CONVERTER_CALLBACK_SECRET }}
+          CONVERT_QUEUE_MODE: 'true'
+          CONVERT_QUEUE_CHECK_ONLY: 'true'
+
+      # PDFs and images need only poppler (seconds). LibreOffice (about a minute) is installed
+      # only when Word or PowerPoint files are waiting.
+      - name: Install the PDF renderer
+        if: steps.queue.outputs.has_work == 'true' && steps.queue.outputs.has_office != 'true'
+        run: |
+          command -v pdftoppm >/dev/null || { sudo apt-get update -qq && sudo apt-get install --yes --no-install-recommends poppler-utils; }
+
+      - name: Install the document renderers
+        if: steps.queue.outputs.has_office == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --yes --no-install-recommends fonts-liberation fonts-noto-core libreoffice-core libreoffice-impress libreoffice-writer poppler-utils
+
+      - name: Process up to 64 queued files in order, 2 at a time
+        if: steps.queue.outputs.has_work == 'true'
+        run: pnpm --filter @ss/converter convert
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          TILE_SEED_SECRET: ${{ secrets.TILE_SEED_SECRET }}
+          CONVERTER_CALLBACK_SECRET: ${{ secrets.CONVERTER_CALLBACK_SECRET }}
+          CONVERT_QUEUE_MODE: 'true'
+          CONVERTER_MAX_QUEUE_JOBS: '64'
+          CONVERTER_CONCURRENCY: '2'
+
+      - name: Report idle poll
+        if: steps.secrets.outputs.ready == 'true' && steps.queue.outputs.has_work != 'true'
+        run: echo 'R2 has no queued conversion files.'

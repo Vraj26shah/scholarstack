@@ -1,0 +1,44 @@
+name: Update admins
+# Copies ADMIN_EMAILS (Settings → Secrets and variables → Actions → Variables, or the secret of
+# the same name) into the live admin list in Supabase. The site reads that list, so a change is
+# live within a minute of this run, with no redeploy. To change admins: edit ADMIN_EMAILS, then
+# Actions → Update admins → Run workflow. It also runs every 6 hours, in case you forget.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 */6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-admins
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --filter @ss/api... --filter @ss/contracts
+      - name: Sync the admin list
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADMIN_EMAILS: ${{ vars.ADMIN_EMAILS || secrets.ADMIN_EMAILS }}
+        run: |
+          [[ -n "$ADMIN_EMAILS" ]] || { echo "::error title=ADMIN_EMAILS is empty::Add it under Settings → Secrets and variables → Actions → Variables."; exit 1; }
+          [[ -n "$SUPABASE_URL" && -n "$SUPABASE_SECRET_KEY" ]] || { echo "::error title=Missing Supabase settings::Set VITE_SUPABASE_URL (variable) and SUPABASE_SECRET_KEY (secret)."; exit 1; }
+          {
+            echo "SUPABASE_URL=$SUPABASE_URL"
+            echo "SUPABASE_SECRET_KEY=$SUPABASE_SECRET_KEY"
+            echo "ADMIN_EMAILS=$ADMIN_EMAILS"
+          } > .env
+          pnpm ops admins:sync
+          rm -f .env
