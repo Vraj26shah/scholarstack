@@ -128,4 +128,4 @@ This is an independent student project and isn't affiliated with VIT Bhopal Univ
 
 Vraj Shah ([@Vraj26shah](https://github.com/Vraj26shah)) · vraj1012006shah@gmail.com
 
-Notes, support and anything about the site: vitbsmashers@gmail.com
+Notes,support and anything about the site: vitbsmashers@gmail.com
