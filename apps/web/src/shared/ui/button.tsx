@@ -1,5 +1,5 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { type ButtonHTMLAttributes, type MouseEvent, type ReactNode, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 
 type Variant = 'buy' | 'mist' | 'brand' | 'ink' | 'outline' | 'outline-light' | 'ghost';
 type Size = 'sm' | 'md' | 'lg';
@@ -22,7 +22,7 @@ const SIZES: Record<Size, string> = {
 };
 
 export function buttonClass(variant: Variant = 'brand', size: Size = 'md', extra = '') {
-  return `inline-flex items-center justify-center gap-2.5 rounded-full font-semibold no-underline transition press disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${VARIANTS[variant]} ${SIZES[size]} ${extra}`;
+  return `inline-flex items-center justify-center gap-2.5 rounded-full font-semibold no-underline press disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer select-none ${VARIANTS[variant]} ${SIZES[size]} ${extra}`;
 }
 
 export function Button({
@@ -32,6 +32,30 @@ export function Button({
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
   return <button type="button" className={buttonClass(variant, size, className)} {...props} />;
+}
+
+/**
+ * Smooth-scroll to an on-page #hash target, bypassing the native hash-jump which causes a
+ * jarring snap before the ScrollManager's smooth follow-up kicks in.
+ */
+function smoothScrollToHash(hash: string) {
+  const id = hash.slice(1);
+  const el = document.getElementById(id);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } else {
+    // If the target isn't rendered yet, poll briefly (lazy-loaded sections).
+    let tries = 0;
+    const poll = () => {
+      const target = document.getElementById(id);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else if (tries++ < 20) {
+        setTimeout(poll, 60);
+      }
+    };
+    setTimeout(poll, 60);
+  }
 }
 
 export function LinkButton({
@@ -47,16 +71,35 @@ export function LinkButton({
   className?: string;
   children: ReactNode;
 }) {
+  const navigate = useNavigate();
+
+  const handleHashClick = useCallback(
+    (e: MouseEvent<HTMLAnchorElement>) => {
+      e.preventDefault();
+      // Update the URL hash through React Router so ScrollManager stays in sync,
+      // but tell it to keep the current scroll position (we handle scrolling ourselves).
+      const hash = to;
+      const currentPath = window.location.pathname + window.location.search;
+      navigate(`${currentPath}${hash}`, { replace: true, state: { keepScroll: true } });
+      smoothScrollToHash(hash);
+    },
+    [to, navigate],
+  );
+
   if (to.startsWith('#')) {
     return (
-      <a href={to} className={buttonClass(variant, size, className)}>
-        {children}
-      </a>
-    );
+        <a
+          href={to}
+          onClick={handleHashClick}
+          className={buttonClass(variant, size, className)}
+        >
+          {children}
+        </a>
+        );
   }
-  return (
-    <Link to={to} className={buttonClass(variant, size, className)}>
-      {children}
-    </Link>
-  );
+        return (
+        <Link to={to} className={buttonClass(variant, size, className)}>
+          {children}
+        </Link>
+        );
 }

@@ -107,6 +107,7 @@
   descent-override: 31.4%;
   line-gap-override: 0%;
 }
+
 @font-face {
   font-family: "Fraunces Fallback T";
   src: local("Times New Roman"), local("Liberation Serif"), local("Tinos"), local("Noto Serif");
@@ -158,13 +159,11 @@ a[href]:not(.no-underline):hover {
 /* Index-card ruled paper */
 .ruled {
   background-color: var(--card);
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent 27px,
-    var(--card-rule) 27px,
-    var(--card-rule) 28px
-  );
+  background-image: repeating-linear-gradient(to bottom,
+      transparent 0,
+      transparent 27px,
+      var(--card-rule) 27px,
+      var(--card-rule) 28px);
   background-position: 0 50px;
 }
 
@@ -194,15 +193,18 @@ a[href]:not(.no-underline):hover {
     transform: translateX(22px) rotate(0.4deg);
   }
 }
+
 @keyframes page-turn-prev {
   from {
     opacity: 0.35;
     transform: translateX(-22px) rotate(-0.4deg);
   }
 }
+
 .page-turn-next {
   animation: page-turn-next 0.38s var(--ease-out) both;
 }
+
 .page-turn-prev {
   animation: page-turn-prev 0.38s var(--ease-out) both;
 }
@@ -211,10 +213,12 @@ a[href]:not(.no-underline):hover {
 .touch-only {
   display: none;
 }
+
 @media (pointer: coarse) {
   .touch-only {
     display: inline;
   }
+
   .touch-hide {
     display: none;
   }
@@ -225,6 +229,7 @@ a[href]:not(.no-underline):hover {
   cursor: grab;
   overscroll-behavior: contain;
 }
+
 .reader-immersive[data-dragging] {
   cursor: grabbing;
 }
@@ -234,6 +239,7 @@ a[href]:not(.no-underline):hover {
   body * {
     visibility: hidden !important;
   }
+
   body::after {
     content: "Printing is turned off for Scholars Stack notes.";
     visibility: visible;
@@ -259,6 +265,7 @@ a[href]:not(.no-underline):hover {
   transition: opacity 0.18s var(--ease-out), transform 0.18s var(--ease-out);
   transition-delay: min(calc(var(--i, 0) * 12ms), 48ms);
 }
+
 [data-reveal][data-shown] {
   opacity: 1;
   transform: none;
@@ -272,14 +279,17 @@ a[href]:not(.no-underline):hover {
     transform: scale(1.4) rotate(var(--r, -12deg));
     opacity: 0;
   }
+
   55% {
     transform: scale(0.94) rotate(var(--r, -12deg));
     opacity: 1;
   }
+
   100% {
     transform: scale(1) rotate(var(--r, -12deg));
   }
 }
+
 .stamp-in {
   animation: stamp-thud 0.3s var(--ease-out) both;
   animation-delay: min(var(--delay, 0.1s), 0.12s);
@@ -292,6 +302,7 @@ a[href]:not(.no-underline):hover {
     transform: translateY(14px);
   }
 }
+
 .deal-in {
   animation: deal 0.22s var(--ease-out) both;
   animation-delay: min(calc(var(--i, 0) * 12ms), 72ms);
@@ -309,6 +320,7 @@ a[href]:not(.no-underline):hover {
     opacity: 0;
   }
 }
+
 .pop-in {
   animation: pop 0.18s var(--ease-out) both;
   animation-delay: min(var(--delay, 0s), 48ms);
@@ -316,10 +328,15 @@ a[href]:not(.no-underline):hover {
 
 /* Buttons sink a touch when pressed. */
 .press {
+  transition-property: transform, color, background-color, border-color, opacity, box-shadow, filter;
+  transition-duration: 0.15s;
   transition-timing-function: var(--ease-out);
+  will-change: transform;
 }
+
 .press:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
+  transition-duration: 0.08s;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -327,6 +344,7 @@ a[href]:not(.no-underline):hover {
     opacity: 1;
     transform: none;
   }
+
   *,
   *::before,
   *::after {
@@ -340,6 +358,7 @@ a[href]:not(.no-underline):hover {
     transform: rotate(360deg);
   }
 }
+
 .spin {
   animation: spin 1.1s linear infinite;
 }
@@ -348,17 +367,21 @@ a[href]:not(.no-underline):hover {
   0% {
     opacity: 0.55;
   }
+
   50% {
     opacity: 1;
   }
+
   100% {
     opacity: 0.55;
   }
 }
+
 /* Bars inside a loading bundle card: a light sweep across the navy. */
 .bundle-shimmer {
   animation: shimmer 1.4s ease-in-out infinite;
 }
+
 @media (prefers-reduced-motion: reduce) {
   .bundle-shimmer {
     animation: none;
@@ -376,6 +399,7 @@ a[href]:not(.no-underline):hover {
   opacity: 0;
   transition: opacity 0.35s ease;
 }
+
 .img-fade[data-loaded] {
   opacity: 1;
 }
@@ -391,14 +415,17 @@ a[href]:not(.no-underline):hover {
   letter-spacing: -0.012em !important;
   font-weight: 600 !important;
 }
+
 .font-display.leading-none,
 .font-display[class*="leading-[0.8"],
 .font-display[class*="leading-[0.9"] {
   line-height: 1.04 !important;
 }
+
 .font-brand {
   font-family: var(--font-brand);
 }
+
 /* Small display text (card titles, prices) reads better a touch lighter and wider. */
 .font-display[class*="text-[1"],
 .font-display[class*="text-[2"],
@@ -421,9 +448,11 @@ div.font-mono[class*="tracking-[0.14em]"] {
   font-weight: 600;
   font-size: max(13px, 1em);
 }
+
 nav.font-mono {
   font-weight: 500;
 }
+
 .font-mono {
   letter-spacing: 0 !important;
 }
@@ -440,22 +469,28 @@ nav.font-mono {
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
+
 .stack-word.on-dark {
   --sw: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 24' preserveAspectRatio='none'%3E%3Cpath d='M4 15 C 60 6, 118 20, 178 11 S 268 8, 296 13' fill='none' stroke='rgba(25,149,173,0.95)' stroke-width='10' stroke-linecap='round'/%3E%3C/svg%3E");
 }
+
 [data-theme="dark"] .stack-word:not(.on-dark) {
   --sw: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 24' preserveAspectRatio='none'%3E%3Cpath d='M4 15 C 60 6, 118 20, 178 11 S 268 8, 296 13' fill='none' stroke='rgba(25,149,173,0.7)' stroke-width='10' stroke-linecap='round'/%3E%3C/svg%3E");
 }
+
 /* Drawn when the word is actually seen (StackWord sets data-shown on first view). */
 .stack-word:not([data-shown]) {
   background-size: 0% var(--sw-h);
 }
+
 .stack-word[data-shown] {
   animation: marker-draw 0.9s var(--ease-out) 0.25s both;
 }
+
 .stack-word.animate[data-shown] {
   animation-delay: 0.55s;
 }
+
 @keyframes marker-draw {
   from {
     background-size: 0% var(--sw-h);
@@ -464,10 +499,11 @@ nav.font-mono {
 
 /* ── Ambient: printed-paper grain and margin doodles behind blue bands ─────── */
 /* Whatever follows the ambient layer in its host renders above it. */
-.ambient ~ :not(.absolute):not(.fixed):not(.sticky) {
+.ambient~ :not(.absolute):not(.fixed):not(.sticky) {
   position: relative;
   z-index: 1;
 }
+
 .ambient {
   z-index: 0;
   position: absolute;
@@ -477,9 +513,11 @@ nav.font-mono {
   pointer-events: none;
   --ink-stroke: rgba(233, 246, 250, 0.2);
 }
+
 .ambient-paper {
   --ink-stroke: rgba(47, 60, 126, 0.14);
 }
+
 /* Fine paper tooth, so blue panels feel printed rather than flat. Static. */
 .ambient-grain {
   position: absolute;
@@ -488,6 +526,7 @@ nav.font-mono {
   mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
 }
+
 .doodle {
   position: absolute;
   overflow: visible;
@@ -497,47 +536,57 @@ nav.font-mono {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
 .doodle path {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
   animation: doodle var(--cycle, 24s) linear var(--delay-m, 0s) infinite both;
 }
+
 @media (min-width: 768px) {
   .doodle path {
     animation-delay: var(--delay-w, 0s);
   }
 }
+
 @keyframes doodle {
+
   /* Written in with a pen's pace (slow start, quick middle, careful end), held, then faded. */
   0% {
     stroke-dashoffset: 1;
     opacity: 1;
     animation-timing-function: cubic-bezier(0.45, 0.05, 0.25, 1);
   }
+
   11% {
     stroke-dashoffset: 0;
     opacity: 1;
   }
+
   78% {
     stroke-dashoffset: 0;
     opacity: 1;
     animation-timing-function: ease-in-out;
   }
+
   90% {
     stroke-dashoffset: 0;
     opacity: 0;
   }
+
   91%,
   100% {
     stroke-dashoffset: 1;
     opacity: 0;
   }
 }
+
 @media (prefers-reduced-motion: reduce) {
   .stack-word {
     animation: none !important;
     background-size: 100% var(--sw-h) !important;
   }
+
   .doodle path {
     animation: none !important;
     stroke-dashoffset: 0;
@@ -548,6 +597,7 @@ nav.font-mono {
 .ambient:not([data-shown]) .doodle path {
   animation-play-state: paused;
 }
+
 @media (prefers-reduced-motion: reduce) {
   .stack-word {
     animation: none !important;
@@ -562,24 +612,29 @@ nav.font-mono {
   overflow: hidden;
   pointer-events: none;
 }
+
 .plane-trail {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
 }
+
 .trail-dot {
   fill: rgba(233, 246, 250, 0.3);
   animation: trail-fade 1.8s ease-out forwards;
 }
+
 @keyframes trail-fade {
   from {
     opacity: 0.9;
   }
+
   to {
     opacity: 0;
   }
 }
+
 .paper-plane {
   position: absolute;
   left: 0;
@@ -590,18 +645,22 @@ nav.font-mono {
   transform-origin: 18px 18px;
   will-change: transform;
 }
+
 /* One plane, nose to the right: a white sheet, the shaded under-wing and the centre fold. */
 .paper-plane svg {
   display: block;
   overflow: visible;
   filter: drop-shadow(0 2px 3px rgba(10, 16, 48, 0.35));
 }
+
 .paper-plane-wing {
   fill: #ffffff;
 }
+
 .paper-plane-under {
   fill: #a1d6e2;
 }
+
 .paper-plane-fold {
   fill: none;
   stroke: #1995ad;
@@ -614,6 +673,7 @@ nav.font-mono {
     animation: none !important;
     stroke-dashoffset: 0;
   }
+
   .plane-flight {
     display: none;
   }
@@ -629,19 +689,19 @@ nav.font-mono {
   pointer-events: none;
   z-index: 1;
 }
+
 .ribbon-band {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    90deg,
-    #d99a22 0%,
-    var(--marigold) 35%,
-    #ffd27a 55%,
-    var(--marigold) 75%,
-    #d99a22 100%
-  );
+  background: linear-gradient(90deg,
+      #d99a22 0%,
+      var(--marigold) 35%,
+      #ffd27a 55%,
+      var(--marigold) 75%,
+      #d99a22 100%);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
 }
+
 .ribbon-bow {
   position: absolute;
   top: 12px;
@@ -651,36 +711,44 @@ nav.font-mono {
   filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.25));
   transition: transform 0.6s var(--ease-out);
 }
+
 .ribbon-bow path,
 .ribbon-bow rect {
   fill: var(--marigold);
   stroke: #c98a16;
   stroke-width: 1.2;
 }
+
 .ribbon-bow rect {
   fill: #e9a630;
 }
+
 .ribbon-lg {
   left: 22px;
   width: 16px;
 }
+
 .ribbon-lg .ribbon-bow {
   width: 62px;
   height: 39px;
   top: 18px;
 }
+
 @media (hover: hover) {
   .group:hover .ribbon-bow {
     animation: bow-wiggle 0.7s var(--ease-out);
   }
 }
+
 @keyframes bow-wiggle {
   30% {
     transform: translateX(-50%) rotate(7deg) scale(1.06);
   }
+
   60% {
     transform: translateX(-50%) rotate(-8deg);
   }
+
   100% {
     transform: translateX(-50%) rotate(-4deg);
   }
@@ -693,6 +761,7 @@ nav.font-mono {
   padding: 0 0 0.16em;
   background-position: left 0 bottom 0;
 }
+
 .stack-word.pencil.animate[data-shown] {
   animation-duration: 0.6s;
   animation-delay: 1.35s;
@@ -705,33 +774,40 @@ nav.font-mono {
     opacity: 0;
     transform: scale(1.55);
   }
+
   55% {
     opacity: 1;
     transform: scale(0.93);
   }
+
   75% {
     transform: scale(1.03);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
   }
 }
+
 @keyframes stamp-ink {
   0% {
     opacity: 0.55;
     transform: scale(0.9);
   }
+
   100% {
     opacity: 0;
     transform: scale(1.45);
   }
 }
+
 .stamp-land {
   position: relative;
   animation: stamp-land 0.55s cubic-bezier(0.3, 0.7, 0.4, 1) both;
   animation-delay: var(--delay, 0.3s);
 }
+
 .stamp-land::after {
   content: "";
   position: absolute;
@@ -743,19 +819,24 @@ nav.font-mono {
   animation-delay: calc(var(--delay, 0.3s) + 0.28s);
   pointer-events: none;
 }
+
 [data-reveal]:not([data-shown]) .stamp-land,
 [data-reveal]:not([data-shown]) .stamp-land::after {
   animation-play-state: paused;
 }
+
 @media (prefers-reduced-motion: reduce) {
+
   .stamp-land,
   .stamp-land::after {
     animation: none !important;
     opacity: 1;
   }
+
   .stamp-land::after {
     opacity: 0;
   }
+
   .stack-word {
     background-size: 100% var(--sw-h) !important;
   }
@@ -768,34 +849,42 @@ nav.font-mono {
     transform: translateY(6px);
   }
 }
+
 .page-enter {
   animation: page-enter 0.5s var(--ease-out) both;
 }
+
 /* A sideways swipe between sections slides the next one in from the side it came from. */
 @keyframes swipe-in-next {
   from {
     transform: translate3d(100%, 0, 0);
   }
 }
+
 @keyframes swipe-in-prev {
   from {
     transform: translate3d(-100%, 0, 0);
   }
 }
+
 html[data-swipe="next"][data-swipe-target="main"] #main,
 html[data-swipe="next"][data-swipe-target="admin-panel"] #admin-panel,
 html[data-swipe="next"][data-swipe-target="drawer-cards"] #drawer-cards {
   animation: swipe-in-next 0.28s var(--ease-out) both;
 }
+
 html[data-swipe="prev"][data-swipe-target="main"] #main,
 html[data-swipe="prev"][data-swipe-target="admin-panel"] #admin-panel,
 html[data-swipe="prev"][data-swipe-target="drawer-cards"] #drawer-cards {
   animation: swipe-in-prev 0.28s var(--ease-out) both;
 }
+
 html[data-swipe] body {
   overflow-x: hidden;
 }
+
 @media (prefers-reduced-motion: reduce) {
+
   .page-enter,
   html[data-swipe] #main,
   html[data-swipe] #admin-panel,
@@ -816,31 +905,39 @@ html[data-swipe] body {
   box-decoration-break: clone;
   padding: 0 0.04em;
 }
+
 .hl.on-dark {
   --hl-stroke: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 30' preserveAspectRatio='none'%3E%3Cpath d='M6 18 C 60 9, 118 23, 178 14 S 268 11, 294 16' fill='none' stroke='rgb(25,149,173)' stroke-opacity='0.95' stroke-width='15' stroke-linecap='round'/%3E%3C/svg%3E");
   color: #fff;
 }
+
 [data-theme="dark"] .hl:not(.on-dark) {
   --hl-stroke: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 30' preserveAspectRatio='none'%3E%3Cpath d='M6 18 C 60 9, 118 23, 178 14 S 268 11, 294 16' fill='none' stroke='rgb(25,149,173)' stroke-opacity='0.7' stroke-width='15' stroke-linecap='round'/%3E%3C/svg%3E");
 }
+
 .hl:not([data-shown]) {
   background-size: 0% 0.6em;
 }
+
 .hl[data-shown] {
   animation: hl-draw 0.9s var(--ease-out) 0.25s both;
 }
+
 @keyframes hl-draw {
   from {
     background-size: 0% 0.6em;
   }
 }
+
 @media (prefers-reduced-motion: reduce) {
+
   .hl,
   .hl:not([data-shown]) {
     animation: none !important;
     background-size: 100% 0.6em;
   }
 }
+
 @media (forced-colors: active) {
   .hl {
     background: none;
@@ -853,6 +950,7 @@ html[data-swipe] body {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
 }
+
 pre,
 code {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -862,15 +960,19 @@ code {
 .swipe-hint-dot {
   animation: swipe-nudge 1.8s ease-in-out infinite;
 }
+
 @keyframes swipe-nudge {
+
   0%,
   100% {
     transform: translateX(-5px);
   }
+
   50% {
     transform: translateX(5px);
   }
 }
+
 @media (prefers-reduced-motion: reduce) {
   .swipe-hint-dot {
     animation: none;
