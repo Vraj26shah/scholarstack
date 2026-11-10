@@ -1,0 +1,10 @@
+# Scholars Stack: the catalogue and course pages are public; accounts, reading and admin are not.
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /read/
+Disallow: /checkout/
+Disallow: /account
+Disallow: /shelf
+Disallow: /auth/
+Disallow: /api/

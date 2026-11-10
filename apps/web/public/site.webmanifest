@@ -1,0 +1,13 @@
+{
+  "name": "Scholars Stack",
+  "short_name": "Scholars Stack",
+  "description": "Handwritten semester notes for VIT Bhopal students, filed by batch and branch.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F1F1F2",
+  "theme_color": "#2F3C7E",
+  "icons": [
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

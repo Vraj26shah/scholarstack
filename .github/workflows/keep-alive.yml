@@ -1,0 +1,42 @@
+name: Keep Supabase awake
+# Free Supabase projects pause after a week without activity. The live Worker already reads the
+# database every hour (its own cron); this is a second, independent check twice a day that runs a
+# real database query, and tells you (by a failed run and GitHub's email) if the site or the
+# database stops answering. Even with no visitors at all, the project never goes idle.
+on:
+  schedule:
+    - cron: '23 4,16 * * *' # 09:53 and 21:53 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      SITE_URL: ${{ vars.SITE_URL || 'https://scholarstack.campusnotes.workers.dev' }}
+      SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+      SUPABASE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+    steps:
+      - name: A real database read through the site
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$SITE_URL/api/catalogue")
+            [[ "$code" == 200 ]] && { echo "✓ site and database answered"; exit 0; }
+            sleep 10
+          done
+          echo "::error title=Site or database not answering::$SITE_URL/api/catalogue answered $code"
+          exit 1
+      - name: Supabase directly
+        if: env.SUPABASE_URL != '' && env.SUPABASE_KEY != ''
+        shell: bash
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "apikey: $SUPABASE_KEY" "$SUPABASE_URL/auth/v1/health")
+          [[ "$code" == 200 ]] || { echo "::error title=Supabase not answering::auth health answered $code"; exit 1; }
+          # A real query through the REST API (counts as database activity, not just a health ping).
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "apikey: $SUPABASE_KEY" "$SUPABASE_URL/rest/v1/batches?select=year&limit=1")
+          [[ "$code" == 200 ]] || { echo "::error title=Supabase database not answering::REST query answered $code"; exit 1; }
+          echo "✓ Supabase and its database answered"

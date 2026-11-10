@@ -1,0 +1,16 @@
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+apps/api/.dev.vars
+apps/web/.env.local
+.git
+.wrangler
+node_modules
+**/node_modules
+**/dist
+**/.work
+reports
+playwright-report
+test-results
+coverage

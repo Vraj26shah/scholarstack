@@ -1,0 +1,46 @@
+name: Database backup
+# The Supabase free plan has no automatic backups. This takes a nightly dump
+# and keeps it as a private workflow artifact for 30 days.
+on:
+  schedule:
+    - cron: '41 21 * * *' # 03:11 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      POOLER_HOST: ${{ vars.SUPABASE_POOLER_HOST || 'aws-1-ap-southeast-1.pooler.supabase.com' }}
+    steps:
+      - name: Build the database address from the password when no URL is set
+        if: env.DB_URL == '' && env.DB_PASSWORD != '' && env.PROJECT_REF != ''
+        shell: bash
+        run: |
+          pw=$(jq -rn --arg p "$DB_PASSWORD" '$p|@uri')
+          echo "::add-mask::$pw"
+          echo "DB_URL=postgresql://postgres.$PROJECT_REF:$pw@$POOLER_HOST:5432/postgres" >> "$GITHUB_ENV"
+      - name: Skip when no database URL is set
+        if: env.DB_URL == ''
+        run: echo "::notice::Add SUPABASE_DB_URL (Supabase → Connect → Session pooler) to turn on nightly backups."
+      - uses: supabase/setup-cli@v3
+        if: env.DB_URL != ''
+        with: { version: latest }
+      - name: Dump
+        if: env.DB_URL != ''
+        run: |
+          supabase db dump --db-url "$DB_URL" -f schema.sql
+          supabase db dump --db-url "$DB_URL" --data-only -f data.sql
+          gzip schema.sql data.sql
+      - uses: actions/upload-artifact@v7
+        if: env.DB_URL != ''
+        with:
+          name: db-${{ github.run_id }}
+          path: '*.sql.gz'
+          retention-days: 30
