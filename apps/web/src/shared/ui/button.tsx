@@ -43,19 +43,19 @@ function smoothScrollToHash(hash: string) {
   const el = document.getElementById(id);
   if (el) {
     el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  } else {
-    // If the target isn't rendered yet, poll briefly (lazy-loaded sections).
-    let tries = 0;
-    const poll = () => {
-      const target = document.getElementById(id);
-      if (target) {
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else if (tries++ < 20) {
-        setTimeout(poll, 60);
-      }
-    };
-    setTimeout(poll, 60);
+    return;
   }
+  // If the target isn't rendered yet, poll briefly (lazy-loaded sections).
+  let tries = 0;
+  const poll = () => {
+    const target = document.getElementById(id);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (tries++ < 20) {
+      window.setTimeout(poll, 60);
+    }
+  };
+  window.setTimeout(poll, 60);
 }
 
 export function LinkButton({
@@ -78,28 +78,23 @@ export function LinkButton({
       e.preventDefault();
       // Update the URL hash through React Router so ScrollManager stays in sync,
       // but tell it to keep the current scroll position (we handle scrolling ourselves).
-      const hash = to;
       const currentPath = window.location.pathname + window.location.search;
-      navigate(`${currentPath}${hash}`, { replace: true, state: { keepScroll: true } });
-      smoothScrollToHash(hash);
+      navigate(`${currentPath}${to}`, { replace: true, state: { keepScroll: true } });
+      smoothScrollToHash(to);
     },
     [to, navigate],
   );
 
   if (to.startsWith('#')) {
     return (
-        <a
-          href={to}
-          onClick={handleHashClick}
-          className={buttonClass(variant, size, className)}
-        >
-          {children}
-        </a>
-        );
+      <a href={to} onClick={handleHashClick} className={buttonClass(variant, size, className)}>
+        {children}
+      </a>
+    );
   }
-        return (
-        <Link to={to} className={buttonClass(variant, size, className)}>
-          {children}
-        </Link>
-        );
+  return (
+    <Link to={to} className={buttonClass(variant, size, className)}>
+      {children}
+    </Link>
+  );
 }

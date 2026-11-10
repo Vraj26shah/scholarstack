@@ -159,11 +159,13 @@ a[href]:not(.no-underline):hover {
 /* Index-card ruled paper */
 .ruled {
   background-color: var(--card);
-  background-image: repeating-linear-gradient(to bottom,
-      transparent 0,
-      transparent 27px,
-      var(--card-rule) 27px,
-      var(--card-rule) 28px);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 27px,
+    var(--card-rule) 27px,
+    var(--card-rule) 28px
+  );
   background-position: 0 50px;
 }
 
@@ -326,16 +328,15 @@ a[href]:not(.no-underline):hover {
   animation-delay: min(var(--delay, 0s), 48ms);
 }
 
-/* Buttons sink a touch when pressed. */
+/* Buttons sink a touch when pressed without forcing a separate transform layer. */
 .press {
   transition-property: transform, color, background-color, border-color, opacity, box-shadow, filter;
   transition-duration: 0.15s;
   transition-timing-function: var(--ease-out);
-  will-change: transform;
 }
 
 .press:active {
-  transform: scale(0.97);
+  transform: translateY(1px);
   transition-duration: 0.08s;
 }
 
@@ -499,7 +500,7 @@ nav.font-mono {
 
 /* ── Ambient: printed-paper grain and margin doodles behind blue bands ─────── */
 /* Whatever follows the ambient layer in its host renders above it. */
-.ambient~ :not(.absolute):not(.fixed):not(.sticky) {
+.ambient ~ :not(.absolute):not(.fixed):not(.sticky) {
   position: relative;
   z-index: 1;
 }
@@ -550,7 +551,6 @@ nav.font-mono {
 }
 
 @keyframes doodle {
-
   /* Written in with a pen's pace (slow start, quick middle, careful end), held, then faded. */
   0% {
     stroke-dashoffset: 1;
@@ -693,12 +693,14 @@ nav.font-mono {
 .ribbon-band {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg,
-      #d99a22 0%,
-      var(--marigold) 35%,
-      #ffd27a 55%,
-      var(--marigold) 75%,
-      #d99a22 100%);
+  background: linear-gradient(
+    90deg,
+    #d99a22 0%,
+    var(--marigold) 35%,
+    #ffd27a 55%,
+    var(--marigold) 75%,
+    #d99a22 100%
+  );
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
 }
 
@@ -826,7 +828,6 @@ nav.font-mono {
 }
 
 @media (prefers-reduced-motion: reduce) {
-
   .stamp-land,
   .stamp-land::after {
     animation: none !important;
@@ -884,7 +885,6 @@ html[data-swipe] body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-
   .page-enter,
   html[data-swipe] #main,
   html[data-swipe] #admin-panel,
@@ -930,7 +930,6 @@ html[data-swipe] body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-
   .hl,
   .hl:not([data-shown]) {
     animation: none !important;
@@ -962,7 +961,6 @@ code {
 }
 
 @keyframes swipe-nudge {
-
   0%,
   100% {
     transform: translateX(-5px);
