@@ -1,9 +1,11 @@
 import type { CourseDetailDto, CourseUnitDto } from '@ss/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { track } from '../../lib/analytics';
 import { api, friendly } from '../../lib/api';
-import { fileFormatLabel, formatBytes, formatRupees, formatsLabel, offerEnds } from '../../lib/format';
+import { formatBytes, formatRupees, formatsLabel, offerEnds } from '../../lib/format';
 import { forMyDrawer, useMyDrawer } from '../../lib/my-drawer';
 import { prefetchChunk } from '../../lib/prefetch';
 import { useSession } from '../../lib/session';
@@ -13,6 +15,7 @@ import { Hl, Stamp } from '../../shared/ui/brand';
 import { Button, LinkButton } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
+import { FormatBadge, FormatsLine } from '../../shared/ui/format-badge';
 import { ArrowRight, Lock } from '../../shared/ui/icons';
 import { U } from '../../shared/ui/note';
 import { PreviewBar } from '../../shared/ui/preview-bar';
@@ -32,11 +35,11 @@ function daysLeft(iso: string) {
 const longDay = (iso: string) =>
   new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({ label, value, title }: { label: string; value: React.ReactNode; title?: string }) {
   return (
     <div className="min-w-0">
       <dt className="text-[11px] text-ink2 tracking-[0.1em]">{label}</dt>
-      <dd className="m-0 mt-0.5 text-[14px] sm:text-[15px] font-semibold truncate" title={value}>
+      <dd className="m-0 mt-0.5 text-[14px] sm:text-[15px] font-semibold truncate" title={title}>
         {value}
       </dd>
     </div>
@@ -85,9 +88,7 @@ function Unit({
           {unit.files.map((f) => {
             const inner = (
               <>
-                <span className="font-mono text-[11px] font-semibold px-2 py-1 rounded-md bg-mist text-on-mist">
-                  {fileFormatLabel(f.format, f.name)}
-                </span>
+                <FormatBadge format={f.format} name={f.name} />
                 <span className="flex-[1_1_200px] text-[15px] font-medium break-all">{f.name}</span>
                 {f.contributors && f.contributors.length > 0 && (
                   <span className="w-full pl-1 text-[12px] text-ink2">
@@ -295,6 +296,105 @@ function CheckoutPanel({
 }
 
 /**
+ * Phones: the price and the buy button stay above the tab bar. When the full buy panel scrolls
+ * into view the bar slides down past the tab bar and then leaves the page, so the two prices
+ * never sit on screen at once.
+ */
+function StickyBuyBar({
+  course,
+  buyState,
+}: { course: CourseDetailDto; buyState: ReturnType<typeof useBuy> }) {
+  const { buy, busy, error, signedIn } = buyState;
+  const firstFile = course.units.flatMap((u) => u.files).find((f) => f.status === 'ready');
+  const [panelSeen, setPanelSeen] = useState(false);
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    const el = document.getElementById('buy-panel');
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(([e]) => setPanelSeen(!!e?.isIntersecting), { threshold: 0.15 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  // The bar leaves the DOM only once the slide has finished; coming back it slides up again
+  // (or pops in, if it had left) instead of blinking in and out with every scroll tick.
+  useEffect(() => {
+    if (!panelSeen) {
+      setGone(false);
+      return;
+    }
+    const t = setTimeout(() => setGone(true), 380);
+    return () => clearTimeout(t);
+  }, [panelSeen]);
+  if (gone || (course.owned && !firstFile)) return null;
+  // <main> keeps a transform from its page-enter animation, and a transformed ancestor anchors a
+  // fixed child to itself — so the bar is portalled out to the body.
+  return createPortal(
+    <div
+      aria-hidden={panelSeen}
+      className={`md:hidden fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-40 px-3 pb-2.5 pointer-events-none transition-transform duration-300 ease-in-out ${
+        panelSeen ? 'translate-y-[calc(100%_+_64px_+_env(safe-area-inset-bottom))]' : 'translate-y-0'
+      }`}
+    >
+      <div
+        className={`pop-in mx-auto max-w-[560px] flex items-center gap-3 rounded-2xl bg-ink text-bg pl-4 pr-2 py-2 shadow-[0_18px_40px_-16px_var(--shadow)] border border-white/10 ${
+          panelSeen ? 'pointer-events-none' : 'pointer-events-auto'
+        }`}
+      >
+        {course.owned ? (
+          <>
+            <span className="flex min-w-0 flex-col">
+              <span className="font-display font-extrabold text-[17px] leading-none tracking-[-0.03em]">
+                It’s yours
+              </span>
+              <span className="text-[12px] opacity-75">Open any file below</span>
+            </span>
+            {firstFile && (
+              <LinkButton to={`/read/${firstFile.id}`} variant="mist" className="ml-auto flex-none">
+                Start reading <ArrowRight size={16} />
+              </LinkButton>
+            )}
+          </>
+        ) : (
+          <>
+            <span className="flex min-w-0 flex-col">
+              <span className="font-display font-extrabold text-[19px] leading-none tracking-[-0.03em] tabular-nums whitespace-nowrap">
+                {formatRupees(course.pricePaise)}
+                {course.offer && (
+                  <span className="ml-2 font-mono text-[12px] font-normal opacity-70 line-through decoration-1">
+                    <span className="sr-only">was </span>
+                    {formatRupees(course.offer.fullPricePaise)}
+                  </span>
+                )}
+              </span>
+              <span
+                className="text-[12px] opacity-75 truncate"
+                title={course.offer ? course.offer.title : undefined}
+              >
+                {course.offer
+                  ? `${course.offer.percentOff}% off till ${offerEnds(course.offer.endsAt)}`
+                  : `${course.fileCount} files · ${course.pageCount} pages`}
+              </span>
+            </span>
+            <Button
+              variant="buy"
+              onClick={buy}
+              disabled={busy || !!error}
+              className="ml-auto flex-none"
+              aria-label={
+                signedIn ? `Buy ${course.title} for ${formatRupees(course.pricePaise)}` : 'Sign in to buy'
+              }
+            >
+              {busy ? 'Opening…' : signedIn ? 'Buy' : 'Sign in'} <ArrowRight size={16} />
+            </Button>
+          </>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/**
  * Phones: swipe left or right to the next or previous course in the same drawer (batch and
  * programme), in the order the drawer shows them. Uses the drawer the catalogue already loaded.
  */
@@ -326,6 +426,18 @@ export function CoursePage() {
   useEffect(() => {
     if (q.data?.owned) prefetchChunk('reader');
   }, [q.data?.owned]);
+  const itemSlug = q.data?.slug;
+  const itemTitle = q.data?.title;
+  const itemPrice = q.data?.pricePaise;
+  useEffect(() => {
+    if (!itemSlug) return;
+    track('view_item', {
+      item_id: itemSlug,
+      item_name: itemTitle,
+      currency: 'INR',
+      value: (itemPrice ?? 0) / 100,
+    });
+  }, [itemSlug, itemTitle, itemPrice]);
   const [open, setOpen] = useState<number | null>(null);
 
   if (q.isLoading)
@@ -404,7 +516,11 @@ function CourseView({
           <Field label="Branch" value={c.branchName} />
           <Field label="Files" value={String(c.fileCount)} />
           <Field label="Pages" value={String(c.pageCount)} />
-          <Field label="Formats" value={formatsLabel(c.formats)} />
+          <Field
+            label="Formats"
+            value={<FormatsLine formats={c.formats} />}
+            title={formatsLabel(c.formats)}
+          />
         </dl>
         <h1 className="mt-4 mb-0 font-display font-extrabold text-[clamp(28px,4.2vw,48px)] leading-[0.98] tracking-[-0.045em] max-w-[980px]">
           {c.title}
@@ -423,9 +539,11 @@ function CourseView({
         )}
       </article>
 
-      {/* The room goes to what students came for: the modules, and the pages to peek at. */}
+      {/* The room goes to what students came for: the pages to peek at, then the modules. On a
+          phone the free pages come first — see before you scroll the whole syllabus — and on a
+          laptop they sit side by side, modules left, peeks right. */}
       <div className="mt-8 grid gap-8 lg:gap-10 lg:grid-cols-2 items-start">
-        <section aria-labelledby="modules-title" className="min-w-0">
+        <section aria-labelledby="modules-title" className="min-w-0 order-2 lg:order-1">
           <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
             <h2
               id="modules-title"
@@ -449,7 +567,7 @@ function CourseView({
           <p className="mt-4 mx-1 text-sm leading-relaxed text-ink2">Buy the course to open its files.</p>
           <ReadingList items={c.readingList ?? []} />
         </section>
-        <div className="min-w-0">
+        <div className="min-w-0 order-1 lg:order-2">
           {c.preview ? (
             <p className="m-0 text-[15px] text-ink2">Previews appear here when the course is published.</p>
           ) : (
@@ -464,9 +582,10 @@ function CourseView({
         </div>
       </div>
 
-      <section aria-label="Buy" className="mt-10">
+      <section aria-label="Buy" id="buy-panel" className="mt-10">
         <CheckoutPanel course={c} buyState={buyState} />
       </section>
+      {!c.preview && <StickyBuyBar course={c} buyState={buyState} />}
     </Page>
   );
 }

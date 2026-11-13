@@ -1,0 +1,64 @@
+/**
+ * Google Analytics (GA4, via the Google tag) and Sentry, both from their CDNs. Nothing loads
+ * unless VITE_GA_ID / VITE_SENTRY_DSN were set at build time, so demo and local builds stay
+ * clean and the site's own bundle carries none of it (the security headers list the CDNs).
+ *
+ * Events (besides the automatic page_view on every route change):
+ *   login          a sign-in completed
+ *   view_item      a course page opened (id, name, price)
+ *   peek_open      a free page opened in "Peek inside" (which format)
+ *   begin_checkout the buy button pressed, payment window opening
+ *   purchase       payment verified (order id and amount)
+ *   read_open      a bought file opened in the reader
+ */
+import { env } from './env';
+
+type Params = Record<string, string | number | boolean | undefined>;
+
+declare global {
+  interface Window {
+    dataLayer?: unknown[][];
+    gtag?: (...args: unknown[]) => void;
+    Sentry?: { init: (options: { dsn: string; environment: string }) => void };
+  }
+}
+
+let gaReady = false;
+
+/** Called once from main.tsx, before the app renders. */
+export function initAnalytics(): void {
+  if (env.sentryDsn) {
+    const s = document.createElement('script');
+    s.src = 'https://browser.sentry-cdn.com/7.120.0/bundle.min.js';
+    s.crossOrigin = 'anonymous';
+    s.addEventListener('load', () => window.Sentry?.init({ dsn: env.sentryDsn, environment: env.mode }));
+    document.head.appendChild(s);
+  }
+
+  const id = env.gaId;
+  if (!id) return;
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${id}`;
+  document.head.appendChild(script);
+  window.dataLayer = window.dataLayer ?? [];
+  const gtag = (...args: unknown[]) => {
+    window.dataLayer?.push(args);
+  };
+  window.gtag = gtag;
+  gtag('js', new Date());
+  // Page views are sent by <PageViews> on each route change, not by the tag on load.
+  gtag('config', id, { send_page_view: false, anonymize_ip: true });
+  gaReady = true;
+}
+
+/** An event for GA4. No-op when analytics is off, so call sites never need to check. */
+export function track(name: string, params: Params = {}): void {
+  if (gaReady) window.gtag?.('event', name, params);
+}
+
+/** One page_view per route the student actually lands on (the app is a SPA). */
+export function trackPageView(path: string): void {
+  if (!gaReady) return;
+  window.gtag?.('event', 'page_view', { page_path: path, page_title: document.title });
+}

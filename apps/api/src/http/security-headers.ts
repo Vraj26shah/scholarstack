@@ -6,11 +6,11 @@
 export const SECURITY_HEADERS: Record<string, string> = {
   'content-security-policy': [
     "default-src 'self'",
-    "script-src 'self' https://checkout.razorpay.com https://challenges.cloudflare.com",
+    "script-src 'self' https://checkout.razorpay.com https://challenges.cloudflare.com https://www.googletagmanager.com https://browser.sentry-cdn.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob: https://cdn.razorpay.com",
-    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com https://*.challenges.cloudflare.com data: https://lumberjack.razorpay.com https://api.razorpay.com",
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com https://*.challenges.cloudflare.com data: https://lumberjack.razorpay.com https://api.razorpay.com https://*.google-analytics.com https://*.analytics.google.com https://*.ingest.sentry.io",
     'frame-src https://api.razorpay.com https://checkout.razorpay.com https://challenges.cloudflare.com',
     "frame-ancestors 'none'",
     "base-uri 'self'",

@@ -133,6 +133,10 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID || vars.VITE_RAZORPAY_KEY_ID || secrets.VITE_RAZORPAY_KEY_ID }} # the site uses the same key ID as the server
           VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
+          # Optional: Google Analytics (GA4 measurement id) and Sentry (error reporting). Empty
+          # or unset means the site loads neither script at all.
+          VITE_GA_ID: ${{ vars.VITE_GA_ID }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN || secrets.VITE_SENTRY_DSN }}
 
       # GitHub is the one place the Worker's secrets are kept. Every deploy copies each one that is
       # set (secret or variable) to Cloudflare in a single call, so the two never drift apart.

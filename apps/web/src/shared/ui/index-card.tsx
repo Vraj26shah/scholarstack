@@ -1,9 +1,10 @@
 import type { BundleCardDto, CourseCardDto, PriceOfferDto } from '@ss/contracts';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { formatRupees, formatsLabel, offerEnds } from '../../lib/format';
+import { formatRupees, offerEnds } from '../../lib/format';
 import { prefetchBundle, prefetchChunk, prefetchCourse } from '../../lib/prefetch';
 import { useSession } from '../../lib/session';
+import { FormatsLine } from './format-badge';
 
 /**
  * The price as a small ink tag: calm and clear (red would read as a warning). During an offer the
@@ -81,7 +82,7 @@ export function IndexCard({
           <span className="mt-2 text-[13.5px] leading-snug text-ink2 line-clamp-2">{course.blurb}</span>
         )}
         <span className="font-mono text-xs text-ink2 mt-2.5">
-          {course.pageCount} pages · {formatsLabel(course.formats)}
+          {course.pageCount} pages · <FormatsLine formats={course.formats} />
         </span>
         {course.offer && <OfferNote offer={course.offer} className="mt-2.5 text-teal-text" />}
         <span className="mt-auto pt-4 flex items-center justify-between gap-2">

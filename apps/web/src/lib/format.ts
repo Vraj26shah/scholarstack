@@ -9,8 +9,33 @@ export const FORMAT_LABEL: Record<FileFormat, string> = {
   image: 'IMG',
 };
 
+/** Formats as the UI treats them (TXT is its own kind, whatever it was converted from). */
+export type FormatKind = FileFormat | 'txt';
+
+export function formatKind(format: FileFormat, name: string): FormatKind {
+  return name.toLowerCase().endsWith('.txt') ? 'txt' : format;
+}
+
+/** How each format is spoken about: "Slide 3 of 8", "Page 3 of 22". */
+export const FORMAT_UNIT: Record<FormatKind, string> = {
+  pdf: 'Page',
+  pptx: 'Slide',
+  docx: 'Page',
+  image: 'Page',
+  txt: 'Page',
+};
+
+export const FORMAT_LONG: Record<FormatKind, string> = {
+  pdf: 'PDF document',
+  pptx: 'Slide deck',
+  docx: 'Word document',
+  image: 'Image',
+  txt: 'Text file',
+};
+
 export function fileFormatLabel(format: FileFormat, name: string): string {
-  return name.toLowerCase().endsWith('.txt') ? 'TXT' : FORMAT_LABEL[format];
+  const kind = formatKind(format, name);
+  return kind === 'txt' ? 'TXT' : FORMAT_LABEL[kind];
 }
 
 export function formatsLabel(formats: FileFormat[]): string {

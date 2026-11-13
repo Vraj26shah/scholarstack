@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { track } from '../../lib/analytics';
 import { ApiError, api, friendly } from '../../lib/api';
 import { PaymentBlocked, PaymentCancelled, checkoutGateway } from '../../lib/payments';
 import { reportProblem } from '../../lib/problems';
@@ -34,6 +35,11 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
     setProblem(null);
     try {
       const order = await api.startCheckout(item);
+      track('begin_checkout', {
+        currency: 'INR',
+        value: order.amountPaise / 100,
+        ...('courseId' in item ? { item_id: item.courseId } : { item_id: item.bundleId }),
+      });
       const payment = await checkoutGateway.pay(order);
       navigate(`/checkout/${order.orderId}`, { state: { order, payment } });
     } catch (e) {

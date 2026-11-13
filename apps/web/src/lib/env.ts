@@ -10,6 +10,9 @@ export const env = {
   supabaseKey: (e.VITE_SUPABASE_PUBLISHABLE_KEY as string) || '',
   razorpayKeyId: (e.VITE_RAZORPAY_KEY_ID as string) || '',
   turnstileSiteKey: (e.VITE_TURNSTILE_SITE_KEY as string) || '',
+  /** GA4 measurement id (G-…). Empty: no analytics is loaded at all. */
+  gaId: (e.VITE_GA_ID as string) || '',
+  sentryDsn: (e.VITE_SENTRY_DSN as string) || '',
 };
 
 export const isDemo = env.mode === 'demo';

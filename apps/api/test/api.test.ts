@@ -228,8 +228,8 @@ describe('catalogue', () => {
     const dbms = r.json.find((c: any) => c.slug === 'dbms-2025-cse-core');
     expect(dbms).toMatchObject({
       callNo: '2025 · BCE · 01',
-      fileCount: 14,
-      pageCount: 212,
+      fileCount: 16,
+      pageCount: 231,
       pricePaise: 9900,
     });
   });
@@ -875,15 +875,15 @@ describe('admin', () => {
     expect(initial.json).toMatchObject({
       complete: true,
       totals: {
-        files: 14,
-        registered: 14,
+        files: 16,
+        registered: 16,
         unmapped: 0,
         unsupported: 0,
         missingInR2: 0,
         pageAssetsMissing: 0,
       },
     });
-    expect(initial.json.objects).toHaveLength(14);
+    expect(initial.json.objects).toHaveLength(16);
 
     const repaired = [...env.db.files.values()].find((file) => file.courseId === course.id)!;
     env.pages.delete(`pages/${repaired.id}/1.webp`);
@@ -916,8 +916,8 @@ describe('admin', () => {
     expect(afterSync.json).toMatchObject({
       complete: true,
       totals: {
-        files: 15,
-        registered: 15,
+        files: 17,
+        registered: 17,
         unmapped: 0,
         unsupported: 0,
         missingInR2: 0,

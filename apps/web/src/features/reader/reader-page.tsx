@@ -2,6 +2,7 @@ import type { CourseUnitDto } from '@ss/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { track } from '../../lib/analytics';
 import { api } from '../../lib/api';
 import { useTheme } from '../../lib/theme';
 import { useBack } from '../../shared/ui/back-link';
@@ -223,6 +224,10 @@ const notABackStop = (path: string) =>
 
 function ReaderView({ fileId }: { fileId: string }) {
   const r = useReader(fileId);
+  // The reader is keyed by file, so a mount here means a student actually opened this file.
+  useEffect(() => {
+    track('read_open', { file_id: fileId });
+  }, [fileId]);
   // Back returns to where the student came from (course, bundle, shelf, catalogue), skipping
   // the other files they flipped through; opened from a link, it goes to this file's course.
   const back = useBack(r.session ? `/c/${r.session.courseId}` : '/shelf', notABackStop);

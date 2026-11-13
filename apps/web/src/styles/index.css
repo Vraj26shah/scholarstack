@@ -181,6 +181,98 @@ a[href]:not(.no-underline):hover {
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
+/* File formats: each kind keeps its own quiet colour (PDF red, slides amber, DOC blue, images
+   violet, TXT slate), so a shelf of mixed files reads at a glance. Same hues, deeper, in dark. */
+.fmt-pdf {
+  --fmt-bg: #fbeae9;
+  --fmt-ink: #b3362c;
+  --fmt-line: #f0cdc9;
+}
+.fmt-pptx {
+  --fmt-bg: #fdf3df;
+  --fmt-ink: #a06203;
+  --fmt-line: #f2dcae;
+}
+.fmt-docx {
+  --fmt-bg: #e9f0fc;
+  --fmt-ink: #2f5db3;
+  --fmt-line: #c6d9f4;
+}
+.fmt-image {
+  --fmt-bg: #f2edfb;
+  --fmt-ink: #6f4fb6;
+  --fmt-line: #ded1f3;
+}
+.fmt-txt {
+  --fmt-bg: #eef1f6;
+  --fmt-ink: #4d5675;
+  --fmt-line: #d7dbe6;
+}
+
+[data-theme="dark"] .fmt-pdf {
+  --fmt-bg: #331c1a;
+  --fmt-ink: #f2a099;
+  --fmt-line: #4d2823;
+}
+[data-theme="dark"] .fmt-pptx {
+  --fmt-bg: #332714;
+  --fmt-ink: #f4c064;
+  --fmt-line: #4e3a19;
+}
+[data-theme="dark"] .fmt-docx {
+  --fmt-bg: #16233a;
+  --fmt-ink: #a9c4f2;
+  --fmt-line: #27395c;
+}
+[data-theme="dark"] .fmt-image {
+  --fmt-bg: #251d38;
+  --fmt-ink: #cdb4f2;
+  --fmt-line: #3a2e55;
+}
+[data-theme="dark"] .fmt-txt {
+  --fmt-bg: #1a1f2b;
+  --fmt-ink: #a4abbb;
+  --fmt-line: #2a3140;
+}
+
+/* The badge itself: a small tab, like the coloured edge of a file divider. */
+.fmt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--fmt-bg);
+  color: var(--fmt-ink);
+  box-shadow: inset 0 0 0 1px var(--fmt-line);
+  white-space: nowrap;
+}
+.fmt-badge svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.fmt-badge.fmt-sm {
+  height: 20px;
+  padding: 0 6px;
+  gap: 4px;
+  font-size: 10px;
+  border-radius: 6px;
+}
+.fmt-badge.fmt-sm svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* Plain coloured labels for quiet meta lines ("224 pages · PDF + PPT"). */
+.fmt-ink {
+  color: var(--fmt-ink);
+  font-weight: 650;
+}
+
 /* Reader protections (deterrents; the real protection is server-side) */
 .no-select {
   user-select: none;

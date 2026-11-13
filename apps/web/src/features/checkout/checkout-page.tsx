@@ -2,6 +2,7 @@ import type { OrderDto, StartCheckoutDto } from '@ss/contracts';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
+import { track } from '../../lib/analytics';
 import { api, friendly } from '../../lib/api';
 import { formatRupees } from '../../lib/format';
 import type { PaymentResult } from '../../lib/payments';
@@ -50,14 +51,14 @@ export function CheckoutPage() {
             signature: state.payment.signature,
           });
           setOrder(verified);
-          if (verified.status === 'paid') return finish();
+          if (verified.status === 'paid') return finish(verified);
         }
         // No callback data (page refreshed) or not yet paid: the webhook may still land.
         const deadline = Date.now() + 60_000;
         while (!cancelled && Date.now() < deadline) {
           const o = await api.order(orderId);
           setOrder(o);
-          if (o.status === 'paid') return finish();
+          if (o.status === 'paid') return finish(o);
           // Keep checking even if an earlier attempt failed: the student reached this page because
           // Razorpay approved a later one, and netbanking/UPI can take a little while to settle.
           await new Promise((r) => setTimeout(r, 3000));
@@ -69,7 +70,13 @@ export function CheckoutPage() {
       }
     }
 
-    function finish() {
+    function finish(paid: OrderDto) {
+      track('purchase', {
+        transaction_id: paid.id,
+        currency: 'INR',
+        value: paid.amountPaise / 100,
+        ...(paid.courseId ? { item_id: paid.courseId } : paid.bundleId ? { item_id: paid.bundleId } : {}),
+      });
       setPhase('paid');
       void queryClient.invalidateQueries();
     }

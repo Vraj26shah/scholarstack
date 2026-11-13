@@ -1,6 +1,7 @@
 import { isCollegeEmail, isWellFormedEmail } from '@ss/contracts';
 import { type FormEvent, useCallback, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { track } from '../../lib/analytics';
 import { ApiError, api, friendly } from '../../lib/api';
 import { authGateway } from '../../lib/auth';
 import { env, isDemo } from '../../lib/env';
@@ -8,9 +9,11 @@ import { STUDENT_HOME } from '../../lib/landing';
 import { reportProblem } from '../../lib/problems';
 import { useSession } from '../../lib/session';
 import { Ambient } from '../../shared/ui/ambient';
+import { useBack } from '../../shared/ui/back-link';
 import { BlockerHelp } from '../../shared/ui/blocker-help';
 import { StackWord, Wordmark } from '../../shared/ui/brand';
 import { Button } from '../../shared/ui/button';
+import { ChevronLeft } from '../../shared/ui/icons';
 import { ThemeToggle } from '../../shared/ui/theme-toggle';
 import { Turnstile, turnstileProblem } from './turnstile';
 
@@ -56,6 +59,12 @@ export function SignInPage() {
     },
     [isAdmin],
   );
+  // The way out when a student lands here mid-task (e.g. "Sign in" from a course's buy bar):
+  // straight back to the page they came from, or the page the sign-in link promised to return to.
+  const back = useBack(
+    next !== STUDENT_HOME ? next : '/',
+    (p) => p.startsWith('/sign-in') || p.startsWith('/auth'),
+  );
   const retryCaptcha = () => {
     setCaptchaProblem(null);
     setCaptcha(undefined);
@@ -79,6 +88,7 @@ export function SignInPage() {
     await claim();
     const me = useSession.getState().me;
     if (useSession.getState().status === 'ready') {
+      track('login');
       // Admins land on the admin page they asked for (e.g. /admin?tab=tools), else the admin home.
       navigate(me?.isAdmin && !next.startsWith('/admin') ? '/admin' : next, { replace: true });
     }
@@ -132,6 +142,16 @@ export function SignInPage() {
           <Wordmark onDark size="sm" />
           <ThemeToggle onDark />
         </div>
+        <button
+          type="button"
+          onClick={back.go}
+          aria-label={back.label}
+          title={back.label}
+          className="mt-4 -ml-1 inline-flex items-center gap-0.5 border-0 bg-transparent p-0 text-sm font-semibold text-white/80 hover:text-white cursor-pointer"
+        >
+          <ChevronLeft size={16} />
+          {back.label}
+        </button>
         <h1 className="mt-10 md:mt-auto mb-0 font-display font-extrabold text-[clamp(56px,9vw,96px)] leading-[0.9] tracking-[-0.055em]">
           {isAdmin ? (
             <>

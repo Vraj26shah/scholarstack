@@ -39,10 +39,12 @@ const DBMS_FILES: FileSpec[] = [
   ['unit-3', 'Normalisation', 'Unit-3-Normalisation-notes.pdf', 24, 3.1],
   ['unit-3', 'Normalisation', 'Solved-examples-1NF-to-BCNF.pdf', 14, 1.9],
   ['unit-3', 'Normalisation', 'Class-slides-functional-dependencies.pptx', 8, 4.2],
+  ['unit-4', 'Transactions and concurrency', 'Unit-4-Transactions-summary.docx', 9, 1.1],
   ['unit-4', 'Transactions and concurrency', 'Unit-4-Transactions-notes.pdf', 28, 3.6],
   ['unit-4', 'Transactions and concurrency', 'Schedules-and-locking-examples.pdf', 12, 1.6],
   ['unit-5', 'Indexing and hashing', 'Unit-5-Indexing-notes.pdf', 20, 2.6],
   ['unit-5', 'Indexing and hashing', 'B-plus-tree-worked-example.jpg', 10, 3.9],
+  ['revision', 'Revision: PYQs and quick sheet', 'Revision-quick-slides.pptx', 10, 3.2],
   ['revision', 'Revision: PYQs and quick sheet', 'Previous-year-questions-solved.pdf', 12, 1.7],
   ['revision', 'Revision: PYQs and quick sheet', 'Two-page-revision-sheet.pdf', 2, 0.4],
 ];

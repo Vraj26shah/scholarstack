@@ -14,6 +14,7 @@ import { SignInPage } from '../features/auth/sign-in-page';
 import { HomePage } from '../features/catalogue/home-page';
 import { CoursePage } from '../features/course/course-page';
 import { ShelfPage } from '../features/shelf/shelf-page';
+import { track, trackPageView } from '../lib/analytics';
 import { ApiError } from '../lib/api';
 import { authGateway } from '../lib/auth';
 import { STUDENT_HOME, decidesLanding, isPhone, jumpTo, landing } from '../lib/landing';
@@ -274,6 +275,7 @@ function RootAuthCodeHandler() {
           return;
         }
         await claim();
+        track('login');
         const target =
           localPath(sessionStorage.getItem('auth_next')) ||
           (useSession.getState().me?.isAdmin ? '/admin' : STUDENT_HOME);
@@ -303,6 +305,15 @@ function RootAuthCodeHandler() {
       <Spinner label="Finishing sign-in" />
     </div>
   );
+}
+
+/** One page_view per route change; the Google tag does not see SPA navigations by itself. */
+function PageViews() {
+  const { pathname, search } = useLocation();
+  useEffect(() => {
+    trackPageView(`${pathname}${search}`);
+  }, [pathname, search]);
+  return null;
 }
 
 function NotFound() {
@@ -356,6 +367,7 @@ function Shell() {
         Skip to content
       </a>
       <OfflineBanner />
+      <PageViews />
       <ScrollManager />
       <LandingManager />
       <RootAuthCodeHandler />

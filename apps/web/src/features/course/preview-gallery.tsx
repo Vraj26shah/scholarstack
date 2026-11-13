@@ -1,15 +1,21 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import type { CourseUnitDto } from '@ss/contracts';
+import type { CourseUnitDto, FileFormat } from '@ss/contracts';
 import { type TouchEvent as ReactTouchEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { track } from '../../lib/analytics';
+import { FORMAT_UNIT, type FormatKind, formatKind } from '../../lib/format';
 import { Button } from '../../shared/ui/button';
+import { FormatBadge } from '../../shared/ui/format-badge';
 import { ChevronLeft, ChevronRight, Cross, Eye } from '../../shared/ui/icons';
 import { PagePreview } from '../../shared/ui/page-image';
 import { ScrambledPage } from '../../shared/ui/scrambled-page';
+import { SwipeHint } from '../../shared/ui/swipe-hint';
 
 interface Peek {
   unit: CourseUnitDto;
   fileId: string;
   fileName: string;
+  format: FileFormat;
+  pageCount: number;
   page: number;
 }
 
@@ -22,10 +28,32 @@ export function peeksOf(units: CourseUnitDto[]): Peek[] {
       unit: u,
       fileId: u.previewFileId!,
       fileName: file?.name ?? '',
+      format: file?.format ?? 'pdf',
+      pageCount: file?.pageCount ?? 1,
       page,
     }));
   });
 }
+
+/** A4 portrait for pages, 16:9 for slides, square for photos. */
+const THUMB_FRAME: Record<FormatKind, string> = {
+  pdf: 'aspect-[1/1.414]',
+  docx: 'aspect-[1/1.414]',
+  txt: 'aspect-[1/1.414]',
+  image: 'aspect-square',
+  pptx: 'aspect-video',
+};
+const FULL_FRAME: Record<FormatKind, string> = {
+  pdf: 'h-full max-h-full aspect-[1/1.414] max-w-full',
+  docx: 'h-full max-h-full aspect-[1/1.414] max-w-full',
+  txt: 'h-full max-h-full aspect-[1/1.414] max-w-full',
+  image: 'h-full max-h-full aspect-square max-w-full',
+  pptx: 'w-full max-w-full aspect-video max-h-full',
+};
+
+const kindOf = (peek: Peek): FormatKind => formatKind(peek.format, peek.fileName);
+/** "Slide 3" for decks, "Page 12" for everything else. */
+const unitWord = (peek: Peek) => FORMAT_UNIT[kindOf(peek)];
 
 /** Page 1 comes from the ready-made preview image; other chosen pages are drawn on a canvas. */
 function PeekPage({ peek, className, full }: { peek: Peek; className: string; full?: boolean }) {
@@ -34,21 +62,22 @@ function PeekPage({ peek, className, full }: { peek: Peek; className: string; fu
       fileId={peek.fileId}
       crop={full ? 'full' : 'top'}
       eager={full}
-      alt={`Page 1 of ${peek.fileName}`}
+      alt={`${unitWord(peek)} 1 of ${peek.fileName}`}
       className={className}
     />
   ) : (
     <ScrambledPage
       fileId={peek.fileId}
       page={peek.page}
-      label={`Page ${peek.page} of ${peek.fileName}`}
+      label={`${unitWord(peek)} ${peek.page} of ${peek.fileName}`}
       className={className}
     />
   );
 }
 
 /**
- * "Peek inside": the first page of every unit, before you buy. Thumbnails sit in a row; tapping one opens a large view you can flip through unit by unit.
+ * "Peek inside": free pages from every unit, before you buy. Thumbnails sit in a grid; tapping
+ * one opens a large view you can flip through unit by unit — swiping on a phone, arrows anywhere.
  */
 export function PreviewGallery({
   units,
@@ -124,18 +153,24 @@ export function PreviewGallery({
           Free pages from every unit{peeks.length > 1 ? ` · ${peeks.length} pages` : ''}
         </span>
       </div>
-      {/* A grid that fills its column: every unit's page in sight, no sideways scrolling. */}
+      {/* Every free page in one grid, no sideways scrolling: slides sit wide, pages tall. */}
       <ul className="list-none m-0 p-0 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-4 pt-1">
         {peeks.map((p, i) => (
           <li key={`${p.fileId}-${p.page}`} className="deal-in min-w-0" style={{ ['--i' as string]: i }}>
             <button
               type="button"
-              onClick={() => setOpen(i)}
-              aria-label={`Preview page ${p.page} of ${p.unit.label}: ${p.unit.title}`}
+              onClick={() => {
+                setOpen(i);
+                track('peek_open', { format: kindOf(p), unit: p.unit.label });
+              }}
+              aria-label={`Preview ${unitWord(p).toLowerCase()} ${p.page} of ${p.unit.label}: ${p.unit.title}`}
               className="group block w-full p-0 border-0 bg-transparent text-left cursor-zoom-in"
             >
               <span className="block relative rounded-lg overflow-hidden bg-white shadow-[0_18px_34px_-20px_var(--shadow),0_0_0_1px_var(--line)] lift">
-                <PeekPage peek={p} className="w-full aspect-[1/1.414]" />
+                <span className="absolute left-2.5 top-2.5 z-10 inline-flex">
+                  <FormatBadge format={p.format} name={p.fileName} sm />
+                </span>
+                <PeekPage peek={p} className={`w-full ${THUMB_FRAME[kindOf(p)]}`} />
                 <span className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/45 to-transparent" />
                 <span className="absolute left-2.5 bottom-2.5 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-white/95 text-[#161B3A] text-xs font-semibold">
                   <Eye size={14} /> Look
@@ -155,7 +190,7 @@ export function PreviewGallery({
       <Dialog.Root open={open !== null} onOpenChange={(o) => !o && setOpen(null)}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-40 bg-[rgba(6,9,26,0.82)] backdrop-blur-sm" />
-          <Dialog.Content className="fixed z-50 inset-0 flex flex-col items-center justify-center gap-4 p-3 sm:p-6 outline-none">
+          <Dialog.Content className="fixed z-50 inset-0 flex flex-col items-center justify-center gap-3 sm:gap-4 p-3 sm:p-6 outline-none">
             {current && (
               <>
                 <div className="w-full max-w-[680px] flex items-center justify-between gap-3 text-white">
@@ -175,8 +210,8 @@ export function PreviewGallery({
                   </Dialog.Close>
                 </div>
                 <Dialog.Description className="sr-only">
-                  Page {current.page} of {current.fileName}. Swipe left or right on a phone, or use the arrow
-                  keys, to see the other free pages.
+                  {unitWord(current)} {current.page} of {current.fileName}. Swipe left or right on a phone, or
+                  use the arrow keys, to see the other free pages.
                 </Dialog.Description>
                 <div
                   className="relative w-full max-w-[680px] flex-1 min-h-0 flex items-center justify-center"
@@ -191,15 +226,29 @@ export function PreviewGallery({
                     key={`${current.fileId}-${current.page}`}
                     peek={current}
                     full
-                    className="pop-in h-full max-h-full aspect-[1/1.414] max-w-full rounded-lg bg-white shadow-2xl"
+                    className={`pop-in rounded-lg bg-white shadow-2xl ${FULL_FRAME[kindOf(current)]}`}
                   />
+                </div>
+                {/* Phones only; shows the first few times per device. */}
+                <div className="flex justify-center">
+                  <SwipeHint id="peek-flip" floating>
+                    Swipe for the next free page
+                  </SwipeHint>
+                </div>
+                <div className="w-full max-w-[680px] flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-sm text-white/75">
+                  <FormatBadge format={current.format} name={current.fileName} />
+                  <span className="min-w-0 truncate font-mono text-[12.5px]">{current.fileName}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono text-[12.5px] whitespace-nowrap">
+                    {unitWord(current)} {current.page} of {current.pageCount}
+                  </span>
                 </div>
                 <div className="w-full max-w-[680px] flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => step(-1)}
-                      aria-label="Previous free page"
+                      aria-label={`Previous free ${unitWord(current).toLowerCase()}`}
                       className="w-11 h-11 rounded-full border-0 bg-white/15 text-white inline-flex items-center justify-center cursor-pointer"
                     >
                       <ChevronLeft size={18} />
@@ -210,7 +259,7 @@ export function PreviewGallery({
                     <button
                       type="button"
                       onClick={() => step(1)}
-                      aria-label="Next free page"
+                      aria-label={`Next free ${unitWord(current).toLowerCase()}`}
                       className="w-11 h-11 rounded-full border-0 bg-white/15 text-white inline-flex items-center justify-center cursor-pointer"
                     >
                       <ChevronRight size={18} />
