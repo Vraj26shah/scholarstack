@@ -70,8 +70,7 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
     buy,
     busy,
     problem,
-    /** Only the quiet "window closed" note shows inline; the rest open the result window. */
-    error: problem?.kind === 'closed' ? problem.message : null,
+    /** Every outcome opens the result window (PaymentProblem) — nothing is left inline. */
     dismiss: () => setProblem(null),
     signedIn: status === 'ready',
   };

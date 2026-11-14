@@ -150,11 +150,6 @@ export function BundlePage() {
                       : 'Sign in to buy'}
                 </Button>
               )}
-              {buyState.error && (
-                <p role="status" className="m-0 text-sm bg-blush text-blush-text rounded-xl px-3 py-2">
-                  {buyState.error}
-                </p>
-              )}
               <PaymentProblem problem={buyState.problem} onRetry={buyState.buy} onClose={buyState.dismiss} />
               <span className="text-[13px] leading-relaxed text-ink2">
                 One payment, every course below on your shelf. All sales are final.

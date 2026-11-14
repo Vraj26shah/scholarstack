@@ -1,10 +1,16 @@
 import { Link } from 'react-router-dom';
 import { BlockerHelp } from '../../shared/ui/blocker-help';
+import { Stamp } from '../../shared/ui/brand';
 import { Button } from '../../shared/ui/button';
 import { Sheet } from '../../shared/ui/feedback';
 import type { BuyProblem } from './use-buy';
 
-const COPY: Record<Exclude<BuyProblem['kind'], 'closed'>, { title: string; lead: string; next: string }> = {
+const COPY: Record<BuyProblem['kind'], { title: string; lead: string; next: string }> = {
+  closed: {
+    title: 'You closed the payment window.',
+    lead: 'The checkout was closed before the payment went through.',
+    next: 'Nothing was charged. Whenever you’re ready, try again — the course is still waiting.',
+  },
   declined: {
     title: 'Payment didn’t go through.',
     lead: 'Your bank or UPI app said:',
@@ -12,7 +18,7 @@ const COPY: Record<Exclude<BuyProblem['kind'], 'closed'>, { title: string; lead:
   },
   blocked: {
     title: 'Your browser blocked the payment window.',
-    lead: 'An ad or tracker blocker stopped Razorpay from loading. Nothing was charged.',
+    lead: 'An ad or tracker blocker stopped the payment window from loading. Nothing was charged.',
     next: '',
   },
   unavailable: {
@@ -27,7 +33,11 @@ const COPY: Record<Exclude<BuyProblem['kind'], 'closed'>, { title: string; lead:
   },
 };
 
-/** The result window for a purchase that didn't finish: what happened, whether money moved, what to do. */
+/**
+ * The result window for a purchase that didn't finish: a "NOT PAID" stamp, what happened,
+ * whether money moved, and what to do next. Bottom sheet on phones, centred card on laptops.
+ * Every problem opens this — a failure is never left as a quiet note under the buy button.
+ */
 export function PaymentProblem({
   problem,
   onRetry,
@@ -37,28 +47,39 @@ export function PaymentProblem({
   onRetry: () => void;
   onClose: () => void;
 }) {
-  const open = Boolean(problem && problem.kind !== 'closed');
-  const copy = problem && problem.kind !== 'closed' ? COPY[problem.kind] : null;
+  const copy = problem ? COPY[problem.kind] : null;
   return (
-    <Sheet open={open} onOpenChange={(o) => !o && onClose()} title={copy?.title ?? ''}>
+    <Sheet open={!!problem} onOpenChange={(o) => !o && onClose()} title={copy?.title ?? ''}>
       {copy && problem && (
         <>
-          <div role="alert" className="flex flex-col gap-2">
-            <p className="m-0 text-[15px] text-ink2">{copy.lead}</p>
-            {problem.kind !== 'unavailable' && problem.kind !== 'blocked' && (
-              <p className="m-0 rounded-xl bg-blush text-blush-text px-3.5 py-2.5 text-[15px] font-semibold">
-                {problem.message}
-              </p>
-            )}
+          <div className="flex items-center gap-5 pt-1">
+            <Stamp
+              label="NOT PAID"
+              ring="PAYMENT · NOT COMPLETED · "
+              size={104}
+              rotate={-12}
+              tone="blush"
+              animate
+              delay={0.1}
+            />
+            <p role="alert" className="m-0 flex-1 min-w-0 text-[15px] leading-relaxed text-ink2">
+              {copy.lead}
+              {problem.kind !== 'unavailable' && problem.kind !== 'blocked' && problem.kind !== 'closed' && (
+                <span className="mt-2 block rounded-xl bg-blush text-blush-text px-3.5 py-2.5 text-[15px] font-semibold break-words">
+                  {problem.message}
+                </span>
+              )}
+            </p>
           </div>
           {problem.kind === 'blocked' ? (
             <BlockerHelp />
           ) : (
             <p className="m-0 text-[15px] leading-relaxed text-ink2">{copy.next}</p>
           )}
-          <div className="flex flex-wrap gap-2.5">
+          <div className="flex flex-wrap gap-2.5 pt-1">
             <Button
               variant="brand"
+              size="lg"
               onClick={() => {
                 onClose();
                 onRetry();
@@ -66,7 +87,7 @@ export function PaymentProblem({
             >
               Try again
             </Button>
-            <Button variant="outline" onClick={onClose}>
+            <Button variant="outline" size="lg" onClick={onClose}>
               Not now
             </Button>
           </div>
@@ -74,7 +95,8 @@ export function PaymentProblem({
             Need help?{' '}
             <Link to="/contact" className="text-teal-text font-semibold" onClick={onClose}>
               Contact us
-            </Link>
+            </Link>{' '}
+            with what you saw.
           </p>
         </>
       )}

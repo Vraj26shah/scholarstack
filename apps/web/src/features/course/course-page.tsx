@@ -139,7 +139,7 @@ function CheckoutPanel({
   course,
   buyState,
 }: { course: CourseDetailDto; buyState: ReturnType<typeof useBuy> }) {
-  const { buy, busy, error, signedIn } = buyState;
+  const { buy, busy, signedIn } = buyState;
   const firstFile = course.units.flatMap((u) => u.files).find((f) => f.status === 'ready');
   // Only bundles made by hand and the reader's own drawer pack: never another branch's pack.
   const myDrawer = useMyDrawer();
@@ -221,11 +221,6 @@ function CheckoutPanel({
               <ArrowRight size={18} />
             </Button>
           )}
-          {error && (
-            <p role="status" className="m-0 text-sm bg-blush text-blush-text rounded-xl px-3 py-2">
-              {error}
-            </p>
-          )}
           <PaymentProblem problem={buyState.problem} onRetry={buy} onClose={buyState.dismiss} />
           {course.owned && course.yourAccessUntil && (
             <span className="text-[13px] leading-relaxed text-on-brand2">
@@ -304,7 +299,7 @@ function StickyBuyBar({
   course,
   buyState,
 }: { course: CourseDetailDto; buyState: ReturnType<typeof useBuy> }) {
-  const { buy, busy, error, signedIn } = buyState;
+  const { buy, busy, signedIn } = buyState;
   const firstFile = course.units.flatMap((u) => u.files).find((f) => f.status === 'ready');
   const [panelSeen, setPanelSeen] = useState(false);
   const [gone, setGone] = useState(false);
@@ -378,7 +373,7 @@ function StickyBuyBar({
             <Button
               variant="buy"
               onClick={buy}
-              disabled={busy || !!error}
+              disabled={busy}
               className="ml-auto flex-none"
               aria-label={
                 signedIn ? `Buy ${course.title} for ${formatRupees(course.pricePaise)}` : 'Sign in to buy'
