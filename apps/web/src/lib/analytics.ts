@@ -84,7 +84,10 @@ export function captureException(e: unknown): void {
   const ready = () => typeof window.Sentry?.getClient === 'function' && !!window.Sentry.getClient();
   let tries = 0;
   const send = () => window.Sentry!.captureException(e);
-  if (ready()) return send();
+  if (ready()) {
+    send();
+    return;
+  }
   const t = window.setInterval(() => {
     if (ready()) {
       window.clearInterval(t);
