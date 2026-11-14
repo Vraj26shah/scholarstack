@@ -29,6 +29,8 @@ declare global {
         tracesSampleRate: number;
       }) => void;
       captureException: (e: unknown) => void;
+      /** Present (and truthy) once init has bound a client — errors sent before are dropped. */
+      getClient: () => unknown;
     };
   }
 }
@@ -77,5 +79,16 @@ export function trackPageView(path: string): void {
 
 /** An error React caught (error boundaries swallow it from the window, so Sentry never sees it). */
 export function captureException(e: unknown): void {
-  window.Sentry?.captureException(e);
+  // The SDK loads async from its CDN, so a crash in the first moments after page load can beat
+  // it. Retry for a few seconds rather than lose it; a page with analytics off never retries.
+  const ready = () => typeof window.Sentry?.getClient === 'function' && !!window.Sentry.getClient();
+  let tries = 0;
+  const send = () => window.Sentry!.captureException(e);
+  if (ready()) return send();
+  const t = window.setInterval(() => {
+    if (ready()) {
+      window.clearInterval(t);
+      send();
+    } else if (++tries > 20) window.clearInterval(t);
+  }, 500);
 }
