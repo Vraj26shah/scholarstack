@@ -316,6 +316,11 @@ function PageViews() {
   return null;
 }
 
+/** TEMPORARY: throws on render so Sentry's pipeline can be verified on the live site. */
+function SentryTestCrash(): never {
+  throw new Error(`Sentry test error ${new Date().toISOString()}`);
+}
+
 function NotFound() {
   return (
     <Page>
@@ -399,6 +404,8 @@ function Shell() {
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/contact" element={<ContactPage />} />
+            {/* TEMPORARY: remove once Sentry is verified live. */}
+            <Route path="/__sentry-test" element={<SentryTestCrash />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

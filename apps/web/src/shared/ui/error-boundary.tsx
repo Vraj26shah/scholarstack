@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react';
+import { captureException } from '../../lib/analytics';
 import { reportProblem } from '../../lib/problems';
 import { PageTitle } from './page-title';
 
@@ -37,6 +38,8 @@ export class ErrorBoundary extends Component<
       reportProblem('chunk', error.message);
       return;
     }
+    // React swallows render errors from the window, so Sentry only hears about them from here.
+    captureException(error);
     reportProblem('crash', error.message, (info.componentStack ?? '').slice(0, 1500));
   }
 

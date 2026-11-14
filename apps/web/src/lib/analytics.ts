@@ -3,6 +3,9 @@
  * unless VITE_GA_ID / VITE_SENTRY_DSN were set at build time, so demo and local builds stay
  * clean and the site's own bundle carries none of it (the security headers list the CDNs).
  *
+ * Sentry loads the tracing bundle, so besides errors it also records real-user monitoring:
+ * page loads, SPA route changes, and Web Vitals (LCP, FID/INP, CLS) for every visitor.
+ *
  * Events (besides the automatic page_view on every route change):
  *   login          a sign-in completed
  *   view_item      a course page opened (id, name, price)
@@ -19,7 +22,14 @@ declare global {
   interface Window {
     dataLayer?: unknown[][];
     gtag?: (...args: unknown[]) => void;
-    Sentry?: { init: (options: { dsn: string; environment: string }) => void };
+    Sentry?: {
+      init: (options: {
+        dsn: string;
+        environment: string;
+        tracesSampleRate: number;
+      }) => void;
+      captureException: (e: unknown) => void;
+    };
   }
 }
 
@@ -29,9 +39,11 @@ let gaReady = false;
 export function initAnalytics(): void {
   if (env.sentryDsn) {
     const s = document.createElement('script');
-    s.src = 'https://browser.sentry-cdn.com/7.120.0/bundle.min.js';
+    s.src = 'https://browser.sentry-cdn.com/7.120.0/bundle.tracing.min.js';
     s.crossOrigin = 'anonymous';
-    s.addEventListener('load', () => window.Sentry?.init({ dsn: env.sentryDsn, environment: env.mode }));
+    s.addEventListener('load', () =>
+      window.Sentry?.init({ dsn: env.sentryDsn, environment: env.mode, tracesSampleRate: 1 }),
+    );
     document.head.appendChild(s);
   }
 
@@ -61,4 +73,9 @@ export function track(name: string, params: Params = {}): void {
 export function trackPageView(path: string): void {
   if (!gaReady) return;
   window.gtag?.('event', 'page_view', { page_path: path, page_title: document.title });
+}
+
+/** An error React caught (error boundaries swallow it from the window, so Sentry never sees it). */
+export function captureException(e: unknown): void {
+  window.Sentry?.captureException(e);
 }
