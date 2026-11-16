@@ -27,8 +27,12 @@ import type {
   Offer,
   Order,
   OutgoingEmail,
+  PaidOrderRecord,
   Principal,
   Profile,
+  PromoCode,
+  PromoPayout,
+  PromoUse,
   ReadingProgress,
   Recipient,
   RoyaltyPayout,
@@ -118,6 +122,44 @@ export interface OfferRepository {
   listAll(): Promise<Offer[]>;
   save(offer: Omit<Offer, 'id'> & { id?: string }): Promise<Offer>;
   remove(id: string): Promise<boolean>;
+}
+
+export interface PromoCodeRepository {
+  listAll(): Promise<PromoCode[]>;
+  /** By its upper-case code. */
+  findByCode(code: string): Promise<PromoCode | null>;
+  save(promo: Omit<PromoCode, 'id'> & { id?: string }): Promise<PromoCode>;
+  remove(id: string): Promise<boolean>;
+  /** Uses on paid orders: of one code, or of every code. */
+  paidUses(promoCodeId?: string): Promise<PromoUse[]>;
+  /** Which code an order used (written right after the order is created). */
+  recordRedemption(r: {
+    orderId: string;
+    promoCodeId: string;
+    code: string;
+    userId: string;
+    fullPaise: number;
+    discountPaise: number;
+    creatorName: string | null;
+    commissionPaise: number;
+  }): Promise<void>;
+}
+
+/** Which discounts paid orders got, and creator payouts. */
+export interface DiscountLedger {
+  /** Which offer gave an order its price (written right after the order is created). */
+  recordOffer(r: {
+    orderId: string;
+    offerId: string;
+    title: string;
+    percentOff: number;
+    fullPaise: number;
+    discountPaise: number;
+  }): Promise<void>;
+  /** Paid orders since this moment (all when null), newest first, with student and discounts. */
+  paidOrders(since: Date | null): Promise<PaidOrderRecord[]>;
+  payouts(): Promise<PromoPayout[]>;
+  addPayout(p: Omit<PromoPayout, 'id' | 'paidAt'>): Promise<PromoPayout>;
 }
 
 export interface BundleRepository {

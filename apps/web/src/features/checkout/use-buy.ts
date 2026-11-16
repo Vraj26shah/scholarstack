@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import type { PromoQuoteDto } from '@ss/contracts';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { track } from '../../lib/analytics';
 import { ApiError, api, friendly } from '../../lib/api';
@@ -25,6 +26,19 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<BuyProblem | null>(null);
+  // A promo code the student applied: its quote sets the button's price, and the code goes with
+  // the order (the server checks it again and charges exactly that).
+  const [promo, setPromo] = useState<PromoQuoteDto | null>(null);
+  const itemKey = 'courseId' in item ? `c:${item.courseId}` : `b:${item.bundleId}`;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a different course or bundle drops the code
+  useEffect(() => setPromo(null), [itemKey]);
+
+  async function applyPromo(code: string) {
+    const quote = await api.checkPromo(item, code);
+    setPromo(quote);
+    track('apply_promo_code', { coupon: quote.code });
+    return quote;
+  }
 
   async function buy() {
     if (status !== 'ready') {
@@ -34,11 +48,12 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
     setBusy(true);
     setProblem(null);
     try {
-      const order = await api.startCheckout(item);
+      const order = await api.startCheckout(promo ? { ...item, promoCode: promo.code } : item);
       track('begin_checkout', {
         currency: 'INR',
         value: order.amountPaise / 100,
         ...('courseId' in item ? { item_id: item.courseId } : { item_id: item.bundleId }),
+        ...(promo ? { coupon: promo.code } : {}),
       });
       const payment = await checkoutGateway.pay(order);
       navigate(`/checkout/${order.orderId}`, { state: { order, payment } });
@@ -73,5 +88,9 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
     /** Every outcome opens the result window (PaymentProblem) — nothing is left inline. */
     dismiss: () => setProblem(null),
     signedIn: status === 'ready',
+    /** The applied promo code's quote, or null. */
+    promo,
+    applyPromo,
+    clearPromo: () => setPromo(null),
   };
 }

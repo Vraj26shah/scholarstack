@@ -10,6 +10,7 @@ import type {
   AdminGrantResultDto,
   AdminOfferDto,
   AdminOverviewDto,
+  AdminPromoCodeDto,
   AdminStudentDto,
   AdminSupportQueryDto,
   AdminSyncHealthDto,
@@ -36,6 +37,8 @@ import type {
   CourseInventoryDto,
   DeleteCourseResultDto,
   DeliveryDto,
+  DiscountOrderDto,
+  DiscountReportDto,
   DrawerRef,
   EarningsDto,
   EmailStatusDto,
@@ -56,9 +59,13 @@ import type {
   PackRunBody,
   PackRunDto,
   ProblemDto,
+  PromoPayoutBody,
+  PromoPayoutDto,
+  PromoQuoteDto,
   PublishCheckDto,
   RoyaltyPayoutDto,
   SaveOfferBody,
+  SavePromoCodeBody,
   ShelfItemDto,
   StartCheckoutDto,
   StorageCleanInput,
@@ -214,8 +221,12 @@ export class ApiClient {
   shelf = () => this.request<ShelfItemDto[]>('GET', '/me/shelf');
 
   // Checkout
-  startCheckout = (item: { courseId: string } | { bundleId: string }) =>
+  startCheckout = (item: ({ courseId: string } | { bundleId: string }) & { promoCode?: string }) =>
     this.request<StartCheckoutDto>('POST', '/orders', item);
+  /** Whether any promo code is running (the "Have a promo code?" link shows only then). */
+  promoActive = () => this.request<{ active: boolean }>('GET', '/promo/active');
+  checkPromo = (item: { courseId: string } | { bundleId: string }, code: string) =>
+    this.request<PromoQuoteDto>('POST', '/promo/check', { ...item, code });
   verifyPayment = (b: {
     orderId: string;
     gatewayOrderId: string;
@@ -539,6 +550,19 @@ export class ApiClient {
   adminSaveOffer = (o: SaveOfferBody) => this.request<AdminOfferDto>('POST', '/admin/offers', o);
   adminDeleteOffer = (id: string) =>
     this.request<{ ok: true }>('DELETE', `/admin/offers/${encodeURIComponent(id)}`);
+  adminPromoCodes = () => this.request<AdminPromoCodeDto[]>('GET', '/admin/promo-codes');
+  adminPromoOrders = (id: string) =>
+    this.request<DiscountOrderDto[]>('GET', `/admin/promo-codes/${encodeURIComponent(id)}/orders`);
+  adminOfferOrders = (id: string) =>
+    this.request<DiscountOrderDto[]>('GET', `/admin/offers/${encodeURIComponent(id)}/orders`);
+  adminDiscounts = (days: '7' | '30' | '90' | 'all') =>
+    this.request<DiscountReportDto>('GET', `/admin/discounts?days=${days}`);
+  adminAddPromoPayout = (b: PromoPayoutBody) =>
+    this.request<PromoPayoutDto>('POST', '/admin/discounts/payouts', b);
+  adminSavePromoCode = (p: SavePromoCodeBody) =>
+    this.request<AdminPromoCodeDto>('POST', '/admin/promo-codes', p);
+  adminDeletePromoCode = (id: string) =>
+    this.request<{ ok: true }>('DELETE', `/admin/promo-codes/${encodeURIComponent(id)}`);
   adminSuggestPrice = (courseIds: string[]) =>
     this.request<{ pricePaise: number }>('POST', '/admin/bundles/suggest-price', { courseIds });
   adminFeatures = () => this.request<FeatureDto[]>('GET', '/admin/features');

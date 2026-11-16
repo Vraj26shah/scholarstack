@@ -6,8 +6,9 @@ import type { Bundle, DrawerRef, Offer } from '../domain/entities';
  * are easy to test and the catalogue and checkout always agree on a price.
  *
  * - An offer runs while it is live and between its start and end.
- * - It covers everything, or the courses and bundles picked for it, or whatever shows in the
- *   drawers (batch × programme) picked for it. "*" as the programme means the whole batch.
+ * - It covers everything, or every course, or every bundle, or the courses and bundles picked for
+ *   it, or whatever shows in the drawers (batch × programme) picked for it. "*" as the programme
+ *   means the whole batch.
  * - When several offers cover the same thing, the biggest saving wins. Offers never stack.
  * - Prices are rounded to whole rupees and never go below ₹1.
  */
@@ -56,6 +57,8 @@ export function drawersMeet(drawers: DrawerRef[], reach: DrawerRef[], commonSlug
 export interface Priced {
   pricePaise: number;
   offer?: PriceOfferDto;
+  /** Which offer gave this price (server only: recorded on orders, never sent to students). */
+  offerId?: string;
 }
 
 /** The lowest price any running offer gives, with that offer's label; the full price when none do. */
@@ -67,6 +70,7 @@ export function bestPrice(running: Offer[], covers: (offer: Offer) => boolean, f
     if (pricePaise < best.pricePaise)
       best = {
         pricePaise,
+        offerId: offer.id,
         offer: {
           title: offer.title,
           percentOff: offer.percentOff,
@@ -81,11 +85,15 @@ export function bestPrice(running: Offer[], covers: (offer: Offer) => boolean, f
 export const coversCourse =
   (courseId: string, offerings: DrawerRef[], commonSlugs: string[]) => (offer: Offer) =>
     offer.everything ||
+    offer.allCourses ||
     offer.courseIds.includes(courseId) ||
     drawersMeet(offer.drawers, offerings, commonSlugs);
 
 export const coversBundle = (bundleId: string, audience: DrawerRef[]) => (offer: Offer) =>
-  offer.everything || offer.bundleIds.includes(bundleId) || drawersMeet(offer.drawers, audience);
+  offer.everything ||
+  offer.allBundles ||
+  offer.bundleIds.includes(bundleId) ||
+  drawersMeet(offer.drawers, audience);
 
 /**
  * The drawers a bundle shows in. Picked by hand when the admin chose them; otherwise every drawer

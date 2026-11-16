@@ -90,3 +90,25 @@ export function U({ children }: { children: ReactNode }) {
 export function Note({ children, className = '' }: { children: ReactNode; className?: string }) {
   return <p className={`m-0 text-[14px] leading-relaxed text-ink2 max-w-[760px] ${className}`}>{children}</p>;
 }
+
+/** One big number with a label and a hint, for a row of figures (Money screens). */
+export function Figure({
+  label,
+  value,
+  hint,
+  tone = 'ink',
+}: { label: string; value: string; hint: string; tone?: 'ink' | 'teal' | 'marigold' }) {
+  return (
+    <div className="flex flex-col gap-1 bg-surface px-4 py-3.5 min-w-0">
+      <span className="font-mono text-[11px] tracking-[0.06em] text-ink2">{label}</span>
+      <span
+        className={`font-display font-extrabold text-[30px] leading-none tracking-[-0.03em] tabular-nums ${
+          tone === 'teal' ? 'text-teal-text' : tone === 'marigold' ? 'text-marigold-text' : 'text-ink'
+        }`}
+      >
+        {value}
+      </span>
+      <span className="text-[12px] text-ink2">{hint}</span>
+    </div>
+  );
+}

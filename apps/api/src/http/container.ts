@@ -12,11 +12,13 @@ import type { ContributionReviewService } from '../application/contributions/con
 import type { ContributionService } from '../application/contributions/contribution-service';
 import type { ContributorStatsService } from '../application/contributions/contributor-stats';
 import type { ContributionFilingService } from '../application/contributions/filing';
+import type { DiscountReportService } from '../application/discount-report';
 import type { EarningsService } from '../application/earnings/earnings-service';
 import type { OfferService } from '../application/offer-service';
 import type { PackService } from '../application/packs';
 import type { PreviewService } from '../application/preview-service';
 import type { ProblemService } from '../application/problems';
+import type { PromoCodeService } from '../application/promo-service';
 import type { ReaderService } from '../application/reader-service';
 import type { ShelfService } from '../application/shelf-service';
 import type { SignInGuard } from '../application/signin-guard';
@@ -46,6 +48,10 @@ export interface Container {
   catalogue: CatalogueService;
   /** Sales (Diwali and the like) for the admin. */
   offers: OfferService;
+  /** Codes students type at checkout. */
+  promoCodes: PromoCodeService;
+  /** Who used which offer or code, and what promo creators are owed. */
+  discounts: DiscountReportService;
   /** One bundle per drawer, kept in step with it. */
   packs: PackService;
   books: BookService;

@@ -8,6 +8,7 @@ import { RefreshFailed } from '../../shared/ui/feedback';
 import { useSectionSwipe } from '../../shared/ui/swipe';
 import { SwipeHint } from '../../shared/ui/swipe-hint';
 import { GROUPS, findView } from './admin-sections';
+import { PanelBoundary } from './panel-boundary';
 import { Note } from './ui';
 
 const SEEN = 'ss-admin-seen';
@@ -261,7 +262,9 @@ export function AdminPage() {
 
         <div id="admin-panel" role="tabpanel" aria-label={view.label} className="flex flex-col gap-3">
           <StaleNotice />
-          {view.render(go)}
+          <PanelBoundary resetKey={view.key} label={view.label}>
+            {view.render(go)}
+          </PanelBoundary>
         </div>
       </div>
     </Page>

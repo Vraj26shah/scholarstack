@@ -6,6 +6,12 @@ import type { AppConfig } from './config';
 import { fail } from './errors';
 
 const DEVICE_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
+/**
+ * Admins run the site from a laptop, a phone, a lab machine…: they may use up to this many devices
+ * (the database's device-limit trigger allows the same), and removing one signs it out at once.
+ * Students keep `maxDevices` (two) and the three-day removal.
+ */
+export const ADMIN_MAX_DEVICES = 10;
 /** A device of the same kind unused this long is taken to be this one, back again. */
 const RETURNING_AFTER_MS = 24 * 60 * 60 * 1000;
 
@@ -21,8 +27,9 @@ function toDeviceDto(d: Device, currentId: string | null, now: Date): DeviceDto 
 
 /**
  * Accounts and per-device sessions.
- * Rules: one live sign-in per registered device and at most `maxDevices` registered devices.
- * A future revokedAt is a scheduled sign-out; that device remains live until that instant.
+ * Rules: one live sign-in per registered device and at most `maxDevices` registered devices
+ * (ADMIN_MAX_DEVICES for admins). A future revokedAt is a scheduled sign-out; that device remains
+ * live until that instant. Admins' removals take effect at once.
  */
 export class AccountService {
   constructor(
@@ -42,12 +49,19 @@ export class AccountService {
     return this.admins.isAdmin(principal.email);
   }
 
+  /** How many devices this account may use. If the admin list can't be read, the student rule. */
+  private async deviceLimit(principal: Principal): Promise<number> {
+    const admin = await this.isAdmin(principal).catch(() => false);
+    return admin ? Math.max(ADMIN_MAX_DEVICES, this.config.maxDevices) : this.config.maxDevices;
+  }
+
   /** Called after sign-in. Refreshes this device's session without displacing other devices. */
   async claimDevice(principal: Principal, label: string, cookieDeviceId: string | null): Promise<Device> {
     await this.profiles.ensure(principal);
     const now = this.clock.now();
     const active = await this.devices.listActive(principal.userId, now);
     const sessions = await this.sessions.list(principal.userId);
+    const limit = await this.deviceLimit(principal);
 
     let device: Device | null = null;
     if (cookieDeviceId) {
@@ -75,11 +89,11 @@ export class AccountService {
       // almost certainly that device back again: retire the old record and register this one,
       // instead of locking the student out for three days.
       const returning = this.returningDevice(active, label, now);
-      if (active.length >= this.config.maxDevices && returning) {
+      if (active.length >= limit && returning) {
         await this.devices.revoke(returning.id);
         active.splice(active.indexOf(returning), 1);
       }
-      if (active.length >= this.config.maxDevices) {
+      if (active.length >= limit) {
         throw fail.deviceLimit(active.map((d) => toDeviceDto(d, null, now)));
       }
       try {
@@ -152,14 +166,18 @@ export class AccountService {
     const now = this.clock.now();
     const devices = await this.devices.listActive(principal.userId, now);
     const cooldownUntil = await this.deviceCooldownUntil(principal.userId, now);
+    const isAdmin = await this.isAdmin(principal);
     return {
       id: profile.id,
       email: profile.email,
       fullName: profile.fullName,
-      isAdmin: await this.isAdmin(principal),
+      isAdmin,
       emailOptIn: profile.emailOptIn,
       devices: devices.map((d) => toDeviceDto(d, currentDeviceId, now)),
-      deviceCooldownUntil: cooldownUntil?.toISOString() ?? null,
+      // Admins never wait on a removal, so there is no cooldown to show them.
+      deviceCooldownUntil: isAdmin ? null : (cooldownUntil?.toISOString() ?? null),
+      maxDevices: isAdmin ? Math.max(ADMIN_MAX_DEVICES, this.config.maxDevices) : this.config.maxDevices,
+      instantDeviceRemoval: isAdmin,
     };
   }
 
@@ -172,10 +190,14 @@ export class AccountService {
     await this.profiles.setEmailOptIn(principal.userId, optIn);
   }
 
-  async removeDevice(principal: Principal, deviceId: string): Promise<void> {
+  async removeDevice(principal: Principal, deviceId: string, currentDeviceId: string | null = null) {
     const now = this.clock.now();
-    const cooldownUntil = await this.deviceCooldownUntil(principal.userId, now);
-    if (cooldownUntil) throw fail.deviceCooldown(cooldownUntil);
+    const admin = await this.isAdmin(principal);
+    // Students: one removal at a time, three days each. Admins: straight away, any number.
+    if (!admin) {
+      const cooldownUntil = await this.deviceCooldownUntil(principal.userId, now);
+      if (cooldownUntil) throw fail.deviceCooldown(cooldownUntil);
+    }
     const device = await this.devices.find(deviceId);
     if (
       !device ||
@@ -183,6 +205,12 @@ export class AccountService {
       (device.revokedAt && device.revokedAt.getTime() <= now.getTime())
     )
       throw fail.notFound('That device');
+    if (admin) {
+      if (deviceId === currentDeviceId)
+        throw fail.badRequest('This is the device you are using. Sign out here instead.');
+      await this.devices.revoke(deviceId);
+      return;
+    }
     await this.devices.scheduleRemoval(deviceId, new Date(now.getTime() + DEVICE_COOLDOWN_MS));
   }
 

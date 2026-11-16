@@ -353,6 +353,10 @@ export interface MeDto {
   emailOptIn: boolean;
   devices: DeviceDto[];
   deviceCooldownUntil: string | null;
+  /** How many devices this account may use (more for admins). */
+  maxDevices: number;
+  /** Admins: removing a device signs it out at once, with no three-day wait. */
+  instantDeviceRemoval: boolean;
 }
 
 export const EmailPrefsBody = z.object({ emailOptIn: z.boolean() });
@@ -391,10 +395,28 @@ export const SHELF_GRACE_HOURS = 48;
 
 // ───────────────────────── Checkout ─────────────────────────
 
+/** What a student types in the promo code box. Checked (and upper-cased) on the server. */
+const PromoCodeText = z.string().trim().max(40);
+
 export const StartCheckoutBody = z.union([
-  z.object({ courseId: z.string().min(1) }),
-  z.object({ bundleId: z.string().min(1) }),
+  z.object({ courseId: z.string().min(1), promoCode: PromoCodeText.optional() }),
+  z.object({ bundleId: z.string().min(1), promoCode: PromoCodeText.optional() }),
 ]);
+
+export const CheckPromoBody = z.union([
+  z.object({ courseId: z.string().min(1), code: PromoCodeText.min(1) }),
+  z.object({ bundleId: z.string().min(1), code: PromoCodeText.min(1) }),
+]);
+
+/** A promo code that works on this course or bundle for this student, and what it saves. */
+export interface PromoQuoteDto {
+  code: string;
+  /** The price before the code (offers and owned courses already counted). */
+  fullPaise: number;
+  /** What checkout will charge with the code. */
+  pricePaise: number;
+  discountPaise: number;
+}
 
 export interface StartCheckoutDto {
   orderId: string;
@@ -900,6 +922,10 @@ export interface AdminOfferDto {
   endsAt: string;
   status: 'draft' | 'live';
   everything: boolean;
+  /** Every live course (and nothing else). */
+  allCourses: boolean;
+  /** Every live bundle (and nothing else). */
+  allBundles: boolean;
   courseIds: string[];
   bundleIds: string[];
   drawers: DrawerRef[];
@@ -907,6 +933,12 @@ export interface AdminOfferDto {
   running: boolean;
   /** How many live courses and bundles it reaches. */
   reach: { courses: number; bundles: number };
+  /** Paid orders that got their price from this offer. */
+  uses: number;
+  /** Different students among them. */
+  buyers: number;
+  /** Total taken off those orders by the offer. */
+  discountGivenPaise: number;
 }
 
 export const SaveOfferBody = z
@@ -918,6 +950,8 @@ export const SaveOfferBody = z
     endsAt: z.string().datetime({ offset: true }),
     status: z.enum(['draft', 'live']),
     everything: z.boolean().default(false),
+    allCourses: z.boolean().default(false),
+    allBundles: z.boolean().default(false),
     courseIds: z.array(z.string().min(1)).max(400).default([]),
     bundleIds: z.array(z.string().min(1)).max(100).default([]),
     drawers: z.array(DrawerRef).max(120).default([]),
@@ -926,11 +960,206 @@ export const SaveOfferBody = z
     message: 'The offer has to end after it starts.',
     path: ['endsAt'],
   })
-  .refine((o) => o.everything || o.courseIds.length + o.bundleIds.length + o.drawers.length > 0, {
-    message: 'Choose what the offer covers: everything, or some courses, bundles or drawers.',
-    path: ['everything'],
-  });
+  .refine(
+    (o) =>
+      o.everything ||
+      o.allCourses ||
+      o.allBundles ||
+      o.courseIds.length + o.bundleIds.length + o.drawers.length > 0,
+    {
+      message:
+        'Choose what the offer covers: everything, all courses, all bundles, or some courses, bundles or drawers.',
+      path: ['everything'],
+    },
+  );
 export type SaveOfferBody = z.infer<typeof SaveOfferBody>;
+
+// ───────────────────────── Promo codes ─────────────────────────
+
+export const PromoAppliesTo = z.enum(['everything', 'courses', 'bundles', 'chosen']);
+export type PromoAppliesTo = z.infer<typeof PromoAppliesTo>;
+
+/**
+ * A code a student types at checkout: a percentage or a flat amount off the price they would pay
+ * then (running offers included), never below ₹1. Covers everything, every course, every bundle,
+ * or chosen courses and bundles.
+ */
+export interface AdminPromoCodeDto {
+  id: string;
+  code: string;
+  kind: 'percent' | 'flat';
+  percentOff: number | null;
+  amountOffPaise: number | null;
+  appliesTo: PromoAppliesTo;
+  courseIds: string[];
+  bundleIds: string[];
+  startsAt: string;
+  /** Null: no end date. */
+  endsAt: string | null;
+  status: 'draft' | 'live';
+  /** Null: no limit. */
+  maxUses: number | null;
+  oncePerStudent: boolean;
+  /** Live, started, not ended and not used up. */
+  running: boolean;
+  /** Paid orders that used it. */
+  uses: number;
+  /** Total taken off paid orders. */
+  discountGivenPaise: number;
+  /** Who the code belongs to (a campus ambassador, a creator), if anyone. */
+  creatorName: string | null;
+  creatorContact: string | null;
+  /** The creator's cut of each paid order: a percent of what the student paid, or paise per use. */
+  commissionKind: 'percent' | 'flat' | null;
+  commissionValue: number | null;
+  /** Commission earned on this code's paid orders (paid out per creator, see the report). */
+  earnedPaise: number;
+}
+
+export const SavePromoCodeBody = z
+  .object({
+    id: z.string().optional(),
+    code: z
+      .string()
+      .trim()
+      .transform((v) => v.toUpperCase())
+      .pipe(
+        z
+          .string()
+          .regex(/^[A-Z0-9_-]{3,24}$/, 'Use 3 to 24 letters, numbers, - or _ (no spaces), like DIWALI20.'),
+      ),
+    kind: z.enum(['percent', 'flat']),
+    percentOff: z.number().int().min(1).max(90).nullable().default(null),
+    amountOffPaise: z.number().int().min(100).max(5_000_000).nullable().default(null),
+    appliesTo: PromoAppliesTo.default('everything'),
+    courseIds: z.array(z.string().min(1)).max(400).default([]),
+    bundleIds: z.array(z.string().min(1)).max(100).default([]),
+    startsAt: z.string().datetime({ offset: true }),
+    endsAt: z.string().datetime({ offset: true }).nullable().default(null),
+    status: z.enum(['draft', 'live']),
+    maxUses: z.number().int().min(1).max(1_000_000).nullable().default(null),
+    oncePerStudent: z.boolean().default(true),
+    creatorName: z
+      .string()
+      .trim()
+      .max(80)
+      .nullable()
+      .default(null)
+      .transform((v) => v || null),
+    creatorContact: z
+      .string()
+      .trim()
+      .max(120)
+      .nullable()
+      .default(null)
+      .transform((v) => v || null),
+    commissionKind: z.enum(['percent', 'flat']).nullable().default(null),
+    /** Percent (1–100) or paise per use. */
+    commissionValue: z.number().int().min(0).max(5_000_000).nullable().default(null),
+  })
+  .refine((p) => p.creatorName === null || p.creatorName.length >= 2, {
+    message: "The creator's name needs at least 2 letters.",
+    path: ['creatorName'],
+  })
+  .refine((p) => p.commissionKind === null || (p.creatorName !== null && p.commissionValue !== null), {
+    message: 'A commission needs a creator name and an amount.',
+    path: ['commissionKind'],
+  })
+  .refine((p) => p.commissionKind !== 'percent' || (p.commissionValue! >= 1 && p.commissionValue! <= 100), {
+    message: 'A commission percent is between 1 and 100.',
+    path: ['commissionValue'],
+  })
+  .refine((p) => (p.kind === 'percent' ? p.percentOff != null : p.amountOffPaise != null), {
+    message: 'Enter how much the code takes off.',
+    path: ['kind'],
+  })
+  .refine((p) => p.endsAt == null || new Date(p.endsAt) > new Date(p.startsAt), {
+    message: 'The code has to end after it starts.',
+    path: ['endsAt'],
+  })
+  .refine((p) => p.appliesTo !== 'chosen' || p.courseIds.length + p.bundleIds.length > 0, {
+    message: 'Choose at least one course or bundle for the code.',
+    path: ['appliesTo'],
+  });
+export type SavePromoCodeBody = z.infer<typeof SavePromoCodeBody>;
+
+// ───────────────────────── Discount report ─────────────────────────
+
+/** One paid order, with the student and where its discount came from (if anywhere). */
+export interface DiscountOrderDto {
+  orderId: string;
+  paidAt: string;
+  studentName: string | null;
+  studentEmail: string;
+  itemKind: 'course' | 'bundle';
+  itemTitle: string;
+  /** The price before any offer or code. */
+  fullPaise: number;
+  /** What the student paid. */
+  amountPaise: number;
+  offer: { title: string; percentOff: number; discountPaise: number } | null;
+  promo: { code: string; discountPaise: number; creatorName: string | null; commissionPaise: number } | null;
+}
+
+/** A person whose promo codes earn a commission, all time. */
+export interface PromoCreatorDto {
+  name: string;
+  contact: string | null;
+  codes: string[];
+  /** Paid orders through their codes. */
+  uses: number;
+  /** What those students paid. */
+  salesPaise: number;
+  earnedPaise: number;
+  paidPaise: number;
+  /** Earned minus paid (never below zero). */
+  owedPaise: number;
+}
+
+export interface PromoPayoutDto {
+  id: string;
+  creatorName: string;
+  amountPaise: number;
+  note: string;
+  paidAt: string;
+  recordedBy: string;
+}
+
+export interface DiscountReportDto {
+  /** Start of the period (null: all time). */
+  since: string | null;
+  totals: {
+    paidOrders: number;
+    buyers: number;
+    revenuePaise: number;
+    promoOrders: number;
+    promoBuyers: number;
+    offerOrders: number;
+    offerBuyers: number;
+    /** Orders with no offer and no code. */
+    fullPriceOrders: number;
+    fullPriceBuyers: number;
+    /** Taken off by offers and codes together. */
+    discountPaise: number;
+    commissionPaise: number;
+  };
+  creators: PromoCreatorDto[];
+  payouts: PromoPayoutDto[];
+  /** Newest first, at most 500. */
+  orders: DiscountOrderDto[];
+  ordersTruncated: boolean;
+}
+
+export const DiscountReportQuery = z.object({
+  days: z.enum(['7', '30', '90', 'all']).default('30'),
+});
+
+export const PromoPayoutBody = z.object({
+  creatorName: z.string().trim().min(2).max(80),
+  amountPaise: z.number().int().min(100).max(50_000_000),
+  note: z.string().trim().max(200).default(''),
+});
+export type PromoPayoutBody = z.infer<typeof PromoPayoutBody>;
 
 // ───────────────────────── Toolbox & announcements ─────────────────────────
 

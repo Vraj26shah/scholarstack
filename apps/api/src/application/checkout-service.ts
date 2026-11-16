@@ -1,8 +1,9 @@
-import { type OrderDto, RazorpayWebhook, type StartCheckoutDto } from '@ss/contracts';
+import { type OrderDto, type PromoQuoteDto, RazorpayWebhook, type StartCheckoutDto } from '@ss/contracts';
 import type { Principal } from '../domain/entities';
 import type {
   BundleRepository,
   CatalogueReader,
+  DiscountLedger,
   EntitlementRepository,
   OrderRepository,
   PaymentGateway,
@@ -10,10 +11,16 @@ import type {
   ProfileRepository,
 } from '../domain/ports';
 import { fail } from './errors';
+import type { Priced } from './offers';
 import type { PriceBook } from './price-book';
 import { bundlePricing } from './pricing';
+import type { PromoCodeService } from './promo-service';
 
 export type CheckoutItem = { courseId: string } | { bundleId: string };
+
+/** The offer behind a price, if one is running on it. */
+const offerOf = (p: Priced) =>
+  p.offer && p.offerId ? { offerId: p.offerId, title: p.offer.title, percentOff: p.offer.percentOff } : null;
 
 /**
  * Buying a course or a bundle. The price always comes from the database, and access is granted only
@@ -41,13 +48,47 @@ export class CheckoutService {
     private readonly profiles: ProfileRepository,
     private readonly gateway: PaymentGateway,
     private readonly prices: PriceBook,
+    private readonly promos: PromoCodeService,
+    private readonly discounts: DiscountLedger,
   ) {}
 
-  async start(principal: Principal, item: CheckoutItem): Promise<StartCheckoutDto> {
-    const { title, amountPaise, courseId, bundleId, courseIds } =
+  /** What this student pays for the item: today's price, then the promo code if one was given. */
+  private async price(principal: Principal, item: CheckoutItem, promoCode?: string) {
+    const base =
       'bundleId' in item
         ? await this.priceBundle(principal, item.bundleId)
         : await this.priceCourse(principal, item.courseId);
+    const code = promoCode?.trim();
+    // offerPaise: the price after any offer, before the code.
+    if (!code) return { ...base, offerPaise: base.amountPaise, promo: null };
+    const promo = await this.promos.apply(
+      principal.userId,
+      base.bundleId ? { bundleId: base.bundleId } : { courseId: base.courseId! },
+      code,
+      base.amountPaise,
+    );
+    return { ...base, offerPaise: base.amountPaise, amountPaise: promo.pricePaise, promo };
+  }
+
+  /** The "Apply" button: does the code work here, and what is the new price? Creates nothing. */
+  async quotePromo(principal: Principal, item: CheckoutItem, code: string): Promise<PromoQuoteDto> {
+    const { promo } = await this.price(principal, item, code);
+    if (!promo) throw fail.badRequest('Type a promo code first.');
+    return {
+      code: promo.promo.code,
+      fullPaise: promo.fullPaise,
+      pricePaise: promo.pricePaise,
+      discountPaise: promo.discountPaise,
+    };
+  }
+
+  async start(principal: Principal, item: CheckoutItem & { promoCode?: string }): Promise<StartCheckoutDto> {
+    const { title, amountPaise, courseId, bundleId, courseIds, promo, fullPaise, offer, offerPaise } =
+      await this.price(
+        principal,
+        'bundleId' in item ? { bundleId: item.bundleId } : { courseId: item.courseId },
+        item.promoCode,
+      );
     await this.profiles.ensure(principal);
 
     const receipt = `ss_${(bundleId ?? courseId ?? '').slice(0, 8)}_${Date.now().toString(36)}`;
@@ -71,6 +112,26 @@ export class CheckoutService {
       amountPaise,
       gatewayOrderId,
     });
+    // Counted as a use only once the order is paid; written now so the order remembers its code.
+    if (promo) await this.promos.record(order.id, principal.userId, promo);
+    // Which festival offer gave this price, for the admin's report. Reporting only: a hiccup here
+    // must never stop a student paying.
+    if (offer && fullPaise > offerPaise)
+      await this.discounts
+        .recordOffer({
+          orderId: order.id,
+          offerId: offer.offerId,
+          title: offer.title,
+          percentOff: offer.percentOff,
+          fullPaise,
+          discountPaise: fullPaise - offerPaise,
+        })
+        .catch((error) =>
+          console.error(
+            '[checkout] could not record the offer on an order:',
+            error instanceof Error ? error.message : error,
+          ),
+        );
     return {
       orderId: order.id,
       gatewayOrderId,
@@ -97,6 +158,8 @@ export class CheckoutService {
       courseId: course.id,
       bundleId: null,
       courseIds: [course.id],
+      fullPaise: course.pricePaise,
+      offer: offerOf(today),
     };
   }
 
@@ -125,12 +188,20 @@ export class CheckoutService {
       courses.filter((c) => owned.has(c.id)).map((c) => c.pricePaise),
       remaining.reduce((s, c) => s + (today.coursePrices.get(c.id)?.pricePaise ?? c.pricePaise), 0),
     );
+    // The same buyer's price with no offer running, to know what the offer took off.
+    const full = bundlePricing(
+      bundle.pricePaise,
+      courses.map((c) => c.pricePaise),
+      courses.filter((c) => owned.has(c.id)).map((c) => c.pricePaise),
+    );
     return {
       title: bundle.title,
       amountPaise: price.payablePaise,
       courseId: null,
       bundleId: bundle.id,
       courseIds: remaining.map((c) => c.id),
+      fullPaise: Math.max(full.payablePaise, price.payablePaise),
+      offer: offerOf(today),
     };
   }
 

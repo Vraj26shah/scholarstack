@@ -27,8 +27,12 @@ import type {
   FileUpsert,
   Offer,
   Order,
+  PaidOrderRecord,
   Principal,
   Profile,
+  PromoCode,
+  PromoPayout,
+  PromoUse,
   ReadingProgress,
   ViewerLease,
 } from '../domain/entities';
@@ -42,6 +46,7 @@ import type {
   CourseBookRepository,
   DatabaseHousekeeping,
   DeviceRepository,
+  DiscountLedger,
   EmailQuota,
   EntitlementRepository,
   FeatureRepository,
@@ -52,6 +57,7 @@ import type {
   ProblemReport,
   ProfileRepository,
   ProgressRepository,
+  PromoCodeRepository,
   RecipientSource,
   SessionRegistry,
   SettingsRepository,
@@ -1403,6 +1409,8 @@ const toOffer = (r: Row): Offer => ({
   endsAt: new Date(r.ends_at as string),
   status: r.status as Offer['status'],
   everything: !!r.everything,
+  allCourses: !!r.all_courses,
+  allBundles: !!r.all_bundles,
   courseIds: (r.course_ids as string[] | null) ?? [],
   bundleIds: (r.bundle_ids as string[] | null) ?? [],
   drawers: Array.isArray(r.drawers) ? (r.drawers as DrawerRef[]) : [],
@@ -1423,6 +1431,8 @@ export class SupabaseOffers implements OfferRepository {
       ends_at: o.endsAt.toISOString(),
       status: o.status,
       everything: o.everything,
+      all_courses: o.allCourses,
+      all_bundles: o.allBundles,
       course_ids: o.courseIds.filter(isUuid),
       bundle_ids: o.bundleIds.filter(isUuid),
       drawers: o.drawers,
@@ -1438,6 +1448,224 @@ export class SupabaseOffers implements OfferRepository {
     if (!isUuid(id)) return false;
     const rows = must(await this.db.from('offers').delete().eq('id', id).select('id')) as Row[];
     return rows.length > 0;
+  }
+}
+
+const toPromoCode = (r: Row): PromoCode => ({
+  id: r.id as string,
+  code: r.code as string,
+  kind: r.kind as PromoCode['kind'],
+  percentOff: (r.percent_off as number | null) ?? null,
+  amountOffPaise: (r.amount_off_paise as number | null) ?? null,
+  appliesTo: r.applies_to as PromoCode['appliesTo'],
+  courseIds: (r.course_ids as string[] | null) ?? [],
+  bundleIds: (r.bundle_ids as string[] | null) ?? [],
+  startsAt: new Date(r.starts_at as string),
+  endsAt: r.ends_at ? new Date(r.ends_at as string) : null,
+  status: r.status as PromoCode['status'],
+  maxUses: (r.max_uses as number | null) ?? null,
+  oncePerStudent: r.once_per_student !== false,
+  creatorName: (r.creator_name as string | null) ?? null,
+  creatorContact: (r.creator_contact as string | null) ?? null,
+  commissionKind: (r.commission_kind as PromoCode['commissionKind']) ?? null,
+  commissionValue: (r.commission_value as number | null) ?? null,
+});
+
+export class SupabasePromoCodes implements PromoCodeRepository {
+  constructor(private readonly db: SupabaseClient) {}
+  async listAll() {
+    return (
+      must(await this.db.from('promo_codes').select('*').order('starts_at', { ascending: false })) as Row[]
+    ).map(toPromoCode);
+  }
+  async findByCode(code: string) {
+    if (!/^[A-Z0-9_-]{1,40}$/.test(code)) return null;
+    const row = must(
+      await this.db.from('promo_codes').select('*').eq('code', code).maybeSingle(),
+    ) as Row | null;
+    return row ? toPromoCode(row) : null;
+  }
+  async save(p: Omit<PromoCode, 'id'> & { id?: string }) {
+    const values = {
+      code: p.code,
+      kind: p.kind,
+      percent_off: p.percentOff,
+      amount_off_paise: p.amountOffPaise,
+      applies_to: p.appliesTo,
+      course_ids: p.courseIds.filter(isUuid),
+      bundle_ids: p.bundleIds.filter(isUuid),
+      starts_at: p.startsAt.toISOString(),
+      ends_at: p.endsAt?.toISOString() ?? null,
+      status: p.status,
+      max_uses: p.maxUses,
+      once_per_student: p.oncePerStudent,
+      creator_name: p.creatorName,
+      creator_contact: p.creatorContact,
+      commission_kind: p.commissionKind,
+      commission_value: p.commissionValue,
+    };
+    const row = (
+      p.id
+        ? must(await this.db.from('promo_codes').update(values).eq('id', p.id).select('*').single())
+        : must(await this.db.from('promo_codes').insert(values).select('*').single())
+    ) as Row;
+    return toPromoCode(row);
+  }
+  async remove(id: string) {
+    if (!isUuid(id)) return false;
+    const rows = must(await this.db.from('promo_codes').delete().eq('id', id).select('id')) as Row[];
+    return rows.length > 0;
+  }
+  async paidUses(promoCodeId?: string): Promise<PromoUse[]> {
+    if (promoCodeId !== undefined && !isUuid(promoCodeId)) return [];
+    let q = this.db
+      .from('promo_redemptions')
+      .select('promo_code_id, user_id, discount_paise, commission_paise, orders!inner(status)')
+      .eq('orders.status', 'paid')
+      .not('promo_code_id', 'is', null);
+    if (promoCodeId) q = q.eq('promo_code_id', promoCodeId);
+    return (must(await q) as Row[]).map((r) => ({
+      promoCodeId: r.promo_code_id as string,
+      userId: r.user_id as string,
+      discountPaise: r.discount_paise as number,
+      commissionPaise: (r.commission_paise as number | null) ?? 0,
+    }));
+  }
+  async recordRedemption(r: {
+    orderId: string;
+    promoCodeId: string;
+    code: string;
+    userId: string;
+    fullPaise: number;
+    discountPaise: number;
+    creatorName: string | null;
+    commissionPaise: number;
+  }) {
+    must(
+      await this.db.from('promo_redemptions').insert({
+        order_id: r.orderId,
+        promo_code_id: r.promoCodeId,
+        code: r.code,
+        user_id: r.userId,
+        full_paise: r.fullPaise,
+        discount_paise: r.discountPaise,
+        creator_name: r.creatorName,
+        commission_paise: r.commissionPaise,
+      }),
+    );
+  }
+}
+
+/** A one-to-one embed comes back as an object, or as a one-item list on older PostgREST. */
+const oneRow = (v: unknown): Row | null =>
+  Array.isArray(v) ? ((v[0] as Row | undefined) ?? null) : ((v as Row | null) ?? null);
+
+const toPayoutRow = (r: Row): PromoPayout => ({
+  id: r.id as string,
+  creatorName: r.creator_name as string,
+  amountPaise: r.amount_paise as number,
+  note: (r.note as string | null) ?? '',
+  recordedBy: (r.recorded_by as string | null) ?? '',
+  paidAt: new Date(r.paid_at as string),
+});
+
+export class SupabaseDiscounts implements DiscountLedger {
+  constructor(private readonly db: SupabaseClient) {}
+  async recordOffer(r: {
+    orderId: string;
+    offerId: string;
+    title: string;
+    percentOff: number;
+    fullPaise: number;
+    discountPaise: number;
+  }) {
+    must(
+      await this.db.from('order_offers').insert({
+        order_id: r.orderId,
+        offer_id: isUuid(r.offerId) ? r.offerId : null,
+        offer_title: r.title,
+        percent_off: r.percentOff,
+        full_paise: r.fullPaise,
+        discount_paise: r.discountPaise,
+      }),
+    );
+  }
+  async paidOrders(since: Date | null): Promise<PaidOrderRecord[]> {
+    const out: PaidOrderRecord[] = [];
+    for (let from = 0; ; from += 1000) {
+      let q = this.db
+        .from('orders')
+        .select(
+          'id, user_id, course_id, bundle_id, amount_paise, paid_at, created_at, profiles(email, full_name), ' +
+            'promo_redemptions(promo_code_id, code, full_paise, discount_paise, commission_paise, creator_name), ' +
+            'order_offers(offer_id, offer_title, percent_off, full_paise, discount_paise)',
+        )
+        .eq('status', 'paid');
+      if (since) q = q.gte('paid_at', since.toISOString());
+      const rows = must(
+        await q
+          .order('paid_at', { ascending: false, nullsFirst: false })
+          .order('id')
+          .range(from, from + 999),
+      ) as unknown as Row[];
+      for (const r of rows) {
+        const profile = oneRow(r.profiles);
+        const promo = oneRow(r.promo_redemptions);
+        const offer = oneRow(r.order_offers);
+        out.push({
+          orderId: r.id as string,
+          userId: r.user_id as string,
+          email: (profile?.email as string | undefined) ?? '',
+          fullName: (profile?.full_name as string | null | undefined) ?? null,
+          courseId: (r.course_id as string | null) ?? null,
+          bundleId: (r.bundle_id as string | null) ?? null,
+          amountPaise: r.amount_paise as number,
+          paidAt: new Date((r.paid_at ?? r.created_at) as string),
+          promo: promo
+            ? {
+                promoCodeId: (promo.promo_code_id as string | null) ?? null,
+                code: promo.code as string,
+                fullPaise: promo.full_paise as number,
+                discountPaise: promo.discount_paise as number,
+                commissionPaise: (promo.commission_paise as number | null) ?? 0,
+                creatorName: (promo.creator_name as string | null) ?? null,
+              }
+            : null,
+          offer: offer
+            ? {
+                offerId: (offer.offer_id as string | null) ?? null,
+                title: offer.offer_title as string,
+                percentOff: offer.percent_off as number,
+                fullPaise: offer.full_paise as number,
+                discountPaise: offer.discount_paise as number,
+              }
+            : null,
+        });
+      }
+      if (rows.length < 1000) break;
+    }
+    return out;
+  }
+  async payouts() {
+    return (
+      must(await this.db.from('promo_payouts').select('*').order('paid_at', { ascending: false })) as Row[]
+    ).map(toPayoutRow);
+  }
+  async addPayout(p: Omit<PromoPayout, 'id' | 'paidAt'>) {
+    return toPayoutRow(
+      must(
+        await this.db
+          .from('promo_payouts')
+          .insert({
+            creator_name: p.creatorName,
+            amount_paise: p.amountPaise,
+            note: p.note,
+            recorded_by: p.recordedBy,
+          })
+          .select('*')
+          .single(),
+      ) as Row,
+    );
   }
 }
 

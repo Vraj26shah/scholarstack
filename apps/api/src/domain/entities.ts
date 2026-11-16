@@ -185,9 +185,80 @@ export interface Offer {
   endsAt: Date;
   status: 'draft' | 'live';
   everything: boolean;
+  /** Every live course, and nothing else. */
+  allCourses: boolean;
+  /** Every live bundle, and nothing else. */
+  allBundles: boolean;
   courseIds: string[];
   bundleIds: string[];
   drawers: DrawerRef[];
+}
+
+/** A code a student types at checkout for money off. Stored upper-case. */
+export interface PromoCode {
+  id: string;
+  code: string;
+  kind: 'percent' | 'flat';
+  percentOff: number | null;
+  amountOffPaise: number | null;
+  appliesTo: 'everything' | 'courses' | 'bundles' | 'chosen';
+  courseIds: string[];
+  bundleIds: string[];
+  startsAt: Date;
+  endsAt: Date | null;
+  status: 'draft' | 'live';
+  maxUses: number | null;
+  oncePerStudent: boolean;
+  creatorName: string | null;
+  creatorContact: string | null;
+  commissionKind: 'percent' | 'flat' | null;
+  /** Percent, or paise per use. */
+  commissionValue: number | null;
+}
+
+/** One paid order that used a code. */
+export interface PromoUse {
+  promoCodeId: string;
+  userId: string;
+  discountPaise: number;
+  commissionPaise: number;
+}
+
+/** A paid order with its student and the discounts it got (snapshots taken when it was placed). */
+export interface PaidOrderRecord {
+  orderId: string;
+  userId: string;
+  email: string;
+  fullName: string | null;
+  courseId: string | null;
+  bundleId: string | null;
+  amountPaise: number;
+  paidAt: Date;
+  promo: {
+    promoCodeId: string | null;
+    code: string;
+    fullPaise: number;
+    discountPaise: number;
+    commissionPaise: number;
+    creatorName: string | null;
+  } | null;
+  offer: {
+    offerId: string | null;
+    title: string;
+    percentOff: number;
+    fullPaise: number;
+    discountPaise: number;
+  } | null;
+}
+
+/** Money paid to a promo code's creator. */
+export interface PromoPayout {
+  id: string;
+  creatorName: string;
+  amountPaise: number;
+  note: string;
+  recordedBy: string;
+  paidAt: Date;
 }
 
 export interface Profile {

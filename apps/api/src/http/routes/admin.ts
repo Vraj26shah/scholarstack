@@ -21,17 +21,20 @@ import {
   CourseBookOrderBody,
   CreateFeatureBody,
   DeleteCourseBody,
+  DiscountReportQuery,
   FileContributionBody,
   ImportBody,
   MoveCourseFolderBody,
   MoveYearBody,
   PackRunBody,
+  PromoPayoutBody,
   RewardPaidBody,
   RoyaltyPayoutBody,
   SaveAnnouncementBody,
   SaveBundleBody,
   SaveFeatureBody,
   SaveOfferBody,
+  SavePromoCodeBody,
   SetHiddenBody,
   SetRoyaltyBody,
   StorageCleanBody,
@@ -683,9 +686,53 @@ adminRoutes.post('/admin/offers', async (c) => {
   return c.json(await c.get('container').offers.save(body));
 });
 
+/** The paid orders that got their price from this offer, with each student. */
+adminRoutes.get('/admin/offers/:id/orders', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').discounts.offerOrders(c.req.param('id')));
+});
+
 adminRoutes.delete('/admin/offers/:id', async (c) => {
   await requireAdmin(c);
   return c.json(await c.get('container').offers.remove(c.req.param('id')));
+});
+
+// ── Promo codes ──
+
+adminRoutes.get('/admin/promo-codes', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').promoCodes.list());
+});
+
+adminRoutes.post('/admin/promo-codes', async (c) => {
+  await requireAdmin(c);
+  const body = SavePromoCodeBody.parse(await c.req.json());
+  return c.json(await c.get('container').promoCodes.save(body));
+});
+
+/** The paid orders that used this code, with each student. */
+adminRoutes.get('/admin/promo-codes/:id/orders', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').discounts.promoOrders(c.req.param('id')));
+});
+
+// ── Discount report and creator payouts ──
+
+adminRoutes.get('/admin/discounts', async (c) => {
+  await requireAdmin(c);
+  const { days } = DiscountReportQuery.parse({ days: c.req.query('days') ?? undefined });
+  return c.json(await c.get('container').discounts.report(days));
+});
+
+adminRoutes.post('/admin/discounts/payouts', async (c) => {
+  const { principal } = await requireAdmin(c);
+  const body = PromoPayoutBody.parse(await c.req.json());
+  return c.json(await c.get('container').discounts.addPayout(body, principal.email));
+});
+
+adminRoutes.delete('/admin/promo-codes/:id', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').promoCodes.remove(c.req.param('id')));
 });
 
 // ── Toolbox ──

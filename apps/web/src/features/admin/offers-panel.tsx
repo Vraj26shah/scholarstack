@@ -5,8 +5,27 @@ import { api, friendly } from '../../lib/api';
 import { formatRupees } from '../../lib/format';
 import { Button } from '../../shared/ui/button';
 import { ErrorState, Sheet, Skeleton } from '../../shared/ui/feedback';
+import { UsedBy } from './discount-orders';
 import { DrawerPicker, DrawerSummary, drawerKey, fromKey } from './drawer-picker';
+import { BundlePicker, CoursePicker } from './item-picker';
 import { Field, Panel, input, plural } from './ui';
+
+/** What an offer covers: the whole shop, every course, every bundle, or a hand-picked mix. */
+type Scope = 'everything' | 'courses' | 'bundles' | 'choose';
+
+const SCOPES: [Scope, string, string][] = [
+  ['everything', 'Everything on sale', 'Every live course and bundle, for every batch and programme.'],
+  [
+    'courses',
+    'All courses',
+    'Every live course, for every batch and programme. Bundles keep their own price, except that a bundle never costs more than its courses bought one by one.',
+  ],
+  ['bundles', 'All bundles', 'Every live bundle. Single courses keep their normal price.'],
+  ['choose', 'Choose', ''],
+];
+
+const scopeOf = (o: Pick<AdminOfferDto, 'everything' | 'allCourses' | 'allBundles'>): Scope =>
+  o.everything ? 'everything' : o.allCourses ? 'courses' : o.allBundles ? 'bundles' : 'choose';
 
 interface Form {
   id?: string;
@@ -14,7 +33,7 @@ interface Form {
   percent: string;
   starts: string;
   ends: string;
-  everything: boolean;
+  scope: Scope;
   courseIds: string[];
   bundleIds: string[];
   drawers: Set<string>;
@@ -45,7 +64,7 @@ function newOffer(): Form {
     percent: '20',
     starts: local(start),
     ends: local(end),
-    everything: true,
+    scope: 'everything',
     courseIds: [],
     bundleIds: [],
     drawers: new Set(),
@@ -81,23 +100,8 @@ function OfferForm({
 }: { initial: Form; courses: AdminCourseDto[]; bundles: AdminBundleDto[]; onDone: () => void }) {
   const refresh = useOfferRefresh();
   const [f, setF] = useState<Form>(initial);
-  const [q, setQ] = useState('');
   const pct = Number(f.percent);
-  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const live = courses.filter((c) => c.status === 'live');
-  const shown = words.length
-    ? live
-        .filter((c) =>
-          words.every((w) =>
-            [c.title, c.courseCode ?? '', String(c.batchYear), ...c.branchSlugs]
-              .join(' ')
-              .toLowerCase()
-              .includes(w),
-          ),
-        )
-        .slice(0, 40)
-    : [];
-  const chosen = courses.filter((c) => f.courseIds.includes(c.id));
   const ok =
     f.title.trim().length >= 2 &&
     pct >= 1 &&
@@ -105,7 +109,7 @@ function OfferForm({
     !!f.starts &&
     !!f.ends &&
     new Date(f.ends) > new Date(f.starts) &&
-    (f.everything || f.courseIds.length + f.bundleIds.length + f.drawers.size > 0);
+    (f.scope !== 'choose' || f.courseIds.length + f.bundleIds.length + f.drawers.size > 0);
   const save = useMutation({
     mutationFn: (status: 'draft' | 'live') =>
       api.adminSaveOffer({
@@ -115,10 +119,12 @@ function OfferForm({
         startsAt: iso(f.starts),
         endsAt: iso(f.ends),
         status,
-        everything: f.everything,
-        courseIds: f.courseIds,
-        bundleIds: f.bundleIds,
-        drawers: [...f.drawers].map(fromKey),
+        everything: f.scope === 'everything',
+        allCourses: f.scope === 'courses',
+        allBundles: f.scope === 'bundles',
+        courseIds: f.scope === 'choose' ? f.courseIds : [],
+        bundleIds: f.scope === 'choose' ? f.bundleIds : [],
+        drawers: f.scope === 'choose' ? [...f.drawers].map(fromKey) : [],
       }),
     onSuccess: () => {
       refresh();
@@ -178,20 +184,15 @@ function OfferForm({
       <fieldset className="m-0 p-4 rounded-2xl border border-line flex flex-col gap-3">
         <legend className="px-1 font-semibold">What it covers</legend>
         <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="What the offer covers">
-          {(
-            [
-              [true, 'Everything on sale'],
-              [false, 'Choose'],
-            ] as const
-          ).map(([everything, text]) => (
+          {SCOPES.map(([scope, text]) => (
             <button
-              key={text}
+              key={scope}
               type="button"
               role="radio"
-              aria-checked={f.everything === everything}
-              onClick={() => setF({ ...f, everything })}
+              aria-checked={f.scope === scope}
+              onClick={() => setF({ ...f, scope })}
               className={`h-9 rounded-full px-3.5 text-[13px] font-semibold border cursor-pointer ${
-                f.everything === everything
+                f.scope === scope
                   ? 'bg-brand text-white border-brand'
                   : 'border-line text-ink2 hover:text-ink'
               }`}
@@ -200,10 +201,8 @@ function OfferForm({
             </button>
           ))}
         </div>
-        {f.everything ? (
-          <p className="m-0 text-sm text-ink2">
-            Every live course and bundle, for every batch and programme.
-          </p>
+        {f.scope !== 'choose' ? (
+          <p className="m-0 text-sm text-ink2">{SCOPES.find(([s]) => s === f.scope)?.[2]}</p>
         ) : (
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
@@ -217,84 +216,13 @@ function OfferForm({
                 onChange={(drawers) => setF((x) => ({ ...x, drawers }))}
               />
             </div>
-            <div className="flex flex-col gap-2">
-              <span className="text-sm font-semibold">
-                Single courses <span className="tabular-nums text-ink2">({chosen.length})</span>
-              </span>
-              {chosen.length > 0 && (
-                <ul className="m-0 p-0 list-none flex flex-wrap gap-1.5" aria-label="Courses in the offer">
-                  {chosen.map((c) => (
-                    <li key={c.id}>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${c.title}`}
-                        onClick={() => toggle('courseIds', c.id)}
-                        className="h-8 px-3 rounded-full border text-[13px] cursor-pointer border-teal bg-mist/25 text-ink"
-                      >
-                        {c.title} <span className="font-mono text-[11px] text-ink2">{c.batchYear}</span> ×
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <input
-                type="search"
-                aria-label="Search courses for the offer"
-                placeholder="Search a course by name or code"
-                className={`${input} h-10 text-sm sm:w-80`}
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-              {shown.length > 0 && (
-                <ul className="m-0 p-0 list-none max-h-[220px] overflow-y-auto grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2 pr-1">
-                  {shown.map((c) => (
-                    <li key={c.id}>
-                      <label
-                        className={`flex items-center gap-3 p-2.5 rounded-xl cursor-pointer border-[1.5px] ${
-                          f.courseIds.includes(c.id) ? 'border-teal bg-mist/25' : 'border-transparent bg-sunk'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={f.courseIds.includes(c.id)}
-                          onChange={() => toggle('courseIds', c.id)}
-                          className="w-5 h-5 accent-[var(--teal)] shrink-0"
-                        />
-                        <span className="min-w-0 text-sm truncate" title={c.title}>
-                          {c.title}{' '}
-                          <span className="font-mono text-[11px] text-ink2">
-                            {c.courseCode ?? ''} {c.batchYear}
-                          </span>
-                        </span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            {bundles.length > 0 && (
-              <div className="flex flex-col gap-2">
-                <span className="text-sm font-semibold">Bundles</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {bundles.map((b) => {
-                    const on = f.bundleIds.includes(b.id);
-                    return (
-                      <button
-                        key={b.id}
-                        type="button"
-                        aria-pressed={on}
-                        onClick={() => toggle('bundleIds', b.id)}
-                        className={`h-9 rounded-full px-3 text-[13px] font-semibold border cursor-pointer ${
-                          on ? 'bg-brand text-white border-brand' : 'border-line text-ink2 hover:text-ink'
-                        }`}
-                      >
-                        {b.title}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            <CoursePicker
+              courses={courses}
+              value={f.courseIds}
+              onToggle={(id) => toggle('courseIds', id)}
+              label="the offer"
+            />
+            <BundlePicker bundles={bundles} value={f.bundleIds} onToggle={(id) => toggle('bundleIds', id)} />
           </div>
         )}
       </fieldset>
@@ -334,6 +262,8 @@ function OfferRow({ o, onEdit, onCopy }: { o: AdminOfferDto; onEdit: () => void;
     endsAt: o.endsAt,
     status: o.status,
     everything: o.everything,
+    allCourses: o.allCourses,
+    allBundles: o.allBundles,
     courseIds: o.courseIds,
     bundleIds: o.bundleIds,
     drawers: o.drawers,
@@ -347,12 +277,16 @@ function OfferRow({ o, onEdit, onCopy }: { o: AdminOfferDto; onEdit: () => void;
   const del = useMutation({ mutationFn: () => api.adminDeleteOffer(o.id), onSuccess: refresh });
   const covers = o.everything
     ? 'Everything'
-    : [
-        o.courseIds.length ? plural(o.courseIds.length, 'course') : '',
-        o.bundleIds.length ? plural(o.bundleIds.length, 'bundle') : '',
-      ]
-        .filter(Boolean)
-        .join(' · ');
+    : o.allCourses
+      ? 'All courses'
+      : o.allBundles
+        ? 'All bundles'
+        : [
+            o.courseIds.length ? plural(o.courseIds.length, 'course') : '',
+            o.bundleIds.length ? plural(o.bundleIds.length, 'bundle') : '',
+          ]
+            .filter(Boolean)
+            .join(' · ');
   return (
     <li className="rounded-[18px] border border-line bg-surface p-4 flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -373,6 +307,11 @@ function OfferRow({ o, onEdit, onCopy }: { o: AdminOfferDto; onEdit: () => void;
             {covers && o.drawers.length ? ' · ' : ''}
             {o.drawers.length > 0 && <DrawerSummary drawers={o.drawers} empty="" />}
             {' · '}reaches {plural(o.reach.courses, 'live course')} and {plural(o.reach.bundles, 'bundle')}
+          </div>
+          <div className="text-[13px] text-ink2">
+            {o.uses
+              ? `${plural(o.buyers, 'student')} bought at this price (${plural(o.uses, 'order')}) · ${formatRupees(o.discountGivenPaise)} off given`
+              : 'No one has bought at this price yet'}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -413,6 +352,14 @@ function OfferRow({ o, onEdit, onCopy }: { o: AdminOfferDto; onEdit: () => void;
         </div>
       </div>
       {change.isError && <p className="m-0 text-sm text-blush-text">{friendly(change.error)}</p>}
+      {o.uses > 0 && (
+        <UsedBy
+          queryKey={['admin-offer-orders', o.id]}
+          load={() => api.adminOfferOrders(o.id)}
+          count={o.uses}
+          csvName={`offer-${o.title.replace(/[^\w-]+/g, '-').toLowerCase()}`}
+        />
+      )}
       {confirm && (
         <Sheet open onOpenChange={(v) => !v && setConfirm(false)} title={`Delete “${o.title}”?`}>
           <p className="m-0 text-[15px]">
@@ -439,15 +386,15 @@ const toForm = (o: AdminOfferDto): Form => ({
   percent: String(o.percentOff),
   starts: local(new Date(o.startsAt)),
   ends: local(new Date(o.endsAt)),
-  everything: o.everything,
+  scope: scopeOf(o),
   courseIds: o.courseIds,
   bundleIds: o.bundleIds,
   drawers: new Set(o.drawers.map(drawerKey)),
 });
 
 /**
- * Offers: a percentage off for a set time, on everything or on chosen courses, bundles and
- * drawers. The prices on courses and bundles are never edited, so ending an offer is instant.
+ * Offers: a percentage off for a set time, on everything, all courses, all bundles, or chosen
+ * courses, bundles and drawers. The prices on courses and bundles are never edited, so ending an offer is instant.
  */
 export function OffersPanel() {
   const offers = useQuery({ queryKey: ['admin-offers'], queryFn: api.adminOffers });

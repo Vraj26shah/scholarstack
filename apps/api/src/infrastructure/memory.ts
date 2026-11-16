@@ -26,8 +26,12 @@ import type {
   Offer,
   Order,
   OutgoingEmail,
+  PaidOrderRecord,
   Principal,
   Profile,
+  PromoCode,
+  PromoPayout,
+  PromoUse,
   ReadingProgress,
   RoyaltyPayout,
   StoredObject,
@@ -46,6 +50,7 @@ import type {
   CourseBookRepository,
   DatabaseHousekeeping,
   DeviceRepository,
+  DiscountLedger,
   EmailQuota,
   EntitlementRepository,
   FeatureRepository,
@@ -59,6 +64,7 @@ import type {
   ProblemReport,
   ProfileRepository,
   ProgressRepository,
+  PromoCodeRepository,
   RecipientSource,
   SessionRegistry,
   SettingsRepository,
@@ -140,6 +146,26 @@ export class MemoryDb {
   access = new Map<string, number>(); // key: user|file|day
   bundles = new Map<string, Bundle>();
   offers = new Map<string, Offer>();
+  promoCodes = new Map<string, PromoCode>();
+  /** By order id. */
+  promoRedemptions = new Map<
+    string,
+    {
+      promoCodeId: string | null;
+      code: string;
+      userId: string;
+      fullPaise: number;
+      discountPaise: number;
+      creatorName: string | null;
+      commissionPaise: number;
+    }
+  >();
+  /** By order id. */
+  orderOffers = new Map<
+    string,
+    { offerId: string | null; title: string; percentOff: number; fullPaise: number; discountPaise: number }
+  >();
+  promoPayouts: PromoPayout[] = [];
   features = new Map<string, Feature>();
   announcements = new Map<string, Announcement>();
   quota = new Map<string, number>(); // key: day
@@ -1026,6 +1052,111 @@ export class MemoryOffers implements OfferRepository {
   }
   async remove(id: string) {
     return this.db.offers.delete(id);
+  }
+}
+
+export class MemoryPromoCodes implements PromoCodeRepository {
+  constructor(private readonly db: MemoryDb) {}
+  async listAll() {
+    return [...this.db.promoCodes.values()].sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime());
+  }
+  async findByCode(code: string) {
+    return [...this.db.promoCodes.values()].find((p) => p.code === code) ?? null;
+  }
+  async save(p: Omit<PromoCode, 'id'> & { id?: string }) {
+    const promo: PromoCode = { ...p, id: p.id ?? this.db.ids.next() };
+    this.db.promoCodes.set(promo.id, promo);
+    return promo;
+  }
+  async remove(id: string) {
+    if (!this.db.promoCodes.delete(id)) return false;
+    // Same as the database: the history keeps the code text, not the link.
+    for (const [orderId, r] of this.db.promoRedemptions)
+      if (r.promoCodeId === id) this.db.promoRedemptions.set(orderId, { ...r, promoCodeId: null });
+    return true;
+  }
+  async paidUses(promoCodeId?: string): Promise<PromoUse[]> {
+    const out: PromoUse[] = [];
+    for (const [orderId, r] of this.db.promoRedemptions) {
+      if (!r.promoCodeId || (promoCodeId && r.promoCodeId !== promoCodeId)) continue;
+      if (this.db.orders.get(orderId)?.status !== 'paid') continue;
+      out.push({
+        promoCodeId: r.promoCodeId,
+        userId: r.userId,
+        discountPaise: r.discountPaise,
+        commissionPaise: r.commissionPaise,
+      });
+    }
+    return out;
+  }
+  async recordRedemption(r: {
+    orderId: string;
+    promoCodeId: string;
+    code: string;
+    userId: string;
+    fullPaise: number;
+    discountPaise: number;
+    creatorName: string | null;
+    commissionPaise: number;
+  }) {
+    const { orderId, ...rest } = r;
+    this.db.promoRedemptions.set(orderId, rest);
+  }
+}
+
+export class MemoryDiscounts implements DiscountLedger {
+  constructor(private readonly db: MemoryDb) {}
+  async recordOffer(r: {
+    orderId: string;
+    offerId: string;
+    title: string;
+    percentOff: number;
+    fullPaise: number;
+    discountPaise: number;
+  }) {
+    const { orderId, ...rest } = r;
+    this.db.orderOffers.set(orderId, rest);
+  }
+  async paidOrders(since: Date | null): Promise<PaidOrderRecord[]> {
+    const out: PaidOrderRecord[] = [];
+    for (const o of this.db.orders.values()) {
+      if (o.status !== 'paid') continue;
+      const paidAt = this.db.paidAt.get(o.id) ?? new Date(0);
+      if (since && paidAt.getTime() < since.getTime()) continue;
+      const profile = this.db.profiles.get(o.userId);
+      const promo = this.db.promoRedemptions.get(o.id);
+      const offer = this.db.orderOffers.get(o.id);
+      out.push({
+        orderId: o.id,
+        userId: o.userId,
+        email: profile?.email ?? '',
+        fullName: profile?.fullName ?? null,
+        courseId: o.courseId,
+        bundleId: o.bundleId,
+        amountPaise: o.amountPaise,
+        paidAt,
+        promo: promo
+          ? {
+              promoCodeId: promo.promoCodeId,
+              code: promo.code,
+              fullPaise: promo.fullPaise,
+              discountPaise: promo.discountPaise,
+              commissionPaise: promo.commissionPaise,
+              creatorName: promo.creatorName,
+            }
+          : null,
+        offer: offer ?? null,
+      });
+    }
+    return out.sort((a, b) => b.paidAt.getTime() - a.paidAt.getTime());
+  }
+  async payouts() {
+    return [...this.db.promoPayouts].sort((a, b) => b.paidAt.getTime() - a.paidAt.getTime());
+  }
+  async addPayout(p: Omit<PromoPayout, 'id' | 'paidAt'>) {
+    const row: PromoPayout = { ...p, id: this.db.ids.next(), paidAt: this.db.clock.now() };
+    this.db.promoPayouts.push(row);
+    return row;
   }
 }
 

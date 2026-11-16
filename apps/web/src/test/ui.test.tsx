@@ -72,6 +72,8 @@ describe('RequireAuth', () => {
         emailOptIn: true,
         devices: [],
         deviceCooldownUntil: null,
+        maxDevices: 2,
+        instantDeviceRemoval: false,
       },
     });
     app();

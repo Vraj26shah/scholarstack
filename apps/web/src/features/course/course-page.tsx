@@ -22,6 +22,7 @@ import { PreviewBar } from '../../shared/ui/preview-bar';
 import { useSectionSwipe } from '../../shared/ui/swipe';
 import { SwipeHint } from '../../shared/ui/swipe-hint';
 import { PaymentProblem } from '../checkout/payment-problem';
+import { PromoCodeField } from '../checkout/promo-code-field';
 import { useBuy } from '../checkout/use-buy';
 import { PreviewGallery } from './preview-gallery';
 import { ReadingList } from './reading-list';
@@ -216,11 +217,12 @@ function CheckoutPanel({
               {busy
                 ? 'Opening payment…'
                 : signedIn
-                  ? `Buy for ${formatRupees(course.pricePaise)}`
+                  ? `Buy for ${formatRupees(buyState.promo?.pricePaise ?? course.pricePaise)}`
                   : 'Sign in to buy'}{' '}
               <ArrowRight size={18} />
             </Button>
           )}
+          {!course.owned && <PromoCodeField buyState={buyState} onDark />}
           <PaymentProblem problem={buyState.problem} onRetry={buy} onClose={buyState.dismiss} />
           {course.owned && course.yourAccessUntil && (
             <span className="text-[13px] leading-relaxed text-on-brand2">
@@ -353,7 +355,7 @@ function StickyBuyBar({
           <>
             <span className="flex min-w-0 flex-col">
               <span className="font-display font-extrabold text-[19px] leading-none tracking-[-0.03em] tabular-nums whitespace-nowrap">
-                {formatRupees(course.pricePaise)}
+                {formatRupees(buyState.promo?.pricePaise ?? course.pricePaise)}
                 {course.offer && (
                   <span className="ml-2 font-mono text-[12px] font-normal opacity-70 line-through decoration-1">
                     <span className="sr-only">was </span>
@@ -376,7 +378,9 @@ function StickyBuyBar({
               disabled={busy}
               className="ml-auto flex-none"
               aria-label={
-                signedIn ? `Buy ${course.title} for ${formatRupees(course.pricePaise)}` : 'Sign in to buy'
+                signedIn
+                  ? `Buy ${course.title} for ${formatRupees(buyState.promo?.pricePaise ?? course.pricePaise)}`
+                  : 'Sign in to buy'
               }
             >
               {busy ? 'Opening…' : signedIn ? 'Buy' : 'Sign in'} <ArrowRight size={16} />

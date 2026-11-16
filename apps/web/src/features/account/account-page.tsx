@@ -15,12 +15,15 @@ function DeviceRow({
   onCancelRemoval,
   busy,
   removalPending,
+  instant = false,
 }: {
   d: DeviceDto;
   onRemove: () => void;
   onCancelRemoval: () => void;
   busy: boolean;
   removalPending: boolean;
+  /** Admins: removing signs the device out at once. */
+  instant?: boolean;
 }) {
   return (
     <li className="flex flex-wrap items-center gap-3 py-4 border-b border-line">
@@ -50,7 +53,13 @@ function DeviceRow({
           onClick={d.removalAt ? onCancelRemoval : onRemove}
           disabled={busy || (removalPending && !d.removalAt)}
         >
-          {d.removalAt ? 'Keep device' : removalPending ? 'One removal pending' : 'Remove in 3 days'}
+          {d.removalAt
+            ? 'Keep device'
+            : instant
+              ? 'Sign out'
+              : removalPending
+                ? 'One removal pending'
+                : 'Remove in 3 days'}
         </Button>
       )}
     </li>
@@ -181,11 +190,15 @@ export function AccountPage() {
 
         <section aria-labelledby="devices-h">
           <h2 id="devices-h" className="m-0 font-display font-extrabold text-[22px] tracking-[-0.03em]">
-            Devices <span className="font-mono text-sm text-ink2">{me.devices.length}/2</span>
+            Devices{' '}
+            <span className="font-mono text-sm text-ink2">
+              {me.devices.length}/{me.maxDevices ?? 2}
+            </span>
           </h2>
           <p className="mt-2 mb-0 text-sm text-ink2 max-w-[560px]">
-            Use up to two devices. A removal takes effect after three days, so the device stays usable during
-            that time.
+            {me.instantDeviceRemoval
+              ? `As an admin you can use up to ${me.maxDevices} devices. Signing one out here takes effect straight away.`
+              : 'Use up to two devices. A removal takes effect after three days, so the device stays usable during that time.'}
           </p>
           {scheduledDevice && (
             <p className="mt-2 mb-0 rounded-xl border border-marigold/60 bg-marigold-soft px-3 py-2 text-sm text-ink">
@@ -204,8 +217,16 @@ export function AccountPage() {
               confirming === d.id ? (
                 <li key={d.id} className="flex flex-wrap items-center gap-3 py-4 border-b border-line">
                   <span className="flex-1 text-sm">
-                    Schedule <strong>{d.label}</strong> to sign out in three days? It keeps working until
-                    then. You can cancel before it signs out.
+                    {me.instantDeviceRemoval ? (
+                      <>
+                        Sign <strong>{d.label}</strong> out now? It will need to sign in again.
+                      </>
+                    ) : (
+                      <>
+                        Schedule <strong>{d.label}</strong> to sign out in three days? It keeps working until
+                        then. You can cancel before it signs out.
+                      </>
+                    )}
                   </span>
                   <Button variant="ink" onClick={() => remove.mutate(d.id)} disabled={busy}>
                     {remove.isPending ? 'Removing…' : 'Yes, remove'}
@@ -219,7 +240,8 @@ export function AccountPage() {
                   key={d.id}
                   d={d}
                   busy={busy}
-                  removalPending={Boolean(scheduledDevice)}
+                  removalPending={Boolean(scheduledDevice) && !me.instantDeviceRemoval}
+                  instant={me.instantDeviceRemoval}
                   onRemove={() => setConfirming(d.id)}
                   onCancelRemoval={() => cancelRemoval.mutate(d.id)}
                 />

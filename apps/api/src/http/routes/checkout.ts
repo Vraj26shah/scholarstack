@@ -1,4 +1,4 @@
-import { StartCheckoutBody, VerifyPaymentBody } from '@ss/contracts';
+import { CheckPromoBody, StartCheckoutBody, VerifyPaymentBody } from '@ss/contracts';
 import { Hono } from 'hono';
 import { type AppEnv, requireLive, throttle } from '../helpers';
 
@@ -9,6 +9,21 @@ checkoutRoutes.post('/orders', async (c) => {
   await throttle(c, 'orders', principal.userId);
   const item = StartCheckoutBody.parse(await c.req.json());
   return c.json(await c.get('container').checkout.start(principal, item), 201);
+});
+
+/** Whether any promo code is running, so pages show the "Have a promo code?" link only then. */
+checkoutRoutes.get('/promo/active', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  return c.json({ active: await c.get('container').promoCodes.anyRunning() });
+});
+
+/** The "Apply" button: checks a code for this student and item, and returns the new price. */
+checkoutRoutes.post('/promo/check', async (c) => {
+  const { principal } = await requireLive(c);
+  await throttle(c, 'promo', principal.userId);
+  const body = CheckPromoBody.parse(await c.req.json());
+  const item = 'bundleId' in body ? { bundleId: body.bundleId } : { courseId: body.courseId };
+  return c.json(await c.get('container').checkout.quotePromo(principal, item, body.code));
 });
 
 checkoutRoutes.post('/orders/verify', async (c) => {

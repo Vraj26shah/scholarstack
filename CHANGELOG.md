@@ -2,6 +2,25 @@
 
 All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Added
+- **Promo codes** (Admin → Courses → Promo codes): codes like `DIWALI20` for a percentage or a flat amount off, on everything, all courses, all bundles, or chosen courses and bundles. Each code has optional dates, an optional total limit, and can be once per student. Only paid orders count as a use, and the admin sees how many uses and how much was taken off.
+- Students see a small "Have a promo code?" link under the buy button, **only while a code is switched on**; otherwise the course and bundle pages are unchanged. The code comes off the price they would pay right then (offers included), never below ₹1, and checkout charges exactly the price shown.
+- **Offers on all courses or all bundles**: besides "Everything" and "Choose", a festival offer can now cover every course (and nothing else) or every bundle (and nothing else) in one click.
+
+- **Money › Discounts**: for the last 7, 30 or 90 days or all time, how many students used a promo code, got an offer price or paid full price; every paid order with the student's name and email, what they bought, the price before discounts, what they paid and which offer or code lowered it; search and a CSV download.
+- **Promo code creators**: a code can belong to a creator (campus ambassador, YouTuber) with a commission, either a % of what the student pays or ₹ per use. The commission is fixed when each order is placed. Discounts shows each creator's uses, sales, earnings, payments and what is still owed, and payments are recorded there (never more than is owed).
+- Each offer and each promo code shows how many students bought with it, and the list of them.
+- **Admins can use up to 10 devices**, and signing one out from Account is instant (no three-day wait). Students keep two devices and the three-day removal.
+
+### Fixed
+- A section of Admin that fails while drawing now shows a "Try again" box in its own place. The tabs and every other section keep working, instead of the whole page turning into an error page.
+
+### Database
+- New migration `20261116000100_promo_codes_and_offer_scopes` (tables `promo_codes`, `promo_redemptions`; columns `offers.all_courses`, `offers.all_bundles`). Apply it before deploying the API.
+- New migration `20261117000100_discount_tracking_creators_admin_devices` (tables `order_offers`, `promo_payouts`; creator and commission columns on `promo_codes` and `promo_redemptions`; the device-limit trigger allows admins 10). Apply it before deploying the API.
+
 ## [0.36.0] — 2026-11-10
 
 ### Changed

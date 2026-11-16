@@ -540,6 +540,85 @@ check(
     )),
 );
 check(
+  'offers: can cover all courses or all bundles',
+  !(await throws(
+    `insert into public.offers (title, percent_off, starts_at, ends_at, status, all_courses)
+     values ('Courses sale', 15, now(), now() + interval '1 day', 'draft', true)`,
+  )) &&
+    !(await throws(
+      `insert into public.offers (title, percent_off, starts_at, ends_at, status, all_bundles)
+       values ('Bundles sale', 15, now(), now() + interval '1 day', 'draft', true)`,
+    )),
+);
+await db.query(
+  `insert into public.promo_codes (code, kind, percent_off, status) values ('DIWALI20', 'percent', 20, 'live')`,
+);
+check(
+  'RLS: promo codes and their uses are server-only',
+  (await asUser(student, 'select * from public.promo_codes')).length === 0 &&
+    (await asUser(student, 'select * from public.promo_redemptions')).length === 0,
+);
+check(
+  'promo codes: unique, upper-case, an amount that matches the kind, and sane dates',
+  (await throws(
+    `insert into public.promo_codes (code, kind, percent_off) values ('DIWALI20', 'percent', 10)`,
+  )) &&
+    (await throws(
+      `insert into public.promo_codes (code, kind, percent_off) values ('lower', 'percent', 10)`,
+    )) &&
+    (await throws(
+      `insert into public.promo_codes (code, kind, percent_off) values ('NOAMOUNT', 'flat', 10)`,
+    )) &&
+    (await throws(
+      `insert into public.promo_codes (code, kind, percent_off) values ('TOOMUCH', 'percent', 95)`,
+    )) &&
+    (await throws(
+      `insert into public.promo_codes (code, kind, percent_off, starts_at, ends_at)
+       values ('BACKWARDS', 'percent', 10, now(), now() - interval '1 day')`,
+    )) &&
+    !(await throws(
+      `insert into public.promo_codes (code, kind, amount_off_paise) values ('FLAT50', 'flat', 5000)`,
+    )),
+);
+check(
+  'promo codes: a commission needs a creator, and a percent commission is 1–100',
+  (await throws(
+    `insert into public.promo_codes (code, kind, percent_off, commission_kind, commission_value)
+     values ('NOCREATOR', 'percent', 10, 'percent', 10)`,
+  )) &&
+    (await throws(
+      `insert into public.promo_codes (code, kind, percent_off, creator_name, commission_kind, commission_value)
+       values ('TOOBIG', 'percent', 10, 'Rahul', 'percent', 150)`,
+    )) &&
+    !(await throws(
+      `insert into public.promo_codes (code, kind, percent_off, creator_name, commission_kind, commission_value)
+       values ('RAHUL10', 'percent', 10, 'Rahul', 'percent', 10)`,
+    )),
+);
+check(
+  'RLS: creator payouts and order offers are server-only',
+  (await asUser(student, 'select * from public.promo_payouts')).length === 0 &&
+    (await asUser(student, 'select * from public.order_offers')).length === 0,
+);
+{
+  // Students: two devices. Admins (in admin_emails): up to ten.
+  await db.query('delete from public.devices where user_id = $1', [uid]);
+  const add = (label) => throws(`insert into public.devices (user_id, label) values ('${uid}', '${label}')`);
+  const studentTwo = !(await add('one')) && !(await add('two'));
+  const studentThird = await add('three');
+  await db.query(`insert into public.admin_emails (email) values ('rahul.k@vitbhopal.ac.in')`);
+  let adminMore = true;
+  for (const label of ['three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'])
+    adminMore = adminMore && !(await add(label));
+  const adminEleventh = await add('eleven');
+  await db.query(`delete from public.admin_emails where email = 'rahul.k@vitbhopal.ac.in'`);
+  await db.query('delete from public.devices where user_id = $1', [uid]);
+  check(
+    'devices: students are held to two, admins to ten',
+    studentTwo && studentThird && adminMore && adminEleventh,
+  );
+}
+check(
   'bundles: offered_to must be a list of drawers',
   await throws(`update public.bundles set offered_to = '{"batchYear": 2025}'::jsonb`),
 );

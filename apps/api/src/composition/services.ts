@@ -14,6 +14,7 @@ import { ContributionService } from '../application/contributions/contribution-s
 import { ContributorStatsService } from '../application/contributions/contributor-stats';
 import { ContributionFilingService } from '../application/contributions/filing';
 import { FiledCourses } from '../application/contributions/pipeline';
+import { DiscountReportService } from '../application/discount-report';
 import { EarningsService } from '../application/earnings/earnings-service';
 import { StudentMailer } from '../application/notify/student-mailer';
 import { OfferService } from '../application/offer-service';
@@ -21,6 +22,7 @@ import { PackService } from '../application/packs';
 import { PreviewService } from '../application/preview-service';
 import { PriceBook } from '../application/price-book';
 import { ProblemService } from '../application/problems';
+import { PromoCodeService } from '../application/promo-service';
 import { ReaderService } from '../application/reader-service';
 import { ShelfService } from '../application/shelf-service';
 import { SignInGuard } from '../application/signin-guard';
@@ -45,6 +47,7 @@ import type {
   DatabaseHousekeeping,
   DeliveryLog,
   DeviceRepository,
+  DiscountLedger,
   EarningsRepository,
   EmailQuota,
   EntitlementRepository,
@@ -60,6 +63,7 @@ import type {
   ProblemLog,
   ProfileRepository,
   ProgressRepository,
+  PromoCodeRepository,
   RateLimiter,
   RecipientSource,
   SessionRegistry,
@@ -77,6 +81,8 @@ export interface Ports {
   catalogueWriter: CatalogueWriter;
   bundles: BundleRepository;
   offers: OfferRepository;
+  promoCodes: PromoCodeRepository;
+  discounts: DiscountLedger;
   features: FeatureRepository;
   announcements: AnnouncementRepository;
   recipients: RecipientSource;
@@ -125,6 +131,10 @@ export function buildServices(p: Ports, config: AppConfig) {
   const publicReader = cachedCatalogue(p.catalogueReader);
   const publicBundles = cachedBundles(p.bundles);
   const prices = new PriceBook(p.offers, publicReader, config, () => p.clock.now());
+  const promoCodes = new PromoCodeService(p.promoCodes, () => p.clock.now());
+  const discounts = new DiscountReportService(p.discounts, p.promoCodes, p.catalogueReader, p.bundles, () =>
+    p.clock.now(),
+  );
   const catalogue = new CatalogueService(
     publicReader,
     publicBundles,
@@ -216,7 +226,9 @@ export function buildServices(p: Ports, config: AppConfig) {
     catalogue,
     packs: new PackService(catalogue, p.bundles, p.settings),
     prices,
-    offers: new OfferService(p.offers, p.bundles, p.catalogueReader, prices, () => p.clock.now()),
+    offers: new OfferService(p.offers, p.bundles, p.catalogueReader, prices, discounts, () => p.clock.now()),
+    promoCodes,
+    discounts,
     books: new BookService(p.catalogueReader, p.books),
     housekeeping: p.housekeeping,
     previews: new PreviewService(p.catalogueReader, p.catalogueWriter, p.pages, p.seeder, p.limiter),
@@ -230,6 +242,8 @@ export function buildServices(p: Ports, config: AppConfig) {
       p.profiles,
       p.gateway,
       prices,
+      promoCodes,
+      p.discounts,
     ),
     reader: new ReaderService(
       p.catalogueReader,

@@ -54,7 +54,7 @@ meRoutes.delete('/me/devices/:id', async (c) => {
   const container = c.get('container');
   const deviceId = await cookieDeviceId(c);
   await container.account.assertCanManageDevices(principal, deviceId);
-  await container.account.removeDevice(principal, c.req.param('id'));
+  await container.account.removeDevice(principal, c.req.param('id'), deviceId);
   return c.json(await container.account.me(principal, deviceId));
 });
 

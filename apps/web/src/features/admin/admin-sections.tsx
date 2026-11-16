@@ -5,12 +5,14 @@ import { ContributionsPanel } from './contributions-panel';
 import { ContributorsPanel } from './contributors-panel';
 import { CourseListPanel } from './course-list-panel';
 import { CoursesPanel } from './courses-panel';
+import { DiscountsPanel } from './discounts-panel';
 import { EarningsPanel } from './earnings-panel';
 import { FolderExplorer } from './folder-explorer';
 import { MailPanel } from './mail-panel';
 import { OffersPanel } from './offers-panel';
 import { PageJobsPanel } from './page-jobs-panel';
 import { ProblemsPanel } from './problems-panel';
+import { PromoCodesPanel } from './promo-codes-panel';
 import { StorageMapPanel } from './storage-map-panel';
 import { StudentsPanel } from './students-panel';
 import { SupportPanel } from './support-panel';
@@ -96,10 +98,21 @@ export const GROUPS: Group[] = [
         label: 'Offers',
         note: (
           <>
-            Diwali and other sales: <U>a percentage off for a few days</U>, then prices go back.
+            Festival sales on <U>everything, all courses or all bundles</U> for a few days, then prices go
+            back.
           </>
         ),
         render: () => <OffersPanel />,
+      },
+      {
+        key: 'promo-codes',
+        label: 'Promo codes',
+        note: (
+          <>
+            Codes like DIWALI20 that students type at checkout for <U>money off</U>.
+          </>
+        ),
+        render: () => <PromoCodesPanel />,
       },
       {
         key: 'course-list',
@@ -145,6 +158,16 @@ export const GROUPS: Group[] = [
           </>
         ),
         render: () => <EarningsPanel />,
+      },
+      {
+        key: 'discounts',
+        label: 'Discounts',
+        note: (
+          <>
+            Who used a promo code or an offer, who paid full price, and <U>what creators are owed</U>.
+          </>
+        ),
+        render: () => <DiscountsPanel />,
       },
       {
         key: 'contributors',
