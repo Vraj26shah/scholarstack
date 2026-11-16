@@ -835,25 +835,91 @@ export interface AdminBundleDto extends BundleCardDto {
   basePricePaise: number;
   /** A drawer pack ("2025:bce"), kept in step with its drawer; null when made by hand. */
   autoDrawer: string | null;
+  /** While a running offer covers it: what students pay right now and the name they see. */
+  today: { pricePaise: number; offerTitle: string; shownTitle: string } | null;
+}
+
+/** A sale running right now, for the banner on the catalogue. */
+export interface RunningOfferDto {
+  title: string;
+  percentOff: number;
+  endsAt: string;
+  /** What it covers: the whole shop, every course, every bundle, or chosen ones. */
+  scope: 'everything' | 'courses' | 'bundles' | 'some';
 }
 
 // ───────────────────────── Drawer packs ─────────────────────────
 
+/** The pack sizes that have their own price; bigger packs follow the largest one. */
+export const PACK_SIZES = [2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+
+/** Pack prices in rupees by number of courses, as the admin edits them ("5" → 299). */
+export type PackLadder = Record<string, number>;
+
 /**
- * Pack prices by number of courses: few, round, "ends in 9" prices that get cheaper per course as
- * the pack grows. 5 courses is ₹349 (about ₹70 a course against ₹99 one by one).
+ * The suggested pack prices: round, "ends in 9" prices where every bigger pack costs more in total
+ * and less per course (₹74.50 a course for 2, ₹59.80 for 5, ₹54.90 for 10, against ₹79–₹99 one by
+ * one). The admin can change them in Courses › Bundles › Drawer packs.
  */
-export const PACK_LADDER_RUPEES: Record<number, number> = {
+export const PACK_LADDER_RUPEES: PackLadder = {
   2: 149,
   3: 199,
-  4: 279,
-  5: 349,
-  6: 399,
-  7: 449,
-  8: 499,
-  9: 549,
-  10: 599,
+  4: 249,
+  5: 299,
+  6: 349,
+  7: 399,
+  8: 449,
+  9: 499,
+  10: 549,
 };
+
+export const PackLadderSchema = z.record(
+  z.string().regex(/^([2-9]|10)$/),
+  z.number().int().min(9).max(50_000),
+);
+
+/**
+ * What is wrong with a price ladder, size by size: every size needs a price, each bigger pack must
+ * cost more in total and less per course than the one before it.
+ */
+export function ladderProblems(ladder: PackLadder): { size: number; message: string }[] {
+  const out: { size: number; message: string }[] = [];
+  let prev: { size: number; rupees: number } | null = null;
+  for (const size of PACK_SIZES) {
+    const rupees = ladder[String(size)];
+    if (rupees === undefined || !Number.isInteger(rupees) || rupees < 9) {
+      out.push({ size, message: 'Enter a whole rupee price of ₹9 or more.' });
+      prev = null;
+      continue;
+    }
+    if (prev) {
+      if (rupees <= prev.rupees)
+        out.push({ size, message: `Must cost more than the ${prev.size}-course pack (₹${prev.rupees}).` });
+      else if (rupees / size >= prev.rupees / prev.size)
+        out.push({
+          size,
+          message: `Must be cheaper per course than the ${prev.size}-course pack: ₹${
+            Math.ceil((prev.rupees * size) / prev.size) - 1
+          } or less.`,
+        });
+    }
+    prev = { size, rupees };
+  }
+  return out;
+}
+
+/**
+ * The price for a pack of any size from a ladder. Above the largest size each extra course adds a
+ * little less than the average course price so far (at most ₹50), so per-course keeps falling.
+ */
+export function ladderRupees(ladder: PackLadder, count: number): number {
+  if (count < 2) return 0;
+  const top: number = PACK_SIZES[PACK_SIZES.length - 1] ?? 10;
+  const topRupees = ladder[String(top)] ?? PACK_LADDER_RUPEES[String(top)]!;
+  if (count <= top) return ladder[String(count)] ?? PACK_LADDER_RUPEES[String(count)]!;
+  const extra = Math.max(1, Math.min(50, Math.floor(topRupees / top) - 1));
+  return topRupees + (count - top) * extra;
+}
 
 /** One drawer's pack: what it holds, what it costs, and what the builder will do with it. */
 export interface PackPlanDto {
@@ -885,13 +951,17 @@ export const PackRunBody = z.object({
   titlePrefix: z.string().trim().min(2).max(40).default('Semester pack'),
   /** Every hour, update packs when courses go live or leave, and add packs for new drawers. */
   keepInSync: z.boolean().default(true),
+  /** Pack prices by size. Left out: the saved prices (or the suggested ones). */
+  ladder: PackLadderSchema.optional(),
 });
 export type PackRunBody = z.infer<typeof PackRunBody>;
 
 export interface PackRunDto {
-  settings: { status: 'draft' | 'live'; titlePrefix: string; keepInSync: boolean };
+  settings: { status: 'draft' | 'live'; titlePrefix: string; keepInSync: boolean; ladder: PackLadder };
   plans: PackPlanDto[];
   totals: { create: number; update: number; same: number; retire: number; skip: number };
+  /** Live courses bought one by one (null when none are live), to show what a pack saves. */
+  coursePrices: { minPaise: number; maxPaise: number; averagePaise: number } | null;
   applied: boolean;
 }
 
@@ -934,6 +1004,8 @@ export interface AdminOfferDto {
   running: boolean;
   /** How many live courses and bundles it reaches. */
   reach: { courses: number; bundles: number };
+  /** Emails about this offer (the launch and last-day invitations), newest first. */
+  invitations: { id: string; subject: string; status: AnnouncementStatus; sent: number; waiting: number }[];
   /** Paid orders that got their price from this offer. */
   uses: number;
   /** Different students among them. */
@@ -941,6 +1013,8 @@ export interface AdminOfferDto {
   /** Total taken off those orders by the offer. */
   discountGivenPaise: number;
 }
+
+export const OfferInviteBody = z.object({ kind: z.enum(['launch', 'reminder']).default('launch') });
 
 export const SaveOfferBody = z
   .object({
@@ -1213,6 +1287,10 @@ export interface AnnouncementDto {
   waiting: number;
   /** Set when it goes only to the students of one course (e.g. "new notes added"). */
   course: { id: string; title: string } | null;
+  /** The offer it announces (a Diwali sale), if any. */
+  offerId: string | null;
+  /** Only students of these batches; null = every opted-in student. */
+  batchYears: number[] | null;
   /** When the last of them should have it, at the current daily limit (null when none wait). */
   finishesOn: string | null;
   error: string | null;

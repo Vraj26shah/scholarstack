@@ -1717,6 +1717,8 @@ const toAnnouncement = (r: Row): Announcement => ({
   ctaUrl: (r.cta_url as string) ?? '',
   featureKey: (r.feature_key as string | null) ?? null,
   courseId: (r.course_id as string | null) ?? null,
+  offerId: (r.offer_id as string | null) ?? null,
+  batchYears: (r.batch_years as number[] | null) ?? null,
   status: r.status as Announcement['status'],
   recipients: r.recipients as number,
   sent: r.sent as number,
@@ -1749,6 +1751,8 @@ export class SupabaseAnnouncements implements AnnouncementRepository {
   async create(
     a: Pick<Announcement, 'subject' | 'heading' | 'body' | 'ctaLabel' | 'ctaUrl' | 'featureKey'> & {
       courseId?: string | null;
+      offerId?: string | null;
+      batchYears?: number[] | null;
     },
   ) {
     const row = must(
@@ -1756,6 +1760,8 @@ export class SupabaseAnnouncements implements AnnouncementRepository {
         .from('announcements')
         .insert({
           course_id: a.courseId ?? null,
+          offer_id: a.offerId ?? null,
+          batch_years: a.batchYears ?? null,
           subject: a.subject,
           heading: a.heading,
           body: a.body,

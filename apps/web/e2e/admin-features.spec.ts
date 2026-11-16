@@ -233,21 +233,33 @@ test('build drawer packs: preview, then build as drafts', async () => {
   // A festival name is refused: packs take the running offer's name by themselves.
   await card.getByLabel('Pack name').fill('Diwali pack');
   await expect(card.getByText(/Leave festival names out/)).toBeVisible();
-  await expect(card.getByRole('button', { name: 'Build packs' })).toBeDisabled();
+  await expect(card.getByRole('button', { name: 'Apply changes' })).toBeDisabled();
   await card.getByRole('button', { name: 'Semester pack' }).click();
-  await expect(card.getByRole('button', { name: 'Build packs' })).toBeEnabled();
+  await expect(card.getByText(/Leave festival names out/)).toHaveCount(0);
+  // A price list where a bigger pack costs more per course is refused, with the limit spelled out.
+  const four = card.getByLabel('Price for 4 courses, rupees');
+  await four.fill('279');
+  await expect(card.getByRole('list', { name: 'Price problems' })).toContainText(
+    'Must be cheaper per course than the 3-course pack',
+  );
+  if (process.env.E2E_SHOTS) await card.screenshot({ path: `${process.env.E2E_SHOTS}/packs-1-invalid.png` });
+  await four.fill('245');
+  await expect(card.getByRole('list', { name: 'Price problems' })).toHaveCount(0);
   await card.getByLabel('On the site').selectOption('draft');
   await card.getByRole('checkbox', { name: 'Keep in step every hour' }).uncheck();
-  await card.getByRole('button', { name: 'Preview' }).click();
+  // Every change previews by itself; the button says how many packs it will touch.
+  const apply = card.getByRole('button', { name: /^Apply to \d+ packs?$/ });
+  await expect(apply).toBeEnabled({ timeout: 15_000 });
+  await expect(card.getByText(/^If applied:/)).toBeVisible();
+  await card.getByRole('button', { name: /^Show \d+ drawers?$/ }).click();
   const table = card.getByRole('table', { name: 'Packs by drawer' });
-  await expect(table).toBeVisible({ timeout: 15_000 });
   await expect(table.getByText('New').first()).toBeVisible();
-  await card.getByRole('button', { name: 'Build packs' }).click();
+  if (process.env.E2E_SHOTS) await card.screenshot({ path: `${process.env.E2E_SHOTS}/packs-2-preview.png` });
+  await apply.click();
   await expect(card.getByText(/^Done:/)).toBeVisible({ timeout: 20_000 });
-  // Building again would change nothing.
-  await card.getByRole('button', { name: 'Preview' }).click();
-  await expect(table.getByText('Up to date').first()).toBeVisible({ timeout: 15_000 });
-  await expect(table.getByText('New', { exact: true })).toHaveCount(0);
+  // Saved: nothing left to change, and the box keeps the new price.
+  await expect(card.getByRole('button', { name: 'Build packs' })).toBeVisible();
+  await expect(four).toHaveValue('245');
   // Packs fold away under their own toggle, and show as drafts with their all-year name.
   await page.getByRole('button', { name: /Show \d+ drawer packs? in the list/ }).click();
   const pack = page

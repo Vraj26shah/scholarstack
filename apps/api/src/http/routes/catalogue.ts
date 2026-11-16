@@ -16,6 +16,12 @@ catalogueRoutes.get('/catalogue', async (c) => {
   return c.json(await c.get('container').catalogue.index());
 });
 
+/** Sales running right now (a Diwali offer, say), for the banner above the catalogue. */
+catalogueRoutes.get('/offers/running', async (c) => {
+  c.header('cache-control', 'public, max-age=30');
+  return c.json(await c.get('container').prices.runningForBanner());
+});
+
 catalogueRoutes.get('/catalogue/drawer', async (c) => {
   const q = CatalogueQuery.parse(c.req.query());
   c.header('cache-control', 'no-store');

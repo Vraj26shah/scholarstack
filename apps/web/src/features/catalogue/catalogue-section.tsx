@@ -15,6 +15,7 @@ import { Reveal } from '../../shared/ui/motion';
 import { slideTo, useSectionSwipe, useTrackpadSwipe } from '../../shared/ui/swipe';
 import { SwipeHint } from '../../shared/ui/swipe-hint';
 import { CatalogueSearchBox, CatalogueSearchResults } from './catalogue-search';
+import { OfferBanner } from './offer-banner';
 import { StudyYearCourseGroups } from './study-year-course-groups';
 
 function Drawer({ batch, selected, onPick }: { batch: BatchDto; selected: boolean; onPick: () => void }) {
@@ -339,6 +340,7 @@ export function CatalogueSection() {
       aria-labelledby="catalogue-title"
       className="mx-auto max-w-[1280px] px-5 sm:px-9 pt-14 pb-20 [overflow-anchor:none]"
     >
+      <OfferBanner />
       <div className="flex flex-wrap items-end justify-between gap-5 mb-10">
         <div>
           <p className="font-mono text-[13px] tracking-[0.14em] text-teal-text m-0 mb-3.5">The catalogue</p>

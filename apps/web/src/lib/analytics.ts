@@ -1,12 +1,13 @@
 /**
- * Google Analytics (GA4, via the Google tag) and Sentry, both from their CDNs. Nothing loads
- * unless VITE_GA_ID / VITE_SENTRY_DSN were set at build time, so demo and local builds stay
- * clean and the site's own bundle carries none of it (the security headers list the CDNs).
+ * Google Analytics (GA4, via the Google tag) and Sentry. Nothing loads unless VITE_GA_ID /
+ * VITE_SENTRY_DSN were set at build time, so demo and local builds stay clean.
  *
- * Sentry loads the tracing bundle, so besides errors it also records real-user monitoring:
- * page loads, SPA route changes, and Web Vitals (LCP, FID/INP, CLS) for every visitor.
+ * Sentry (see sentry.ts) is bundled with the site as its own chunk and loaded right after start,
+ * so it's served from our domain and reports through /api/monitoring: ad blockers that block
+ * Sentry's own domains don't hide our errors and page speed. Until it has loaded, errors and the
+ * signed-in student are queued here and sent the moment it's ready.
  *
- * Events (besides the automatic page_view on every route change):
+ * GA events (besides the automatic page_view on every route change):
  *   login          a sign-in completed
  *   view_item      a course page opened (id, name, price)
  *   peek_open      a free page opened in "Peek inside" (which format)
@@ -17,37 +18,63 @@
 import { env } from './env';
 
 type Params = Record<string, string | number | boolean | undefined>;
+type SentryApi = typeof import('@sentry/browser');
+export interface MonitoringUser {
+  id: string;
+  email: string;
+  isAdmin: boolean;
+}
 
 declare global {
   interface Window {
     dataLayer?: unknown[][];
     gtag?: (...args: unknown[]) => void;
-    Sentry?: {
-      init: (options: {
-        dsn: string;
-        environment: string;
-        tracesSampleRate: number;
-      }) => void;
-      captureException: (e: unknown) => void;
-      /** Present (and truthy) once init has bound a client — errors sent before are dropped. */
-      getClient: () => unknown;
-    };
   }
+}
+
+/** The loaded SDK, or null while it loads (or when Sentry is off). */
+let sentry: SentryApi | null = null;
+/** Errors from before the SDK loaded (kept to a few, so a crash loop can't pile them up). */
+const early: unknown[] = [];
+/** The latest signed-in student (undefined: not known yet; null: signed out). */
+let user: MonitoringUser | null | undefined;
+
+const applyUser = (s: SentryApi) => {
+  if (user === undefined) return;
+  s.setUser(user ? { id: user.id, email: user.email } : null);
+  s.setTag('role', user ? (user.isAdmin ? 'admin' : 'student') : 'visitor');
+};
+
+/** Release tag: the commit being deployed (set by CI), so errors line up with deploys. */
+const release = (import.meta.env.VITE_APP_RELEASE as string | undefined) || undefined;
+
+function loadSentry(): void {
+  import('./sentry')
+    .then(({ startSentry }) => {
+      sentry = startSentry({
+        dsn: env.sentryDsn,
+        environment: import.meta.env.DEV ? 'development' : env.mode === 'demo' ? 'demo' : 'production',
+        release,
+        tunnel: `${env.apiBase.replace(/\/+$/, '')}/monitoring`,
+        // Every visit's speed (the site is small enough); lower this if the span quota runs short.
+        tracesSampleRate: 1,
+        // Replays: 1 in 10 visits, and every visit that hits an error.
+        replaysSessionSampleRate: 0.1,
+        replaysOnErrorSampleRate: 1,
+      });
+      applyUser(sentry);
+      for (const e of early.splice(0)) sentry.captureException(e);
+    })
+    .catch(() => {
+      // The chunk couldn't load (offline, an old tab after a deploy): the site works without it.
+    });
 }
 
 let gaReady = false;
 
 /** Called once from main.tsx, before the app renders. */
 export function initAnalytics(): void {
-  if (env.sentryDsn) {
-    const s = document.createElement('script');
-    s.src = 'https://browser.sentry-cdn.com/7.120.0/bundle.tracing.min.js';
-    s.crossOrigin = 'anonymous';
-    s.addEventListener('load', () =>
-      window.Sentry?.init({ dsn: env.sentryDsn, environment: env.mode, tracesSampleRate: 1 }),
-    );
-    document.head.appendChild(s);
-  }
+  if (env.sentryDsn) loadSentry();
 
   const id = env.gaId;
   if (!id) return;
@@ -79,19 +106,16 @@ export function trackPageView(path: string): void {
 
 /** An error React caught (error boundaries swallow it from the window, so Sentry never sees it). */
 export function captureException(e: unknown): void {
-  // The SDK loads async from its CDN, so a crash in the first moments after page load can beat
-  // it. Retry for a few seconds rather than lose it; a page with analytics off never retries.
-  const ready = () => typeof window.Sentry?.getClient === 'function' && !!window.Sentry.getClient();
-  let tries = 0;
-  const send = () => window.Sentry!.captureException(e);
-  if (ready()) {
-    send();
-    return;
-  }
-  const t = window.setInterval(() => {
-    if (ready()) {
-      window.clearInterval(t);
-      send();
-    } else if (++tries > 20) window.clearInterval(t);
-  }, 500);
+  if (!env.sentryDsn) return;
+  if (sentry) sentry.captureException(e);
+  else if (early.length < 10) early.push(e);
+}
+
+/**
+ * Who is using the site, for Sentry: errors, slow pages and replays show the student's account
+ * and email (or "visitor"). Called whenever the session changes; null on sign-out.
+ */
+export function setMonitoringUser(next: MonitoringUser | null): void {
+  user = next;
+  if (sentry) applyUser(sentry);
 }

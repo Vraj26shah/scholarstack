@@ -64,6 +64,7 @@ import type {
   PromoQuoteDto,
   PublishCheckDto,
   RoyaltyPayoutDto,
+  RunningOfferDto,
   SaveOfferBody,
   SavePromoCodeBody,
   ShelfItemDto,
@@ -223,6 +224,8 @@ export class ApiClient {
   // Checkout
   startCheckout = (item: ({ courseId: string } | { bundleId: string }) & { promoCode?: string }) =>
     this.request<StartCheckoutDto>('POST', '/orders', item);
+  /** Sales running right now, for the catalogue banner. */
+  runningOffers = () => this.request<RunningOfferDto[]>('GET', '/offers/running');
   /** Whether any promo code is running (the "Have a promo code?" link shows only then). */
   promoActive = () => this.request<{ active: boolean }>('GET', '/promo/active');
   checkPromo = (item: { courseId: string } | { bundleId: string }, code: string) =>
@@ -548,6 +551,9 @@ export class ApiClient {
     this.request<AdminBundleDto>('POST', `/admin/bundles/${encodeURIComponent(id)}/detach`);
   adminOffers = () => this.request<AdminOfferDto[]>('GET', '/admin/offers');
   adminSaveOffer = (o: SaveOfferBody) => this.request<AdminOfferDto>('POST', '/admin/offers', o);
+  /** Draft the email inviting students to an offer (or its last-day reminder). */
+  adminInviteToOffer = (id: string, kind: 'launch' | 'reminder') =>
+    this.request<AnnouncementDto>('POST', `/admin/offers/${encodeURIComponent(id)}/invite`, { kind });
   adminDeleteOffer = (id: string) =>
     this.request<{ ok: true }>('DELETE', `/admin/offers/${encodeURIComponent(id)}`);
   adminPromoCodes = () => this.request<AdminPromoCodeDto[]>('GET', '/admin/promo-codes');

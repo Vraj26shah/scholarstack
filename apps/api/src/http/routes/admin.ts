@@ -26,6 +26,7 @@ import {
   ImportBody,
   MoveCourseFolderBody,
   MoveYearBody,
+  OfferInviteBody,
   PackRunBody,
   PromoPayoutBody,
   RewardPaidBody,
@@ -659,6 +660,8 @@ adminRoutes.get('/admin/bundles/packs', async (c) => {
 adminRoutes.post('/admin/bundles/packs', async (c) => {
   await requireAdmin(c);
   const body = PackRunBody.parse(await c.req.json());
+  // A preview changes nothing, so the public pages keep their cache (previews run as prices are typed).
+  if (body.dryRun) c.set('readOnly', true);
   return c.json(await c.get('container').packs.run(body));
 });
 
@@ -684,6 +687,13 @@ adminRoutes.post('/admin/offers', async (c) => {
   await requireAdmin(c);
   const body = SaveOfferBody.parse(await c.req.json());
   return c.json(await c.get('container').offers.save(body));
+});
+
+/** Draft the email inviting students to this offer (or the last-day reminder). */
+adminRoutes.post('/admin/offers/:id/invite', async (c) => {
+  await requireAdmin(c);
+  const { kind } = OfferInviteBody.parse(await c.req.json().catch(() => ({})));
+  return c.json(await c.get('container').offers.invite(c.req.param('id'), kind));
 });
 
 /** The paid orders that got their price from this offer, with each student. */

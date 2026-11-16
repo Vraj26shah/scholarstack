@@ -11,6 +11,8 @@ export interface AppConfig {
   importRoot: string;
   /** Public site URL, for links in emails. */
   appUrl: string;
+  /** Sentry DSN for the monitoring tunnel ('' = accept any real Sentry ingest host). */
+  sentryDsn: string;
   /** Feature emails per day, kept under the email provider's daily cap. */
   emailDailyLimit: number;
   /** Emails kept back each day for personal mail (receipts, answers, reminders). */

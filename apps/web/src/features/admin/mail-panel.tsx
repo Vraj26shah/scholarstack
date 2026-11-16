@@ -21,6 +21,9 @@ type Draft = Omit<
   | 'sentAt'
   | 'id'
   | 'course'
+  // Set when an offer's invitation is drafted, and kept as it is when the text is edited.
+  | 'offerId'
+  | 'batchYears'
 > & {
   id?: string;
   /** Only this course's students (null = everyone who opted in). */

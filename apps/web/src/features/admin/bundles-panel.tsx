@@ -417,12 +417,30 @@ function BundleRow({ b, onEdit }: { b: AdminBundleDto; onEdit: () => void }) {
             Shows in <DrawerSummary drawers={b.audience} empty="no drawer yet" />
           </div>
         </div>
-        <div className="text-sm">
-          <span className="line-through text-ink2 mr-2">{formatRupees(b.listPricePaise)}</span>
-          <strong>{formatRupees(b.basePricePaise)}</strong>
-          <span className="ml-2 inline-flex h-6 px-2 rounded-md bg-marigold-soft text-marigold-text text-xs font-bold items-center">
-            Save {b.savePercent}%
+        <div className="text-sm flex flex-col items-end gap-1">
+          <span>
+            <span className="line-through text-ink2 mr-2">{formatRupees(b.listPricePaise)}</span>
+            <strong className={b.today ? 'line-through decoration-1 text-ink2 font-semibold' : ''}>
+              {formatRupees(b.basePricePaise)}
+            </strong>
+            {!b.today && (
+              <span className="ml-2 inline-flex h-6 px-2 rounded-md bg-marigold-soft text-marigold-text text-xs font-bold items-center">
+                Save {b.savePercent}%
+              </span>
+            )}
           </span>
+          {b.today && (
+            // What students pay right now, and the name they see, while the offer runs.
+            <span className="inline-flex flex-wrap justify-end items-center gap-x-2 text-[13px]">
+              <span className="inline-flex h-6 px-2 rounded-md bg-marigold text-on-marigold text-xs font-bold items-center">
+                {b.today.offerTitle}
+              </span>
+              <span>
+                students pay <strong className="text-ink">{formatRupees(b.today.pricePaise)}</strong>
+              </span>
+              {b.today.shownTitle !== b.title && <span className="text-ink2">as “{b.today.shownTitle}”</span>}
+            </span>
+          )}
         </div>
         {b.autoDrawer ? (
           <div className="flex flex-wrap gap-2">

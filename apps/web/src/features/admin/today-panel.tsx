@@ -5,6 +5,109 @@ import { formatRupees } from '../../lib/format';
 import { Spinner } from '../../shared/ui/feedback';
 import { ArrowRight } from '../../shared/ui/icons';
 import { Health } from './health';
+import { plural } from './ui';
+
+const endsOn = (iso: string) =>
+  new Date(iso).toLocaleString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+/** "in 5 days", "in 8 hours", "within the hour". */
+function inTime(iso: string): string {
+  const h = Math.floor((new Date(iso).getTime() - Date.now()) / 3_600_000);
+  if (h >= 48) return `in ${Math.floor(h / 24)} days`;
+  if (h >= 1) return `in ${plural(h, 'hour')}`;
+  return 'within the hour';
+}
+
+/**
+ * Sales on the Today screen: what's running (how it's selling, when it ends — a warning in its
+ * last day) and what starts within the next week, each a click from the Offers screen. Nothing
+ * when no sale is on or coming.
+ */
+function Sales({ go }: { go: (view: string) => void }) {
+  const offers = useQuery({ queryKey: ['admin-offers'], queryFn: api.adminOffers, refetchInterval: 60_000 });
+  const now = Date.now();
+  const running = (offers.data ?? []).filter((o) => o.running);
+  const soon = (offers.data ?? []).filter(
+    (o) =>
+      o.status === 'live' &&
+      !o.running &&
+      new Date(o.startsAt).getTime() > now &&
+      new Date(o.startsAt).getTime() - now < 7 * 24 * 3_600_000,
+  );
+  if (!running.length && !soon.length) return null;
+  return (
+    <section aria-labelledby="sales-title" className="flex flex-col gap-2">
+      <h3 id="sales-title" className="m-0 text-[15px] font-semibold">
+        Sales
+      </h3>
+      <ul className="m-0 p-0 list-none flex flex-col gap-2">
+        {running.map((o) => {
+          const lastDay = new Date(o.endsAt).getTime() - now < 24 * 3_600_000;
+          return (
+            <li
+              key={o.id}
+              className={`rounded-2xl px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-1 ${
+                lastDay ? 'bg-marigold-soft border border-marigold' : 'bg-surface border border-line'
+              }`}
+            >
+              <span className="inline-flex h-6 px-2.5 rounded-md bg-mist text-on-mist text-[12px] font-semibold items-center">
+                Running
+              </span>
+              <span className="font-semibold">
+                {o.title} · {o.percentOff}% off
+              </span>
+              <span className="text-[13.5px] text-ink2">
+                {lastDay ? (
+                  <strong className="text-marigold-text">Ends {inTime(o.endsAt)}</strong>
+                ) : (
+                  `Ends ${inTime(o.endsAt)}`
+                )}{' '}
+                ({endsOn(o.endsAt)}) ·{' '}
+                {o.uses
+                  ? `${plural(o.buyers, 'student')} bought, ${formatRupees(o.discountGivenPaise)} off given`
+                  : 'no one has bought at this price yet'}
+              </span>
+              <button
+                type="button"
+                onClick={() => go('offers')}
+                className="sm:ml-auto inline-flex items-center gap-1 text-sm font-semibold text-teal-text bg-transparent border-0 cursor-pointer"
+              >
+                {lastDay ? 'Extend or end' : 'Manage'} <ArrowRight size={14} />
+              </button>
+            </li>
+          );
+        })}
+        {soon.map((o) => (
+          <li
+            key={o.id}
+            className="rounded-2xl px-4 py-3 bg-surface border border-line flex flex-wrap items-center gap-x-4 gap-y-1"
+          >
+            <span className="inline-flex h-6 px-2.5 rounded-md bg-marigold-soft text-marigold-text text-[12px] font-semibold items-center">
+              Starts {inTime(o.startsAt)}
+            </span>
+            <span className="font-semibold">
+              {o.title} · {o.percentOff}% off
+            </span>
+            <span className="text-[13.5px] text-ink2">{endsOn(o.startsAt)}</span>
+            <button
+              type="button"
+              onClick={() => go('offers')}
+              className="sm:ml-auto inline-flex items-center gap-1 text-sm font-semibold text-teal-text bg-transparent border-0 cursor-pointer"
+            >
+              Manage <ArrowRight size={14} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 interface Line {
   /** The admin view the button opens. */
@@ -111,6 +214,7 @@ export function TodayPanel({ go }: { go: (view: string) => void }) {
         </h2>
       </div>
       <Health health={health.data} />
+      <Sales go={go} />
 
       {busy.length > 0 && (
         <ol className="m-0 p-0 list-none flex flex-col border-t-2 border-ink">

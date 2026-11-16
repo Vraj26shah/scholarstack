@@ -31,6 +31,9 @@ export default defineConfig({
         // only re-downloads the app code.
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
+          // Only the lazily loaded monitoring code imports Sentry, so this chunk is never part of
+          // the first page load (the catch-all "vendor" chunk is preloaded on every page).
+          if (id.includes('@sentry') || id.includes('@sentry-internal')) return 'vendor-sentry';
           if (id.includes('@supabase')) return 'vendor-auth';
           if (
             id.includes('react-router') ||

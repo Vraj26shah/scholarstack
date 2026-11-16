@@ -38,6 +38,8 @@ const toDto = (
   ctaLabel: a.ctaLabel,
   ctaUrl: a.ctaUrl,
   featureKey: a.featureKey,
+  offerId: a.offerId ?? null,
+  batchYears: a.batchYears ?? null,
   status: a.status,
   recipients: a.recipients,
   sent: a.sent,
@@ -177,6 +179,38 @@ export class AnnouncementService {
   }
 
   // ── Announcements ──
+
+  /**
+   * The email about an offer, as a draft for the admin to read, test and send from Emails. An
+   * unsent draft for the same offer is reused (and refreshed), so clicking twice never makes two.
+   */
+  async draftOfferInvite(input: {
+    offerId: string;
+    subject: string;
+    heading: string;
+    body: string;
+    ctaLabel: string;
+    ctaUrl: string;
+    batchYears: number[] | null;
+  }): Promise<AnnouncementDto> {
+    const draft = (await this.announcements.list()).find(
+      (a) => a.offerId === input.offerId && a.status === 'draft',
+    );
+    const { offerId, batchYears, ...text } = input;
+    if (draft) {
+      await this.announcements.update(draft.id, text);
+      return (await this.list()).find((a) => a.id === draft.id)!;
+    }
+    const created = await this.announcements.create({ ...text, featureKey: null, offerId, batchYears });
+    return (await this.list()).find((a) => a.id === created.id)!;
+  }
+
+  /** Emails about each offer, for the Offers screen. */
+  async byOffer(): Promise<Map<string, AnnouncementDto[]>> {
+    const out = new Map<string, AnnouncementDto[]>();
+    for (const a of await this.list()) if (a.offerId) out.set(a.offerId, [...(out.get(a.offerId) ?? []), a]);
+    return out;
+  }
 
   async list(): Promise<AnnouncementDto[]> {
     const all = (await this.announcements.list()).sort(

@@ -297,13 +297,26 @@ export class MemoryDeliveries implements DeliveryLog {
     }
     return m;
   }
-  /** Who an announcement is for: every opted-in student, or the students who have its course now. */
+  /**
+   * Who an announcement is for: every opted-in student (or only some batches of them), or the
+   * students who have its course now. Same rule as the database's announcement_audience.
+   */
   private audience(announcementId: string) {
-    const courseId = this.db.announcements.get(announcementId)?.courseId ?? null;
+    const a = this.db.announcements.get(announcementId);
+    const courseId = a?.courseId ?? null;
+    const years = a?.batchYears ?? null;
+    const batchOf = (email: string) => {
+      const y = /(\d{2})[a-z]{3}\d+@/.exec(email.toLowerCase())?.[1];
+      return y ? 2000 + Number(y) : null;
+    };
     const now = Date.now();
     return [...this.db.profiles.values()]
       .filter((p) => {
-        if (!courseId) return p.emailOptIn;
+        if (!courseId) {
+          if (!p.emailOptIn) return false;
+          const y = years ? batchOf(p.email) : null;
+          return !years || (y !== null && years.includes(y));
+        }
         const e = this.db.entitlements.get(`${p.id}|${courseId}`);
         return !!e && !e.revoked && (!e.expiresAt || e.expiresAt.getTime() > now);
       })

@@ -14,16 +14,19 @@ async function world() {
 }
 
 describe('pack prices', () => {
-  it('follow the ladder: 5 courses for ₹349, cheaper per course as packs grow', () => {
+  it('follow the ladder: every bigger pack costs more in total and less per course, past 10 too', () => {
     expect(packPricePaise(2, 19800)).toBe(14900);
     expect(packPricePaise(3, 29700)).toBe(19900);
-    expect(packPricePaise(4, 39600)).toBe(27900);
-    expect(packPricePaise(5, 49500)).toBe(34900);
-    expect(packPricePaise(9, 89100)).toBe(54900);
-    expect(packPricePaise(12, 118800)).toBe(69900);
-    const perCourse = [2, 5, 8].map((n) => packPricePaise(n, n * 9900) / n);
-    expect(perCourse[0]!).toBeGreaterThan(perCourse[1]!);
-    expect(perCourse[1]!).toBeGreaterThan(perCourse[2]!);
+    expect(packPricePaise(4, 39600)).toBe(24900);
+    expect(packPricePaise(5, 49500)).toBe(29900);
+    expect(packPricePaise(9, 89100)).toBe(49900);
+    expect(packPricePaise(12, 118800)).toBe(64900);
+    const sizes = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 20];
+    const totals = sizes.map((n) => packPricePaise(n, n * 9900));
+    for (let i = 1; i < sizes.length; i++) {
+      expect(totals[i]!).toBeGreaterThan(totals[i - 1]!);
+      expect(totals[i]! / sizes[i]!).toBeLessThan(totals[i - 1]! / sizes[i - 1]!);
+    }
   });
 
   it('never ask more than the courses one by one, even with cheap courses', () => {
@@ -145,5 +148,67 @@ describe('drawer packs', () => {
   it('only admins build packs', async () => {
     const { student } = await world();
     expect((await student.call('POST', '/admin/bundles/packs', { dryRun: true })).status).toBe(403);
+  });
+});
+
+describe('editing pack prices', () => {
+  it('a new price list reprices every pack of that size at once, says why, and is kept for the hourly sync', async () => {
+    const { admin, student, run } = await world();
+    await run({ titlePrefix: 'Semester pack' });
+    const ladder = { 2: 139, 3: 189, 4: 239, 5: 289, 6: 339, 7: 389, 8: 439, 9: 489, 10: 539 };
+    const preview = await admin.call('POST', '/admin/bundles/packs', {
+      dryRun: true,
+      titlePrefix: 'Semester pack',
+      ladder,
+    });
+    expect(preview.status).toBe(200);
+    const changing = preview.json.plans.filter((p: { action: string }) => p.action === 'update');
+    expect(changing.length).toBeGreaterThan(0);
+    expect(changing[0].note).toMatch(/Will change: price ₹\d+ → ₹\d+/);
+    expect(preview.json.coursePrices.minPaise).toBeGreaterThan(0);
+
+    const built = await run({ titlePrefix: 'Semester pack', ladder });
+    expect(built.json.settings.ladder).toEqual(
+      Object.fromEntries(Object.entries(ladder).map(([k, v]) => [k, v])),
+    );
+    const saved = (await admin.call('GET', '/admin/bundles/packs')).json;
+    expect(saved.settings.ladder['5']).toBe(289);
+    expect(saved.totals.update).toBe(0);
+    const pack = (
+      (await student.call('GET', '/bundles?batch=2025&branch=bce')).json as {
+        forDrawer?: string;
+        courseCount: number;
+        pricePaise: number;
+      }[]
+    ).find((b) => b.forDrawer);
+    if (pack && pack.courseCount <= 10)
+      expect([ladder[pack.courseCount as keyof typeof ladder] * 100, expect.any(Number)]).toContain(
+        pack.pricePaise,
+      );
+  });
+
+  it('refuses a price list where a bigger pack costs more per course, and changes nothing', async () => {
+    const { admin, run } = await world();
+    await run({ titlePrefix: 'Semester pack' });
+    const bad = await run({
+      titlePrefix: 'Semester pack',
+      ladder: { 2: 149, 3: 199, 4: 279, 5: 349, 6: 399, 7: 449, 8: 499, 9: 549, 10: 599 },
+    });
+    expect(bad.status).toBe(400);
+    expect(bad.json.error.message).toContain('4 courses: Must be cheaper per course than the 3-course pack');
+    expect((await admin.call('GET', '/admin/bundles/packs')).json.settings.ladder['4']).toBe(249);
+  });
+
+  it('a preview never clears the public catalogue cache', async () => {
+    const { env, admin, run } = await world();
+    await run({ titlePrefix: 'Semester pack' });
+    const forget = env.container.catalogue.forget.bind(env.container.catalogue);
+    let cleared = 0;
+    env.container.catalogue.forget = () => {
+      cleared++;
+      forget();
+    };
+    await admin.call('POST', '/admin/bundles/packs', { dryRun: true, titlePrefix: 'Semester pack' });
+    expect(cleared).toBe(0);
   });
 });

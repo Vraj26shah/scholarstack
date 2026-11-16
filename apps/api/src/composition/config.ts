@@ -28,6 +28,8 @@ export interface WorkerEnv {
   BREVO_API_KEY?: string;
   EMAIL_FROM?: string;
   EMAIL_FROM_NAME?: string;
+  /** The site's Sentry DSN: the monitoring tunnel only forwards to this project when set. */
+  SENTRY_DSN?: string;
   EMAIL_DAILY_LIMIT?: string;
   EMAIL_RESERVE?: string;
   NOTES: R2Bucket;
@@ -70,6 +72,7 @@ export function buildConfig(env: Partial<Record<keyof WorkerEnv, unknown>>, now 
     leaseSeconds: 150,
     importRoot: normaliseRoot(s('IMPORT_ROOT') ?? 'drive-imports/'),
     appUrl: (s('APP_URL') ?? 'http://localhost:5173').replace(/\/+$/, ''),
+    sentryDsn: (s('SENTRY_DSN') ?? '').trim(),
     emailDailyLimit: num(s('EMAIL_DAILY_LIMIT'), 250),
     // Room kept every day for receipts, answers and reminders, so news never crowds them out.
     emailReserve: Math.min(num(s('EMAIL_RESERVE'), 20), Math.floor(num(s('EMAIL_DAILY_LIMIT'), 250) / 2)),

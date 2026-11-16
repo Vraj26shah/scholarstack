@@ -1,6 +1,7 @@
 import type { AdminBundleDto, AdminCourseDto, AdminOfferDto } from '@ss/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { formatRupees } from '../../lib/format';
 import { Button } from '../../shared/ui/button';
@@ -250,6 +251,104 @@ function OfferForm({
   );
 }
 
+const INVITE_STATUS: Record<AdminOfferDto['invitations'][number]['status'], string> = {
+  draft: 'Draft, not sent yet',
+  sending: 'Sending',
+  sent: 'Sent',
+  failed: 'Stopped (see Emails)',
+};
+
+/**
+ * The emails about an offer: draft the invitation (or, near the end, a last-day reminder), see how
+ * each is going, and open it in Emails to read, test and send.
+ */
+function OfferEmails({ o }: { o: AdminOfferDto }) {
+  const refresh = useOfferRefresh();
+  const [, setParams] = useSearchParams();
+  const openEmails = () => setParams({ section: 'features' });
+  const invite = useMutation({
+    mutationFn: (kind: 'launch' | 'reminder') => api.adminInviteToOffer(o.id, kind),
+    onSuccess: () => {
+      refresh();
+      openEmails();
+    },
+  });
+  const p = phase(o);
+  if (o.status !== 'live' || p === 'ended') return null;
+  const lastTwoDays = new Date(o.endsAt).getTime() - Date.now() < 2 * 24 * 60 * 60 * 1000;
+  const hasDraft = o.invitations.some((i) => i.status === 'draft');
+  return (
+    <div className="flex flex-col gap-1.5 pt-1 border-t border-line/70">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[13px] font-semibold text-ink">Tell students</span>
+        <Button
+          size="sm"
+          variant={o.invitations.length ? 'outline' : 'buy'}
+          disabled={invite.isPending}
+          onClick={() => invite.mutate('launch')}
+        >
+          {hasDraft
+            ? 'Open the draft email'
+            : o.invitations.length
+              ? 'Write another email'
+              : 'Email students'}
+        </Button>
+        {lastTwoDays && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={invite.isPending}
+            onClick={() => invite.mutate('reminder')}
+          >
+            Last-day reminder
+          </Button>
+        )}
+        <span className="text-[12.5px] text-ink2">
+          {o.everything || o.allCourses || o.allBundles
+            ? 'Goes to every student who keeps emails on.'
+            : 'Goes only to the batches this offer reaches, to students who keep emails on.'}{' '}
+          You read it and send a test first.
+        </span>
+      </div>
+      {o.invitations.length > 0 && (
+        <ul className="m-0 p-0 list-none flex flex-col gap-1 text-[13px]">
+          {o.invitations.map((i) => (
+            <li key={i.id} className="flex flex-wrap items-center gap-x-2">
+              <span
+                className={`inline-flex h-5 px-2 rounded-md text-[11.5px] font-semibold items-center ${
+                  i.status === 'sent'
+                    ? 'bg-mist text-on-mist'
+                    : i.status === 'failed'
+                      ? 'bg-blush text-blush-text'
+                      : 'bg-marigold-soft text-marigold-text'
+                }`}
+              >
+                {INVITE_STATUS[i.status]}
+              </span>
+              <span className="text-ink2 truncate max-w-[480px]" title={i.subject}>
+                {i.subject}
+              </span>
+              {i.status !== 'draft' && (
+                <span className="tabular-nums text-ink2">
+                  · {i.sent} sent{i.waiting ? `, ${i.waiting} waiting` : ''}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={openEmails}
+                className="text-teal-text font-semibold underline bg-transparent border-0 p-0 cursor-pointer"
+              >
+                Open in Emails
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {invite.isError && <p className="m-0 text-sm text-blush-text">{friendly(invite.error)}</p>}
+    </div>
+  );
+}
+
 function OfferRow({ o, onEdit, onCopy }: { o: AdminOfferDto; onEdit: () => void; onCopy: () => void }) {
   const refresh = useOfferRefresh();
   const [confirm, setConfirm] = useState(false);
@@ -352,6 +451,7 @@ function OfferRow({ o, onEdit, onCopy }: { o: AdminOfferDto; onEdit: () => void;
         </div>
       </div>
       {change.isError && <p className="m-0 text-sm text-blush-text">{friendly(change.error)}</p>}
+      <OfferEmails o={o} />
       {o.uses > 0 && (
         <UsedBy
           queryKey={['admin-offer-orders', o.id]}

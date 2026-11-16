@@ -1218,11 +1218,15 @@ export class MemoryAnnouncements implements AnnouncementRepository {
   async create(
     a: Pick<Announcement, 'subject' | 'heading' | 'body' | 'ctaLabel' | 'ctaUrl' | 'featureKey'> & {
       courseId?: string | null;
+      offerId?: string | null;
+      batchYears?: number[] | null;
     },
   ) {
     const row: Announcement = {
       ...a,
       courseId: a.courseId ?? null,
+      offerId: a.offerId ?? null,
+      batchYears: a.batchYears ?? null,
       id: this.db.ids.next(),
       status: 'draft',
       recipients: 0,

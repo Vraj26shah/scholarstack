@@ -11,6 +11,8 @@ export interface AppEnv {
     requestId: string;
     principal: Principal;
     deviceId: string;
+    /** Set by an admin POST that only looks (a preview): public caches are kept. */
+    readOnly?: boolean;
   };
 }
 

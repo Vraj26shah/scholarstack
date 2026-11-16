@@ -1,8 +1,10 @@
-import type { AdminOfferDto, SaveOfferBody } from '@ss/contracts';
+import type { AdminOfferDto, AnnouncementDto, SaveOfferBody } from '@ss/contracts';
 import type { Offer } from '../domain/entities';
 import type { BundleRepository, CatalogueReader, OfferRepository } from '../domain/ports';
+import type { AnnouncementService } from './announcement-service';
 import type { OfferStats } from './discount-report';
 import { fail } from './errors';
+import { type InviteKind, offerBatchYears, offerInvite } from './offer-invite';
 import { ALL, coversBundle, coversCourse, isRunning } from './offers';
 import type { PriceBook } from './price-book';
 
@@ -15,10 +17,43 @@ export class OfferService {
     private readonly prices: PriceBook,
     private readonly stats: { offerStats(): Promise<Map<string, OfferStats>> },
     private readonly now: () => Date = () => new Date(),
+    /** The emails about each offer (optional: without it, offers simply have none). */
+    private readonly emails?: Pick<AnnouncementService, 'byOffer' | 'draftOfferInvite'>,
   ) {}
 
+  /**
+   * Drafts the email that invites students to an offer (or reminds them on its last day), sent
+   * only to the batches it reaches. The admin reads it, sends a test and sends it from Emails.
+   */
+  async invite(id: string, kind: InviteKind) {
+    if (!this.emails) throw fail.badRequest('Email is not set up here.');
+    const offer = (await this.offers.listAll()).find((o) => o.id === id);
+    if (!offer) throw fail.notFound('That offer');
+    if (offer.status !== 'live' || offer.endsAt.getTime() <= this.now().getTime())
+      throw fail.badRequest(
+        'Switch the offer on (and give it an end in the future) before inviting students.',
+      );
+    const reach = await this.prices.reach();
+    const bundles = new Map((await this.bundles.listAll()).map((b) => [b.id, b]));
+    const audiences = new Map(
+      await Promise.all(
+        offer.bundleIds
+          .filter((b) => bundles.has(b))
+          .map(async (b) => [b, await this.prices.audience(bundles.get(b)!)] as const),
+      ),
+    );
+    const years = offerBatchYears(
+      offer,
+      (c) => reach.offerings.get(c) ?? [],
+      (b) => audiences.get(b) ?? [],
+    );
+    if (years && years.length === 0)
+      throw fail.badRequest('This offer reaches no batch yet, so there is no one to invite.');
+    return this.emails.draftOfferInvite({ offerId: offer.id, ...offerInvite(offer, kind, years) });
+  }
+
   async list(): Promise<AdminOfferDto[]> {
-    const [offers, reach, bundles, used] = await Promise.all([
+    const [offers, reach, bundles, used, emails] = await Promise.all([
       this.offers.listAll(),
       this.prices.reach(),
       this.bundles.listLive(),
@@ -32,6 +67,10 @@ export class OfferService {
           );
           return new Map<string, OfferStats>();
         }),
+      // Like the usage counts: a hiccup reading emails never hides the offers.
+      (this.emails?.byOffer() ?? Promise.resolve(new Map<string, AnnouncementDto[]>())).catch(
+        () => new Map<string, AnnouncementDto[]>(),
+      ),
     ]);
     const audiences = await Promise.all(bundles.map((b) => this.prices.audience(b)));
     const now = this.now();
@@ -55,6 +94,13 @@ export class OfferService {
         ).length,
         bundles: bundles.filter((b, i) => coversBundle(b.id, audiences[i] ?? [])(o)).length,
       },
+      invitations: (emails.get(o.id) ?? []).map((a) => ({
+        id: a.id,
+        subject: a.subject,
+        status: a.status,
+        sent: a.sent,
+        waiting: a.waiting,
+      })),
       uses: used.get(o.id)?.uses ?? 0,
       buyers: used.get(o.id)?.buyers ?? 0,
       discountGivenPaise: used.get(o.id)?.discountGivenPaise ?? 0,

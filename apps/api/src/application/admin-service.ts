@@ -75,7 +75,8 @@ import {
 } from './folders';
 import { fileOrder, previewFileOf, previewPagesOf, toBundleCard, toCard, unitLabel } from './mappers';
 import { explicitlySharedCourseCodes, offeringsOf } from './offerings';
-import { ALL, bundleAudience } from './offers';
+import { ALL, bundleAudience, shownBundleTitle } from './offers';
+import type { PriceBook } from './price-book';
 import { reachOf } from './price-book';
 import { suggestBundlePrice } from './pricing';
 import * as publishing from './publish-check';
@@ -281,6 +282,8 @@ export class AdminService {
     private readonly entitlements?: EntitlementRepository,
     private readonly profiles?: ProfileRepository,
     private readonly accessMail?: AccessMailService,
+    /** Today's prices, so the bundle list can show what students pay during an offer. */
+    private readonly prices?: PriceBook,
   ) {}
 
   /**
@@ -2503,7 +2506,30 @@ export class AdminService {
       this.reader.listFiles(ids),
       this.bundleReach(),
     ]);
-    return bundles.map((b) => this.adminBundle(b, courses, files, reach));
+    const out = bundles.map((b) => this.adminBundle(b, courses, files, reach));
+    if (!this.prices) return out;
+    // During an offer: what students pay right now, and the name they see (drawer packs take the
+    // offer's name). A pricing hiccup only leaves this out; the list still loads.
+    try {
+      const live = new Map(courses.filter((c) => c.status === 'live').map((c) => [c.id, c]));
+      await Promise.all(
+        bundles.map(async (b, i) => {
+          if (b.status !== 'live') return;
+          const inBundle = b.courseIds.map((id) => live.get(id)).filter((c): c is Course => !!c);
+          if (!inBundle.length) return;
+          const today = await this.prices!.bundlePrice(b, inBundle);
+          if (today.offer && today.pricePaise !== b.pricePaise)
+            out[i]!.today = {
+              pricePaise: today.pricePaise,
+              offerTitle: today.offer.title,
+              shownTitle: shownBundleTitle(b, today.offer),
+            };
+        }),
+      );
+    } catch (error) {
+      console.error('[admin] could not price bundles:', error instanceof Error ? error.message : error);
+    }
+    return out;
   }
 
   private adminBundle(
@@ -2526,6 +2552,7 @@ export class AdminService {
       ),
       basePricePaise: b.pricePaise,
       autoDrawer: b.autoDrawer ?? null,
+      today: null,
     };
   }
 

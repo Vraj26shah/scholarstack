@@ -286,6 +286,10 @@ export interface Announcement {
   featureKey: string | null;
   /** Only this course's students get it (e.g. "new notes added"); null = every opted-in student. */
   courseId?: string | null;
+  /** The offer this email announces (a Diwali sale), if any. */
+  offerId?: string | null;
+  /** Only students of these batches (from their college email); null = every opted-in student. */
+  batchYears?: number[] | null;
   status: AnnouncementStatus;
   recipients: number;
   sent: number;

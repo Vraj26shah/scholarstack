@@ -207,6 +207,8 @@ export interface AnnouncementRepository {
   create(
     a: Pick<Announcement, 'subject' | 'heading' | 'body' | 'ctaLabel' | 'ctaUrl' | 'featureKey'> & {
       courseId?: string | null;
+      offerId?: string | null;
+      batchYears?: number[] | null;
     },
   ): Promise<Announcement>;
   update(id: string, patch: Partial<Omit<Announcement, 'id' | 'createdAt'>>): Promise<Announcement>;

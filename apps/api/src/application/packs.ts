@@ -1,13 +1,17 @@
 import {
   type CourseCardDto,
   PACK_LADDER_RUPEES,
+  type PackLadder,
   type PackPlanDto,
   type PackRunBody,
   type PackRunDto,
+  ladderProblems,
+  ladderRupees,
 } from '@ss/contracts';
 import type { Bundle } from '../domain/entities';
 import type { BundleRepository, SettingsRepository } from '../domain/ports';
 import type { CatalogueService } from './catalogue-service';
+import { fail } from './errors';
 import { charmDownPaise } from './offers';
 
 /**
@@ -22,23 +26,42 @@ import { charmDownPaise } from './offers';
 
 const SETTINGS_KEY = 'drawer_packs';
 type PackSettings = PackRunDto['settings'];
-const DEFAULTS: PackSettings = { status: 'live', titlePrefix: 'Semester pack', keepInSync: false };
+const DEFAULTS: PackSettings = {
+  status: 'live',
+  titlePrefix: 'Semester pack',
+  keepInSync: false,
+  ladder: PACK_LADDER_RUPEES,
+};
 
-/** The pack price for this many courses, always clearly under the courses bought one by one. */
+/** A usable ladder: the saved one when it is whole and sound, else the suggested prices. */
+function usableLadder(ladder: PackLadder | undefined): PackLadder {
+  return ladder && ladderProblems(ladder).length === 0 ? { ...ladder } : { ...PACK_LADDER_RUPEES };
+}
+
+/**
+ * The pack price for this many courses: the admin's price for that size, but always clearly the
+ * better deal: under 85% of the courses one by one, and each course in it under 95% of the
+ * cheapest course bought alone. When the ladder price would break that (two cheap courses, say),
+ * the pack drops to 15% off, at most 90% of the cheapest each, ending in 9.
+ */
 export function packPricePaise(
   count: number,
   listPaise: number,
   cheapestPaise = listPaise / Math.max(1, count),
+  ladder: PackLadder = PACK_LADDER_RUPEES,
 ): number {
-  const top = Math.max(...Object.keys(PACK_LADDER_RUPEES).map(Number));
-  const ladder =
-    count < 2 ? 0 : (PACK_LADDER_RUPEES[Math.min(count, top)] ?? 0) + Math.max(0, count - top) * 50;
-  const rupees = ladder * 100;
-  // The pack has to be the better deal twice over: clearly under the courses one by one, and each
-  // course in it cheaper than the cheapest course bought on its own.
-  if (rupees > 0 && rupees <= listPaise * 0.85 && rupees / count <= cheapestPaise * 0.95) return rupees;
-  // Odd course prices (two ₹79 courses, say): 15% off, and at most 90% of the cheapest each.
-  return charmDownPaise(Math.min(listPaise * 0.85, cheapestPaise * 0.9 * count));
+  return packPrice(count, listPaise, cheapestPaise, ladder).pricePaise;
+}
+
+function packPrice(count: number, listPaise: number, cheapestPaise: number, ladder: PackLadder) {
+  const rupees = ladderRupees(ladder, count) * 100;
+  if (rupees > 0 && rupees <= listPaise * 0.85 && rupees / count <= cheapestPaise * 0.95)
+    return { pricePaise: rupees, lowered: false, ladderPaise: rupees };
+  return {
+    pricePaise: charmDownPaise(Math.min(listPaise * 0.85, cheapestPaise * 0.9 * count)),
+    lowered: rupees > 0,
+    ladderPaise: rupees,
+  };
 }
 
 const fullPrice = (c: CourseCardDto) => c.offer?.fullPricePaise ?? c.pricePaise;
@@ -58,7 +81,8 @@ export class PackService {
   ) {}
 
   async savedSettings(): Promise<PackSettings> {
-    return { ...DEFAULTS, ...(await this.settings.get<Partial<PackSettings>>(SETTINGS_KEY, {})) };
+    const saved = await this.settings.get<Partial<PackSettings>>(SETTINGS_KEY, {});
+    return { ...DEFAULTS, ...saved, ladder: usableLadder(saved.ladder) };
   }
 
   /** What the builder would do with the saved settings (nothing is changed). */
@@ -77,13 +101,22 @@ export class PackService {
   }
 
   async run(input: PackRunBody, remember = true): Promise<PackRunDto> {
+    if (input.ladder) {
+      const problems = ladderProblems(input.ladder);
+      if (problems.length)
+        throw fail.badRequest(
+          `Pack prices: ${problems.map((p) => `${p.size} courses: ${p.message}`).join(' ')}`,
+        );
+    }
     const settings: PackSettings = {
       status: input.status,
       titlePrefix: input.titlePrefix.trim(),
       keepInSync: input.keepInSync,
+      ladder: input.ladder ? { ...input.ladder } : (await this.savedSettings()).ladder,
     };
-    // Read the drawers fresh, not from the 20-second cache.
-    this.catalogue.forget();
+    // A real build reads the drawers fresh; a preview may use the 20-second copy, so previewing
+    // (even on every price change) never slows the public catalogue down.
+    if (!input.dryRun) this.catalogue.forget();
     const [index, all] = await Promise.all([this.catalogue.index(), this.bundles.listAll()]);
     const drawers = await this.catalogue.allDrawers(
       index.batches.map((b) => b.year),
@@ -154,11 +187,17 @@ export class PackService {
             });
           continue;
         }
-        const pricePaise = packPricePaise(
+        const priced = packPrice(
           cards.length,
           listPaise,
           Math.min(...cards.map((c) => fullPrice(c))),
+          settings.ladder,
         );
+        const pricePaise = priced.pricePaise;
+        // Told plainly when the pack can't take its ladder price (it would not be a deal).
+        const lowered = priced.lowered
+          ? `Lowered from ₹${priced.ladderPaise / 100} so it stays cheaper than the courses one by one`
+          : undefined;
         if (pricePaise >= listPaise) {
           plans.push({
             ...base,
@@ -192,25 +231,36 @@ export class PackService {
             pricePaise,
             savePercent,
             action: 'create',
+            ...(lowered ? { note: lowered } : {}),
             slug,
             save: { ...next, slug, courseIds: [...courseIds], offeredTo: [...next.offeredTo] },
           });
           continue;
         }
-        const same =
-          existing.title === next.title &&
-          existing.pricePaise === next.pricePaise &&
-          existing.status === next.status &&
-          existing.description === next.description &&
+        const sameCourses =
           existing.courseIds.length === courseIds.length &&
-          existing.courseIds.every((id, i) => id === courseIds[i]) &&
-          existing.offeredTo?.length === 1;
+          existing.courseIds.every((id, i) => id === courseIds[i]);
+        // What would change, in words, so "22 to update" is never a mystery.
+        const changes = [
+          existing.pricePaise !== next.pricePaise
+            ? `price ₹${existing.pricePaise / 100} → ₹${next.pricePaise / 100}`
+            : '',
+          sameCourses ? '' : 'courses changed',
+          existing.title !== next.title ? `renamed from "${existing.title.split(' · ')[0]}"` : '',
+          existing.status !== next.status ? `${existing.status} → ${next.status}` : '',
+          existing.description !== next.description && sameCourses ? 'description' : '',
+          existing.offeredTo?.length === 1 ? '' : 'drawer fixed',
+        ].filter(Boolean);
+        const same = changes.length === 0;
         plans.push({
           ...base,
           ...summary,
           pricePaise,
           savePercent,
           action: same ? 'same' : 'update',
+          ...(lowered || !same
+            ? { note: [lowered, same ? '' : `Will change: ${changes.join(', ')}`].filter(Boolean).join('. ') }
+            : {}),
           bundleId: existing.id,
           slug: existing.slug,
           ...(same
@@ -260,6 +310,15 @@ export class PackService {
       this.catalogue.forget();
     }
 
+    // The real one-by-one prices of every live course, for the price list's own explanation.
+    const prices = [...new Map([...drawers.values()].flat().map((c) => [c.id, fullPrice(c)])).values()];
+    const coursePrices = prices.length
+      ? {
+          minPaise: Math.min(...prices),
+          maxPaise: Math.max(...prices),
+          averagePaise: Math.round(prices.reduce((s, p) => s + p, 0) / prices.length),
+        }
+      : null;
     const totals = { create: 0, update: 0, same: 0, retire: 0, skip: 0 };
     for (const p of plans) totals[p.action]++;
     return {
@@ -268,6 +327,7 @@ export class PackService {
         .map(({ save: _save, ...p }) => p)
         .sort((a, b) => b.batchYear - a.batchYear || a.branchCode.localeCompare(b.branchCode)),
       totals,
+      coursePrices,
       applied: !input.dryRun,
     };
   }

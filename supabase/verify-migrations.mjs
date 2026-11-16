@@ -871,6 +871,29 @@ check(
   'a course announcement goes only to students who have the course',
   aud.some((r) => r.id === newUid) && aud.every((r) => r.id === newUid || r.id === uid),
 );
+{
+  // Offer invitations: only students of the offer's batches, and only those with emails on.
+  const forBatch = async (years) =>
+    (
+      await all('select id from public.announcement_audience($1)', [
+        (
+          await one(
+            `insert into public.announcements (subject, heading, body, batch_years) values ('Diwali offer', 'Hi', 'Body', $1) returning id`,
+            [years],
+          )
+        ).id,
+      ])
+    ).map((r) => r.id);
+  const y2024 = await forBatch([2024]);
+  const y2023 = await forBatch([2023]);
+  await db.query('update public.profiles set email_opt_in = false where id = $1', [newUid]);
+  const optedOut = await forBatch([2024]);
+  await db.query('update public.profiles set email_opt_in = true where id = $1', [newUid]);
+  check(
+    'an offer email for some batches reaches only those batches, and only students with emails on',
+    y2024.includes(newUid) && !y2024.includes(uid) && !y2023.includes(newUid) && !optedOut.includes(newUid),
+  );
+}
 const batches = await all('select * from public.announcement_batches($1)', [courseAnn.id]);
 check(
   'announcement counts are split by batch year',

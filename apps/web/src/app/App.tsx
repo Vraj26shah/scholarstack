@@ -14,7 +14,7 @@ import { SignInPage } from '../features/auth/sign-in-page';
 import { HomePage } from '../features/catalogue/home-page';
 import { CoursePage } from '../features/course/course-page';
 import { ShelfPage } from '../features/shelf/shelf-page';
-import { track, trackPageView } from '../lib/analytics';
+import { setMonitoringUser, track, trackPageView } from '../lib/analytics';
 import { ApiError } from '../lib/api';
 import { authGateway } from '../lib/auth';
 import { STUDENT_HOME, decidesLanding, isPhone, jumpTo, landing } from '../lib/landing';
@@ -307,6 +307,16 @@ function RootAuthCodeHandler() {
   );
 }
 
+/** Tells Sentry which student is using the site (or that nobody is signed in). */
+function MonitoringIdentity() {
+  const { status, me } = useSession();
+  useEffect(() => {
+    if (status === 'ready' && me) setMonitoringUser({ id: me.id, email: me.email, isAdmin: me.isAdmin });
+    else if (status === 'signed-out') setMonitoringUser(null);
+  }, [status, me]);
+  return null;
+}
+
 /** One page_view per route change; the Google tag does not see SPA navigations by itself. */
 function PageViews() {
   const { pathname, search } = useLocation();
@@ -368,6 +378,7 @@ function Shell() {
       </a>
       <OfflineBanner />
       <PageViews />
+      <MonitoringIdentity />
       <ScrollManager />
       <LandingManager />
       <RootAuthCodeHandler />

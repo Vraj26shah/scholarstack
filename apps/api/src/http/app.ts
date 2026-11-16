@@ -12,6 +12,7 @@ import { checkoutRoutes } from './routes/checkout';
 import { contributionRoutes } from './routes/contributions';
 import { demoRoutes } from './routes/demo';
 import { meRoutes } from './routes/me';
+import { monitoringRoutes } from './routes/monitoring';
 import { readerRoutes } from './routes/reader';
 import { supportRoutes } from './routes/support';
 
@@ -52,7 +53,7 @@ export function createApp(factory: ContainerFactory) {
     await next();
     // An admin change (anything but a read) shows on the public pages straight away.
     const path = new URL(c.req.url).pathname;
-    if (c.req.method !== 'GET' && c.res.status < 400 && path.startsWith('/api/admin')) {
+    if (c.req.method !== 'GET' && c.res.status < 400 && path.startsWith('/api/admin') && !c.get('readOnly')) {
       c.get('container').catalogue.forget();
       c.get('container').storageIndex?.forget();
     }
@@ -138,6 +139,7 @@ export function createApp(factory: ContainerFactory) {
   app.route('/', catalogueRoutes);
   app.route('/', meRoutes);
   app.route('/', checkoutRoutes);
+  app.route('/', monitoringRoutes);
   app.route('/', contributionRoutes);
   app.route('/', supportRoutes);
   app.route('/', authRoutes);

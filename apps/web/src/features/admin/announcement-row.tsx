@@ -152,7 +152,12 @@ export function AnnouncementRow({
         <span className="flex-[1_1_240px] min-w-0">
           <span className="block font-semibold truncate">{a.subject}</span>
           <span className="block text-[12px] text-ink2">
-            {a.course ? `To students who have ${a.course.title}` : 'To everyone who opted in'}
+            {a.course
+              ? `To students who have ${a.course.title}`
+              : a.batchYears?.length
+                ? `To the ${a.batchYears.join(', ')} ${a.batchYears.length === 1 ? 'batch' : 'batches'}, students who opted in`
+                : 'To everyone who opted in'}
+            {a.offerId ? ' · about an offer' : ''}
           </span>
           <span className="block text-[13px] text-ink2">
             {a.status === 'draft' ? (

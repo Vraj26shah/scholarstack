@@ -132,6 +132,19 @@ export function buildServices(p: Ports, config: AppConfig) {
   const publicBundles = cachedBundles(p.bundles);
   const prices = new PriceBook(p.offers, publicReader, config, () => p.clock.now());
   const promoCodes = new PromoCodeService(p.promoCodes, () => p.clock.now());
+  const announcements = new AnnouncementService(
+    p.announcements,
+    p.features,
+    p.recipients,
+    p.profiles,
+    p.mailer,
+    p.emailQuota,
+    p.unsubscribeSigner,
+    p.clock,
+    config,
+    p.deliveries,
+    p.catalogueReader,
+  );
   const discounts = new DiscountReportService(p.discounts, p.promoCodes, p.catalogueReader, p.bundles, () =>
     p.clock.now(),
   );
@@ -166,6 +179,7 @@ export function buildServices(p: Ports, config: AppConfig) {
     p.entitlements,
     p.profiles,
     accessMail,
+    prices,
   );
   const admins = new AdminAccess(p.admins, config.adminEmails);
   const studentMail = new StudentMailer(p.mailer, p.emailQuota, p.unsubscribeSigner, p.clock, config);
@@ -226,7 +240,15 @@ export function buildServices(p: Ports, config: AppConfig) {
     catalogue,
     packs: new PackService(catalogue, p.bundles, p.settings),
     prices,
-    offers: new OfferService(p.offers, p.bundles, p.catalogueReader, prices, discounts, () => p.clock.now()),
+    offers: new OfferService(
+      p.offers,
+      p.bundles,
+      p.catalogueReader,
+      prices,
+      discounts,
+      () => p.clock.now(),
+      announcements,
+    ),
     promoCodes,
     discounts,
     books: new BookService(p.catalogueReader, p.books),
@@ -291,19 +313,7 @@ export function buildServices(p: Ports, config: AppConfig) {
       },
       storageIndex,
     ),
-    announcements: new AnnouncementService(
-      p.announcements,
-      p.features,
-      p.recipients,
-      p.profiles,
-      p.mailer,
-      p.emailQuota,
-      p.unsubscribeSigner,
-      p.clock,
-      config,
-      p.deliveries,
-      p.catalogueReader,
-    ),
+    announcements,
     courseUpdates: p.courseUpdates,
     signInGuard: new SignInGuard(p.signInStrikes, admins, config),
     signInStrikes: p.signInStrikes,

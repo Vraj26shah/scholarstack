@@ -1,3 +1,4 @@
+import type { RunningOfferDto } from '@ss/contracts';
 import type { Branch, Bundle, Course, DrawerRef, Offer } from '../domain/entities';
 import type { CatalogueReader, OfferRepository } from '../domain/ports';
 import type { AppConfig } from './config';
@@ -75,6 +76,21 @@ export class PriceBook {
   async running(): Promise<Offer[]> {
     const now = this.now();
     return (await this.offerMemo.get()).filter((o) => isRunning(o, now));
+  }
+
+  /** Running offers for the public banner, biggest first; covering more wins a tie. */
+  async runningForBanner(): Promise<RunningOfferDto[]> {
+    const scopeOf = (o: Offer): RunningOfferDto['scope'] =>
+      o.everything ? 'everything' : o.allCourses ? 'courses' : o.allBundles ? 'bundles' : 'some';
+    const rank = { everything: 0, courses: 1, bundles: 2, some: 3 } as const;
+    return (await this.running())
+      .map((o) => ({
+        title: o.title,
+        percentOff: o.percentOff,
+        endsAt: o.endsAt.toISOString(),
+        scope: scopeOf(o),
+      }))
+      .sort((a, b) => rank[a.scope] - rank[b.scope] || b.percentOff - a.percentOff);
   }
 
   /** Every live course's drawers, and which programmes are shared or real. */

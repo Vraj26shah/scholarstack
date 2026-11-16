@@ -17,6 +17,7 @@ import type { EarningsService } from '../application/earnings/earnings-service';
 import type { OfferService } from '../application/offer-service';
 import type { PackService } from '../application/packs';
 import type { PreviewService } from '../application/preview-service';
+import type { PriceBook } from '../application/price-book';
 import type { ProblemService } from '../application/problems';
 import type { PromoCodeService } from '../application/promo-service';
 import type { ReaderService } from '../application/reader-service';
@@ -52,6 +53,8 @@ export interface Container {
   promoCodes: PromoCodeService;
   /** Who used which offer or code, and what promo creators are owed. */
   discounts: DiscountReportService;
+  /** Today's prices: running offers applied to courses and bundles. */
+  prices: PriceBook;
   /** One bundle per drawer, kept in step with it. */
   packs: PackService;
   books: BookService;

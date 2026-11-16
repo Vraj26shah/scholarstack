@@ -4,6 +4,19 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Monitoring (Sentry)
+- **Real-user monitoring now works.** Before, the CDN bundle never had tracing turned on, so Sentry recorded no page loads or Web Vitals at all. Sentry now records every page load and route change, grouped by route ("/c/:slug"), with LCP, INP, CLS, TTFB and FCP, the API calls under them, and "main thread blocked" warnings.
+- **Session Replay:** 10% of visits, and every visit that hits an error. All text and inputs are masked and media (notes pages) blocked.
+- **Each event names the student** (account ID and email, plus a role tag of student, admin or visitor), cleared on sign-out. Events carry the deployed commit as the release and the environment.
+- **Ad blockers no longer hide Sentry.** The SDK is bundled with the site (loaded after start as its own chunk, never on the first page) and reports through `/api/monitoring`, a tunnel on our own API. The tunnel forwards only to our Sentry project, keeps replay bytes intact, caps size and rate-limits each network.
+- The security headers drop Sentry's CDN and ingest hosts, and allow `worker-src blob:` for replay compression.
+
+### Offers and Diwali
+- **A sale banner above the catalogue** while an offer runs ("Diwali offer · 20% off on every course and bundle · 5 days left · ends 22 Nov, 11:59 pm"). It appears and disappears with the offer.
+- **Admin › Today has a Sales block:** what's running, when it ends (highlighted on its last day, with "Extend or end"), how many students bought, and offers starting within a week.
+- **Admin › Bundles shows what students pay now** during an offer, and the name they see.
+- **Email students about an offer:** each live offer has "Email students" (and, in its last two days, "Last-day reminder"). It drafts an invitation written from the offer (name, percentage, what it covers, end time in IST, link to the catalogue) for review, test and sending in Emails, with the usual daily limit, delivery tracking and unsubscribe. An offer on everything, all courses or all bundles goes to every student with emails on. An offer on chosen drawers, courses or bundles goes only to the batches it reaches. Students who turned emails off never get offer emails.
+
 ### Added
 - **Promo codes** (Admin → Courses → Promo codes): codes like `DIWALI20` for a percentage or a flat amount off, on everything, all courses, all bundles, or chosen courses and bundles. Each code has optional dates, an optional total limit, and can be once per student. Only paid orders count as a use, and the admin sees how many uses and how much was taken off.
 - Students see a small "Have a promo code?" link under the buy button, **only while a code is switched on**; otherwise the course and bundle pages are unchanged. The code comes off the price they would pay right then (offers included), never below ₹1, and checkout charges exactly the price shown.
@@ -14,7 +27,15 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 - Each offer and each promo code shows how many students bought with it, and the list of them.
 - **Admins can use up to 10 devices**, and signing one out from Account is instant (no three-day wait). Students keep two devices and the three-day removal.
 
+### Changed
+- **Pack prices are editable** (Courses › Bundles › Drawer packs): one box per pack size from 2 to 10 courses. Each box shows its price per course, a bar showing that price stepping down, and what it saves against the real average course price. You can fill every size at once from a rule ("₹75 a course for 2, ₹2.50 less per size"), undo, or go back to the suggested prices.
+- **Changes preview live:** the card checks every drawer a moment after you stop typing and says "If applied: …". The button reads "Apply to N packs", and the drawer list says why each pack changes (price ₹349 → ₹299, courses changed, renamed, status). One click applies the new prices to every pack, and the hourly sync keeps using them.
+- Previews no longer clear the public catalogue cache, so editing prices never slows the site for students.
+- The pack savings sentence is worked out from the live course prices instead of fixed text.
+
 ### Fixed
+- **Bigger packs are always cheaper per course.** The old prices made 4 and 5 courses (₹69.75, ₹69.80 a course) dearer per course than 3 (₹66.33). The suggested prices are now ₹149, 199, 249, 299, 349, 399, 449, 499 and 549 (₹74.50 down to ₹54.90 a course). The rule (more in total, less per course) is enforced on screen and on the server, including for packs over 10 courses.
+- The pack card no longer shows two warnings and a greyed-out button when packs had a festival name. The name box starts on an all-year name, and only the rename notice shows.
 - **Drawer packs no longer show a festival name with no festival.** Packs used to keep whatever name they were built with ("Diwali pack · 2025 BCE") for good, even with no offer running. Now a pack has an all-year name ("Semester pack · 2025 BCE"). While an offer covers it, students see it under that offer's name ("Diwali offer" → "Diwali pack · 2025 BCE") on cards, the bundle page, search and the payment window, at the offer price. When the offer ends, the name goes back by itself. Hand-named bundles keep their own titles. Admins always see and edit the pack's own name.
 - The pack builder refuses festival names, explaining why, and offers all-year names instead. If packs already carry a festival name, it shows a warning with a one-click "Rename every pack to 'Semester pack'" that changes nothing else.
 - A section of Admin that fails while drawing now shows a "Try again" box in its own place. The tabs and every other section keep working, instead of the whole page turning into an error page.
@@ -22,6 +43,8 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 ### Database
 - New migration `20261116000100_promo_codes_and_offer_scopes` (tables `promo_codes`, `promo_redemptions`; columns `offers.all_courses`, `offers.all_bundles`). Apply it before deploying the API.
 - New migration `20261117000100_discount_tracking_creators_admin_devices` (tables `order_offers`, `promo_payouts`; creator and commission columns on `promo_codes` and `promo_redemptions`; the device-limit trigger allows admins 10). Apply it before deploying the API.
+- New migration `20261117000200_offer_invitations` (`announcements.offer_id`, `announcements.batch_years`; `announcement_audience` respects the batch list). Apply it before deploying the API.
+- New Worker setting `SENTRY_DSN` (copied from `VITE_SENTRY_DSN` on every deploy) so the monitoring tunnel only forwards to our project.
 
 ## [0.36.0] — 2026-11-10
 
