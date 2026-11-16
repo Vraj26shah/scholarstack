@@ -407,7 +407,11 @@ function BundleRow({ b, onEdit }: { b: AdminBundleDto; onEdit: () => void }) {
           </Link>
           <div className="font-mono text-xs text-ink2">
             {plural(b.courseCount, 'live course')} of {b.courseIds.length} ·{' '}
-            {b.autoDrawer ? 'drawer pack' : b.offeredTo ? 'chosen' : 'automatic'}
+            {b.autoDrawer
+              ? "drawer pack · shown under a running offer's name"
+              : b.offeredTo
+                ? 'chosen'
+                : 'automatic'}
           </div>
           <div className="text-[13px] text-ink2">
             Shows in <DrawerSummary drawers={b.audience} empty="no drawer yet" />

@@ -2513,6 +2513,7 @@ export class AdminService {
     reach: ReturnType<typeof reachOf>,
   ): AdminBundleDto {
     return {
+      // No offer passed: the admin sees and edits the pack's own name, never the offer's.
       ...toBundleCard(b, courses, files, true),
       status: b.status,
       courseIds: b.courseIds,

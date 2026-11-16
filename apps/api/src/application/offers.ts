@@ -1,4 +1,4 @@
-import type { PriceOfferDto } from '@ss/contracts';
+import { type PriceOfferDto, offerPackName } from '@ss/contracts';
 import type { Bundle, DrawerRef, Offer } from '../domain/entities';
 
 /**
@@ -80,6 +80,22 @@ export function bestPrice(running: Offer[], covers: (offer: Offer) => boolean, f
       };
   }
   return best;
+}
+
+/**
+ * The title students see. A drawer pack ("Semester pack · 2025 BCE") takes the running offer's
+ * name while an offer covers it ("Diwali pack · 2025 BCE") and goes back to its own name when the
+ * offer ends, so a festival name never outlives its festival. Bundles the admin named by hand keep
+ * their own title (the offer still shows as a ribbon beside it).
+ */
+export function shownBundleTitle(
+  bundle: { title: string; autoDrawer?: string | null },
+  offer?: { title: string } | null,
+): string {
+  if (!bundle.autoDrawer || !offer) return bundle.title;
+  const at = bundle.title.lastIndexOf(' · ');
+  const drawer = at >= 0 ? bundle.title.slice(at) : '';
+  return `${offerPackName(offer.title)}${drawer}`;
 }
 
 export const coversCourse =

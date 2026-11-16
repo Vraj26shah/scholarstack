@@ -1,4 +1,10 @@
-import { PACK_LADDER_RUPEES, type PackPlanDto, type PackRunDto } from '@ss/contracts';
+import {
+  PACK_LADDER_RUPEES,
+  type PackPlanDto,
+  type PackRunDto,
+  isFestivePackName,
+  offerPackName,
+} from '@ss/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api, friendly } from '../../lib/api';
@@ -15,14 +21,20 @@ const ACTION: Record<PackPlanDto['action'], { label: string; style: string }> = 
   skip: { label: 'No pack', style: 'bg-sunk text-ink2' },
 };
 
+const ALL_YEAR = 'Semester pack';
+const NAMES = [ALL_YEAR, 'Drawer pack', 'Exam pack'];
+
 /**
  * Drawer packs: one bundle per drawer with every live course in it, priced on the ladder. Build
- * them all at once (a Diwali pack for every branch), preview first, and let them follow the
- * drawers every hour as courses go live.
+ * them all at once, preview first, and let them follow the drawers every hour as courses go live.
+ * Their own name fits all year; while an offer runs, students see them under the offer's name
+ * ("Diwali pack · 2025 BCE") and the name goes back when the offer ends.
  */
 export function PacksCard() {
   const qc = useQueryClient();
   const saved = useQuery({ queryKey: ['admin-packs'], queryFn: api.adminPacks });
+  const offers = useQuery({ queryKey: ['admin-offers'], queryFn: api.adminOffers });
+  const runningOffer = offers.data?.find((o) => o.running);
   const [prefix, setPrefix] = useState('');
   const [status, setStatus] = useState<'draft' | 'live'>('live');
   const [sync, setSync] = useState(true);
@@ -37,17 +49,36 @@ export function PacksCard() {
   }, [saved.data, prefix]);
 
   const run = useMutation({
-    mutationFn: (dryRun: boolean) =>
-      api.adminRunPacks({ dryRun, status, titlePrefix: prefix.trim() || 'Semester pack', keepInSync: sync }),
-    onSuccess: (r) => {
+    mutationFn: (args: boolean | { rename: string }) =>
+      typeof args === 'boolean'
+        ? api.adminRunPacks({
+            dryRun: args,
+            status,
+            titlePrefix: prefix.trim() || ALL_YEAR,
+            keepInSync: sync,
+          })
+        : // One click: rename every pack, keeping the saved status and hourly sync.
+          api.adminRunPacks({
+            dryRun: false,
+            status: saved.data?.settings.status ?? status,
+            titlePrefix: args.rename,
+            keepInSync: saved.data?.settings.keepInSync ?? sync,
+          }),
+    onSuccess: (r, args) => {
       setShown(r);
-      setOpen(true);
+      setOpen(typeof args === 'boolean');
+      if (typeof args !== 'boolean') setPrefix(args.rename);
       if (r.applied)
         for (const k of ['admin-bundles', 'admin-packs', 'bundles', 'bundle', 'course', 'admin-offers'])
           void qc.invalidateQueries({ queryKey: [k] });
     },
   });
   const data = shown ?? saved.data;
+  // The name the packs carry now (what students see when no offer runs).
+  const current = data?.settings.titlePrefix ?? '';
+  const builtPacks = data ? data.totals.same + data.totals.update : 0;
+  const festiveNow = builtPacks > 0 && isFestivePackName(current);
+  const festiveTyped = isFestivePackName(prefix);
   const packs = data?.plans.filter((p) => p.action !== 'skip') ?? [];
   const years = [...new Set(packs.map((p) => p.batchYear))];
 
@@ -64,6 +95,33 @@ export function PacksCard() {
           One bundle for every batch and programme: all the live courses in that drawer.
         </span>
       </div>
+      {festiveNow && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-marigold/60 bg-marigold-soft px-4 py-3 flex flex-col gap-2"
+        >
+          <p className="m-0 text-[14px] text-ink">
+            <strong>Your packs are called "{current}"</strong>{' '}
+            {runningOffer
+              ? `and will keep that name after "${runningOffer.title}" ends.`
+              : 'but no offer is running, so students see a festival name with normal prices.'}{' '}
+            Packs now take the running offer's name by themselves, so give them a name that fits all year.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="buy"
+              disabled={run.isPending}
+              onClick={() => run.mutate({ rename: ALL_YEAR })}
+            >
+              {run.isPending && typeof run.variables === 'object'
+                ? 'Renaming…'
+                : `Rename every pack to "${ALL_YEAR}"`}
+            </Button>
+            <span className="text-[13px] text-ink2">Prices, courses and drawers stay as they are.</span>
+          </div>
+        </div>
+      )}
       <div className="flex flex-col gap-2">
         <span className="text-sm font-semibold text-ink2">Pack prices</span>
         <ul
@@ -93,12 +151,12 @@ export function PacksCard() {
             className={input}
             value={prefix}
             maxLength={40}
-            placeholder="Diwali pack"
+            placeholder={ALL_YEAR}
             onChange={(e) => setPrefix(e.target.value)}
           />
         </Field>
         <div className="flex flex-wrap gap-1.5 pb-1">
-          {['Diwali pack', 'Semester pack', 'Exam pack'].map((name) => (
+          {NAMES.map((name) => (
             <button
               key={name}
               type="button"
@@ -131,17 +189,41 @@ export function PacksCard() {
           Keep in step every hour
         </label>
       </div>
-      <p className="m-0 text-[13px] text-ink2">
-        Titles read "{prefix.trim() || 'Semester pack'} · 2025 BCE". Kept in step, a pack takes in a course as
-        soon as it goes live in that drawer and drops one that leaves. Rename them all after Diwali by
-        building again with a new name. A running offer takes its percentage off packs too.
-      </p>
+      {festiveTyped ? (
+        <p className="m-0 text-[13px] text-blush-text">
+          Leave festival names out: while an offer runs, packs are shown under the offer's name by themselves
+          (a "Diwali offer" shows them as "Diwali pack · 2025 BCE"), and they go back to this name when it
+          ends. Pick a name that fits all year, like "{ALL_YEAR}".
+        </p>
+      ) : (
+        <p className="m-0 text-[13px] text-ink2">
+          Titles read "{prefix.trim() || ALL_YEAR} · 2025 BCE".{' '}
+          {runningOffer ? (
+            <>
+              Right now "{runningOffer.title}" is running, so the packs it covers show as{' '}
+              <strong className="text-ink">"{offerPackName(runningOffer.title)} · 2025 BCE"</strong> at the
+              offer price, and go back to this name when it ends.
+            </>
+          ) : (
+            <>
+              While an offer runs, the packs it covers show under its name (a "Diwali offer" makes them
+              "Diwali pack · 2025 BCE") at the offer price, and go back to this name when it ends.
+            </>
+          )}{' '}
+          Kept in step, a pack takes in a course as soon as it goes live in that drawer and drops one that
+          leaves.
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="outline" disabled={run.isPending} onClick={() => run.mutate(true)}>
           {run.isPending && run.variables === true ? 'Checking…' : 'Preview'}
         </Button>
-        <Button variant="buy" disabled={run.isPending || !prefix.trim()} onClick={() => run.mutate(false)}>
+        <Button
+          variant="buy"
+          disabled={run.isPending || !prefix.trim() || festiveTyped}
+          onClick={() => run.mutate(false)}
+        >
           {run.isPending && run.variables === false ? 'Building…' : 'Build packs'}
         </Button>
         {data && (

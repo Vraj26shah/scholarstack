@@ -11,7 +11,7 @@ import type {
   ProfileRepository,
 } from '../domain/ports';
 import { fail } from './errors';
-import type { Priced } from './offers';
+import { type Priced, shownBundleTitle } from './offers';
 import type { PriceBook } from './price-book';
 import { bundlePricing } from './pricing';
 import type { PromoCodeService } from './promo-service';
@@ -195,7 +195,8 @@ export class CheckoutService {
       courses.filter((c) => owned.has(c.id)).map((c) => c.pricePaise),
     );
     return {
-      title: bundle.title,
+      // The payment window names the pack the way the page did ("Diwali pack · …" during the offer).
+      title: shownBundleTitle(bundle, today.offer),
       amountPaise: price.payablePaise,
       courseId: null,
       bundleId: bundle.id,

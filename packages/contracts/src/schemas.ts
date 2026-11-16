@@ -880,7 +880,8 @@ export const PackRunBody = z.object({
   dryRun: z.boolean().default(true),
   /** Packs go live straight away, or wait as drafts. */
   status: z.enum(['draft', 'live']).default('live'),
-  /** "Diwali pack" → "Diwali pack · 2025 BCE". Changing it renames every pack. */
+  /** "Semester pack" → "Semester pack · 2025 BCE". Changing it renames every pack. While an offer
+   *  runs, students see the packs it covers under its name ("Diwali pack · 2025 BCE"). */
   titlePrefix: z.string().trim().min(2).max(40).default('Semester pack'),
   /** Every hour, update packs when courses go live or leave, and add packs for new drawers. */
   keepInSync: z.boolean().default(true),

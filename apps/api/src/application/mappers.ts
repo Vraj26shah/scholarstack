@@ -9,6 +9,7 @@ import type {
 import { courseBlurb } from '@ss/contracts';
 import type { Branch, Bundle, Course, CourseFile } from '../domain/entities';
 import { isReaderReady } from '../domain/entities';
+import { shownBundleTitle } from './offers';
 import { bundlePricing } from './pricing';
 
 /** Shown to students on cards and the shelf: year and branch, never semester. */
@@ -188,7 +189,7 @@ export function toBundleCard(
   return {
     id: bundle.id,
     slug: bundle.slug,
-    title: bundle.title,
+    title: shownBundleTitle(bundle, today?.offer),
     description: bundle.description,
     batchYear: bundle.batchYear,
     courseCount: inBundle.length,

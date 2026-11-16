@@ -227,10 +227,15 @@ test('create a bundle', async () => {
   await expect(row).toHaveCount(0, { timeout: 15_000 });
 });
 
-test('build Diwali drawer packs: preview, then build as drafts', async () => {
+test('build drawer packs: preview, then build as drafts', async () => {
   await tab('Bundles').click();
   const card = page.getByRole('region', { name: 'Drawer packs' });
-  await card.getByRole('button', { name: 'Diwali pack' }).click();
+  // A festival name is refused: packs take the running offer's name by themselves.
+  await card.getByLabel('Pack name').fill('Diwali pack');
+  await expect(card.getByText(/Leave festival names out/)).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Build packs' })).toBeDisabled();
+  await card.getByRole('button', { name: 'Semester pack' }).click();
+  await expect(card.getByRole('button', { name: 'Build packs' })).toBeEnabled();
   await card.getByLabel('On the site').selectOption('draft');
   await card.getByRole('checkbox', { name: 'Keep in step every hour' }).uncheck();
   await card.getByRole('button', { name: 'Preview' }).click();
@@ -243,12 +248,12 @@ test('build Diwali drawer packs: preview, then build as drafts', async () => {
   await card.getByRole('button', { name: 'Preview' }).click();
   await expect(table.getByText('Up to date').first()).toBeVisible({ timeout: 15_000 });
   await expect(table.getByText('New', { exact: true })).toHaveCount(0);
-  // Packs fold away under their own toggle, and show as drafts with the Diwali name.
+  // Packs fold away under their own toggle, and show as drafts with their all-year name.
   await page.getByRole('button', { name: /Show \d+ drawer packs? in the list/ }).click();
   const pack = page
     .locator('#admin-panel')
     .getByRole('listitem')
-    .filter({ hasText: /Diwali pack · 2025/ })
+    .filter({ hasText: /Semester pack · 2025/ })
     .first();
   await expect(pack).toBeVisible();
   await expect(pack.getByText('draft', { exact: true })).toBeVisible();

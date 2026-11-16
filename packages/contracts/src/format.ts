@@ -78,3 +78,26 @@ export function studentFromEmail(
   if (!m) return null;
   return { batchYear: 2000 + Number(m[1]), branchCode: m[2]!.toUpperCase() };
 }
+
+/**
+ * A drawer pack named after the offer it is in: "Diwali offer" → "Diwali pack", "Holi sale" →
+ * "Holi pack", "End of term" → "End of term pack". Words like offer, sale or discount are dropped.
+ */
+export function offerPackName(offerTitle: string): string {
+  const base = offerTitle
+    .trim()
+    .replace(/[\s!.,:;·|\-–—]+$/, '')
+    .replace(/[\s\-–—:·|!]*(mega\s+)?(offers?|sales?|deals?|discounts?|special)\s*$/i, '')
+    .trim();
+  const name = base || offerTitle.trim();
+  return /\bpacks?$/i.test(name) ? name : `${name} pack`;
+}
+
+/**
+ * A pack name that names a festival or a sale ("Diwali pack"). Packs take the running offer's name
+ * by themselves, so their own name should fit all year.
+ */
+export const isFestivePackName = (name: string) =>
+  /\b(diwali|deepavali|holi|navratri|dussehra|dasara|durga|puja|christmas|xmas|new\s*year|eid|pongal|onam|ganesh|independence|republic|festive|festival|sales?|offers?|dhamaka|black\s*friday)\b/i.test(
+    name,
+  );

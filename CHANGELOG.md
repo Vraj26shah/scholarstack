@@ -15,6 +15,8 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 - **Admins can use up to 10 devices**, and signing one out from Account is instant (no three-day wait). Students keep two devices and the three-day removal.
 
 ### Fixed
+- **Drawer packs no longer show a festival name with no festival.** Packs used to keep whatever name they were built with ("Diwali pack · 2025 BCE") for good, even with no offer running. Now a pack has an all-year name ("Semester pack · 2025 BCE"). While an offer covers it, students see it under that offer's name ("Diwali offer" → "Diwali pack · 2025 BCE") on cards, the bundle page, search and the payment window, at the offer price. When the offer ends, the name goes back by itself. Hand-named bundles keep their own titles. Admins always see and edit the pack's own name.
+- The pack builder refuses festival names, explaining why, and offers all-year names instead. If packs already carry a festival name, it shows a warning with a one-click "Rename every pack to 'Semester pack'" that changes nothing else.
 - A section of Admin that fails while drawing now shows a "Try again" box in its own place. The tabs and every other section keep working, instead of the whole page turning into an error page.
 
 ### Database
