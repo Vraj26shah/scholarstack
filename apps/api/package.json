@@ -16,6 +16,7 @@
     "ops": "tsx src/node/ops.ts"
   },
   "dependencies": {
+    "@sentry/cloudflare": "11.13.0",
     "@ss/contracts": "workspace:*",
     "@supabase/supabase-js": "^2.49.0",
     "hono": "^4.7.0",

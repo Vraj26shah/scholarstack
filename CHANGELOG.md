@@ -10,6 +10,9 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 - **Each event names the student** (account ID and email, plus a role tag of student, admin or visitor), cleared on sign-out. Events carry the deployed commit as the release and the environment.
 - **Ad blockers no longer hide Sentry.** The SDK is bundled with the site (loaded after start as its own chunk, never on the first page) and reports through `/api/monitoring`, a tunnel on our own API. The tunnel forwards only to our Sentry project, keeps replay bytes intact, caps size and rate-limits each network.
 - The security headers drop Sentry's CDN and ingest hosts, and allow `worker-src blob:` for replay compression.
+- **Server errors reach Sentry too.** The Worker runs `@sentry/cloudflare` (same project, tag `runtime:worker`, release = the deployed commit). Unexpected 500s (with the route and request id), Razorpay refusing to create an order, and failed hourly jobs are reported; expected answers (signed out, not found, bad input) are not. Request headers, cookies and bodies are stripped before sending.
+- **Readable stack traces.** With the `SENTRY_AUTH_TOKEN` GitHub secret set, the deploy builds hidden source maps, uploads them to Sentry for the release, and deletes them before publishing (they are never served). Without the secret the build is unchanged.
+- **Ad blockers can't block the SDK by name.** No published file has "sentry" in its name any more (`vendor-monitor-*.js`, `mon-*.js`).
 
 ### Offers and Diwali
 - **A sale banner above the catalogue** while an offer runs ("Diwali offer · 20% off on every course and bundle · 5 days left · ends 22 Nov, 11:59 pm"). It appears and disappears with the offer.
@@ -34,6 +37,9 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 - The pack savings sentence is worked out from the live course prices instead of fixed text.
 
 ### Fixed
+- **Promo codes show up for students within seconds.** "Have a promo code?" could stay hidden for up to about 10 minutes after a code was switched on: each Cloudflare instance kept its own 5-minute copy of the codes (an admin's save cleared only one), and the browser kept its answer another 5 minutes. Now every instance re-reads within 10 seconds and the browser asks again every 15 seconds and on returning to the tab. A failed database read is no longer remembered as "no codes".
+- **A code that stops working after it was applied no longer blocks buying.** If it ends, runs out or was already used before the student taps Buy, the code is removed, the button goes back to the normal price and the student is told why; the next tap buys.
+- Apply and Buy answer faster: the price, ownership, files and profile reads run side by side instead of one after another.
 - **Bigger packs are always cheaper per course.** The old prices made 4 and 5 courses (₹69.75, ₹69.80 a course) dearer per course than 3 (₹66.33). The suggested prices are now ₹149, 199, 249, 299, 349, 399, 449, 499 and 549 (₹74.50 down to ₹54.90 a course). The rule (more in total, less per course) is enforced on screen and on the server, including for packs over 10 courses.
 - The pack card no longer shows two warnings and a greyed-out button when packs had a festival name. The name box starts on an all-year name, and only the rename notice shows.
 - **Drawer packs no longer show a festival name with no festival.** Packs used to keep whatever name they were built with ("Diwali pack · 2025 BCE") for good, even with no offer running. Now a pack has an all-year name ("Semester pack · 2025 BCE"). While an offer covers it, students see it under that offer's name ("Diwali offer" → "Diwali pack · 2025 BCE") on cards, the bundle page, search and the payment window, at the offer price. When the offer ends, the name goes back by itself. Hand-named bundles keep their own titles. Admins always see and edit the pack's own name.

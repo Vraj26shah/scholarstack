@@ -1,3 +1,4 @@
+import { sentryVitePlugin } from '@sentry/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import type { Plugin } from 'vite';
@@ -13,8 +14,33 @@ const versionFile = (): Plugin => ({
   },
 });
 
+/**
+ * Readable stack traces in Sentry. Only when SENTRY_AUTH_TOKEN is set (the production deploy):
+ * the build writes source maps, uploads them to Sentry tagged with this release, then deletes
+ * them, so they are never published with the site. Local and demo builds have no maps at all.
+ */
+const uploadSourceMaps = !!process.env.SENTRY_AUTH_TOKEN;
+const sourceMaps = (): Plugin[] =>
+  uploadSourceMaps
+    ? sentryVitePlugin({
+        org: process.env.SENTRY_ORG ?? 'scholars-stack',
+        project: process.env.SENTRY_PROJECT ?? 'scholarstack-web',
+        authToken: process.env.SENTRY_AUTH_TOKEN,
+        // The same release the site tags its events with (analytics.ts).
+        release: { name: process.env.VITE_APP_RELEASE },
+        sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
+        telemetry: false,
+      })
+    : [];
+
+/**
+ * File names without "sentry" in them: common ad-blocker lists block any script whose name
+ * mentions it, and then the site can report nothing at all for that visitor.
+ */
+const neutral = (name: string) => name.replace(/sentry/gi, 'mon');
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), versionFile()],
+  plugins: [react(), tailwindcss(), versionFile(), ...sourceMaps()],
   define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
   // Read VITE_* from the repo root .env (written by `pnpm env:sync`) as well as this folder.
   envDir: '.',
@@ -23,17 +49,19 @@ export default defineConfig({
     proxy: { '/api': 'http://localhost:8787' },
   },
   build: {
-    sourcemap: false,
+    // "hidden": maps are written for the upload but no file points at them.
+    sourcemap: uploadSourceMaps ? 'hidden' : false,
     target: 'es2022',
     rollupOptions: {
       output: {
+        chunkFileNames: (chunk) => `assets/${neutral(chunk.name)}-[hash].js`,
         // Libraries change rarely: keep them in their own long-cached files, so a site update
         // only re-downloads the app code.
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
           // Only the lazily loaded monitoring code imports Sentry, so this chunk is never part of
           // the first page load (the catch-all "vendor" chunk is preloaded on every page).
-          if (id.includes('@sentry') || id.includes('@sentry-internal')) return 'vendor-sentry';
+          if (id.includes('@sentry') || id.includes('@sentry-internal')) return 'vendor-monitor';
           if (id.includes('@supabase')) return 'vendor-auth';
           if (
             id.includes('react-router') ||

@@ -1,3 +1,5 @@
+import * as Sentry from '@sentry/cloudflare';
+import { reportServerError, setErrorReporter } from './application/error-reporter';
 import type { WorkerEnv } from './composition/config';
 import { workerContainer } from './composition/worker';
 import { createApp } from './http/app';
@@ -6,7 +8,17 @@ import { SECURITY_HEADERS } from './http/security-headers';
 
 const app = createApp((env) => workerContainer(env as WorkerEnv));
 
-export default {
+// Unexpected server errors (a 500, Razorpay refusing an order, a failed hourly job) go to Sentry
+// with where they happened. Expected answers (signed out, not found, bad input) are not errors.
+setErrorReporter((error, { where, requestId }) => {
+  Sentry.withScope((scope) => {
+    scope.setTag('where', where);
+    if (requestId) scope.setTag('request_id', requestId);
+    Sentry.captureException(error);
+  });
+});
+
+const handler = {
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/'))
@@ -28,6 +40,7 @@ export default {
       ctx.waitUntil(
         run().catch((error: Error) => {
           console.error(JSON.stringify({ level: 'error', event: `cron.${name}`, message: error.message }));
+          reportServerError(error, { where: `cron ${name}` });
           return container.problems.fromServer(error, 'CRON', `/${name}`).catch(() => {});
         }),
       );
@@ -74,3 +87,25 @@ export default {
       );
   },
 } satisfies ExportedHandler<WorkerEnv>;
+
+/**
+ * Sentry for the Worker, in the same project as the site (tag `runtime:worker`). Off when
+ * SENTRY_DSN isn't set. Errors only (no tracing, so the span quota stays with the site's RUM).
+ * The release is SENTRY_RELEASE, which the deploy sets to the commit.
+ */
+export default Sentry.withSentry(
+  (env: WorkerEnv) => ({
+    dsn: env.SENTRY_DSN?.trim() || undefined,
+    environment: env.APP_ENV ?? 'production',
+    initialScope: { tags: { runtime: 'worker' } },
+    // Request headers can hold sign-in tokens and cookies; the URL and method are enough.
+    beforeSend(event) {
+      if (event.request) {
+        const { headers: _h, cookies: _c, data: _d, ...safe } = event.request;
+        event.request = safe;
+      }
+      return event;
+    },
+  }),
+  handler,
+);

@@ -2,6 +2,7 @@ import { type ApiErrorBody, ErrorCode } from '@ss/contracts';
 import { Hono } from 'hono';
 import { bodyLimit as honoBodyLimit } from 'hono/body-limit';
 import { ZodError } from 'zod';
+import { reportServerError } from '../application/error-reporter';
 import { AppError } from '../application/errors';
 import type { Container } from './container';
 import type { AppEnv } from './helpers';
@@ -106,6 +107,7 @@ export function createApp(factory: ContainerFactory) {
       body = { error: { code: ErrorCode.BadRequest, message: 'That request was not valid.', requestId } };
     } else {
       console.error(JSON.stringify({ level: 'error', requestId, message: err.message, stack: err.stack }));
+      reportServerError(err, { where: `${c.req.method} ${new URL(c.req.url).pathname}`, requestId });
       // Unexpected server errors go to the admin's Problems log too (never to the student).
       try {
         void c

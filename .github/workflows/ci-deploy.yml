@@ -139,6 +139,9 @@ jobs:
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN || secrets.VITE_SENTRY_DSN }}
           # Tags every Sentry event with the commit, so errors line up with deploys.
           VITE_APP_RELEASE: ${{ github.sha }}
+          # Optional: with it, the build uploads source maps to Sentry (readable stack traces) and
+          # deletes them before the site is published. Without it, the build is exactly as before.
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
       # GitHub is the one place the Worker's secrets are kept. Every deploy copies each one that is
       # set (secret or variable) to Cloudflare in a single call, so the two never drift apart.
@@ -196,7 +199,8 @@ jobs:
           rm -f worker-secrets.json
 
       - name: Deploy the Worker and site
-        run: pnpm --filter @ss/api exec wrangler deploy --env production
+        # SENTRY_RELEASE: the Worker's errors carry the same release (commit) as the site's.
+        run: pnpm --filter @ss/api exec wrangler deploy --env production --var "SENTRY_RELEASE:${{ github.sha }}"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
