@@ -13,6 +13,7 @@ export function ScrambledPage({
   stamp = 'PREVIEW',
   className = '',
   label,
+  fit = 'width',
 }: {
   fileId: string;
   page: number;
@@ -21,9 +22,16 @@ export function ScrambledPage({
   stamp?: string;
   className?: string;
   label?: string;
+  /**
+   * `width`: the page at full width (its natural height). `auto`: inside a fixed frame, a portrait
+   * page fills it from the top and a landscape slide is shown whole and centred. `contain`: the
+   * whole page at its real shape inside the frame (the large viewer).
+   */
+  fit?: 'width' | 'auto' | 'contain';
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [landscape, setLandscape] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,6 +64,7 @@ export function ScrambledPage({
           ctx.fillText(stamp, 0, 0);
           ctx.restore();
         }
+        setLandscape(bitmap.width > bitmap.height);
         bitmap.close();
         setState('ready');
       } catch {
@@ -68,7 +77,9 @@ export function ScrambledPage({
   }, [fileId, page, admin, stamp]);
 
   return (
-    <div className={`relative overflow-hidden bg-white ${className}`}>
+    <div
+      className={`relative overflow-hidden ${(fit === 'auto' && landscape) || fit === 'contain' ? '' : 'bg-white'} ${className}`}
+    >
       {state === 'loading' && <div className="skeleton absolute inset-0 rounded-none" aria-hidden="true" />}
       {state === 'failed' && (
         <div className="absolute inset-0 grid place-items-center p-3 text-center text-xs text-ink2 bg-sunk">
@@ -80,7 +91,13 @@ export function ScrambledPage({
         role="img"
         aria-label={label ?? `Page ${page}`}
         onContextMenu={(e) => e.preventDefault()}
-        className={`block w-full h-auto no-select ${state === 'ready' ? '' : 'invisible'}`}
+        className={`block no-select ${
+          fit === 'width'
+            ? 'w-full h-auto'
+            : fit === 'contain' || landscape
+              ? 'w-full h-full object-contain'
+              : 'w-full h-full object-cover object-top'
+        } ${state === 'ready' ? '' : 'invisible'}`}
       />
     </div>
   );

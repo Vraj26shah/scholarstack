@@ -35,32 +35,21 @@ export function peeksOf(units: CourseUnitDto[]): Peek[] {
   });
 }
 
-/** A4 portrait for pages, 16:9 for slides, square for photos. */
-const THUMB_FRAME: Record<FormatKind, string> = {
-  pdf: 'aspect-[1/1.414]',
-  docx: 'aspect-[1/1.414]',
-  txt: 'aspect-[1/1.414]',
-  image: 'aspect-square',
-  pptx: 'aspect-video',
-};
-const FULL_FRAME: Record<FormatKind, string> = {
-  pdf: 'h-full max-h-full aspect-[1/1.414] max-w-full',
-  docx: 'h-full max-h-full aspect-[1/1.414] max-w-full',
-  txt: 'h-full max-h-full aspect-[1/1.414] max-w-full',
-  image: 'h-full max-h-full aspect-square max-w-full',
-  pptx: 'w-full max-w-full aspect-video max-h-full',
-};
-
 const kindOf = (peek: Peek): FormatKind => formatKind(peek.format, peek.fileName);
 /** "Slide 3" for decks, "Page 12" for everything else. */
 const unitWord = (peek: Peek) => FORMAT_UNIT[kindOf(peek)];
 
 /** Page 1 comes from the ready-made preview image; other chosen pages are drawn on a canvas. */
-function PeekPage({ peek, className, full }: { peek: Peek; className: string; full?: boolean }) {
+function PeekPage({
+  peek,
+  className,
+  full,
+  fit,
+}: { peek: Peek; className: string; full?: boolean; fit?: 'auto' }) {
   return peek.page === 1 ? (
     <PagePreview
       fileId={peek.fileId}
-      crop={full ? 'full' : 'top'}
+      crop={full ? 'full' : (fit ?? 'top')}
       eager={full}
       alt={`${unitWord(peek)} 1 of ${peek.fileName}`}
       className={className}
@@ -70,6 +59,7 @@ function PeekPage({ peek, className, full }: { peek: Peek; className: string; fu
       fileId={peek.fileId}
       page={peek.page}
       label={`${unitWord(peek)} ${peek.page} of ${peek.fileName}`}
+      fit={full ? 'contain' : (fit ?? 'width')}
       className={className}
     />
   );
@@ -153,8 +143,13 @@ export function PreviewGallery({
           Free pages from every unit{peeks.length > 1 ? ` · ${peeks.length} pages` : ''}
         </span>
       </div>
-      {/* Every free page in one grid, no sideways scrolling: slides sit wide, pages tall. */}
-      <ul className="list-none m-0 p-0 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-4 pt-1">
+      {/*
+        Every free page in one even grid, in unit order. Each card has the same 4:3 frame whatever
+        the file is, so rows line up with no gaps: a portrait page fills it from the top (its title
+        readable), a slide (PPT, or a PDF of slides) shows whole. Labels sit under the picture,
+        never on top of the page.
+      */}
+      <ul className="list-none m-0 p-0 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-x-4 gap-y-5 pt-1">
         {peeks.map((p, i) => (
           <li key={`${p.fileId}-${p.page}`} className="deal-in min-w-0" style={{ ['--i' as string]: i }}>
             <button
@@ -164,23 +159,43 @@ export function PreviewGallery({
                 track('peek_open', { format: kindOf(p), unit: p.unit.label });
               }}
               aria-label={`Preview ${unitWord(p).toLowerCase()} ${p.page} of ${p.unit.label}: ${p.unit.title}`}
-              className="group block w-full p-0 border-0 bg-transparent text-left cursor-zoom-in"
+              className="group flex flex-col w-full h-full p-0 rounded-xl overflow-hidden border border-line bg-surface text-left cursor-zoom-in lift shadow-[0_14px_28px_-22px_var(--shadow)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
             >
-              <span className="block relative rounded-lg overflow-hidden bg-white shadow-[0_18px_34px_-20px_var(--shadow),0_0_0_1px_var(--line)] lift">
-                <span className="absolute left-2.5 top-2.5 z-10 inline-flex">
-                  <FormatBadge format={p.format} name={p.fileName} sm />
+              <span className="relative block aspect-[4/3] overflow-hidden bg-sunk border-b border-line">
+                {/* Absolute, so the page can't stretch the frame (an aspect box grows to its content). */}
+                <span className="absolute inset-0">
+                  <PeekPage peek={p} fit="auto" className="w-full h-full" />
                 </span>
-                <PeekPage peek={p} className={`w-full ${THUMB_FRAME[kindOf(p)]}`} />
-                <span className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/45 to-transparent" />
-                <span className="absolute left-2.5 bottom-2.5 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-white/95 text-[#161B3A] text-xs font-semibold">
-                  <Eye size={14} /> Look
+                {/* Pointer: a "Look" pill on hover. Touch: the small eye below is always there. */}
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-0 grid place-items-center bg-[rgba(22,27,58,0)] transition-colors duration-200 group-hover:bg-[rgba(22,27,58,0.28)]"
+                >
+                  <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full bg-white text-[#161B3A] text-[13px] font-semibold shadow-md opacity-0 translate-y-1 transition duration-200 group-hover:opacity-100 group-hover:translate-y-0">
+                    <Eye size={15} /> Look inside
+                  </span>
+                </span>
+                <span
+                  aria-hidden="true"
+                  className="absolute right-2 bottom-2 grid place-items-center w-8 h-8 rounded-full bg-white/95 text-[#161B3A] shadow-sm transition-opacity group-hover:opacity-0"
+                >
+                  <Eye size={15} />
                 </span>
               </span>
-              <span className="mt-3 flex items-center gap-2">
-                <span className="flex-none whitespace-nowrap font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-brand text-white">
+              <span className="flex flex-1 flex-col gap-2 p-3">
+                {/* Chip above the title, so the title has the card's full width (no mid-word breaks). */}
+                <span className="self-start whitespace-nowrap font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-brand text-white">
                   {p.unit.label}
                 </span>
-                <span className="text-[15px] font-semibold truncate">{p.unit.title}</span>
+                <span className="text-[15px] font-semibold leading-snug line-clamp-2" title={p.unit.title}>
+                  {p.unit.title}
+                </span>
+                <span className="mt-auto flex items-center gap-1.5 min-w-0 text-[12.5px] text-ink2">
+                  <FormatBadge format={p.format} name={p.fileName} sm />
+                  <span className="truncate">
+                    {unitWord(p)} {p.page} of {p.pageCount}
+                  </span>
+                </span>
               </span>
             </button>
           </li>
@@ -226,7 +241,9 @@ export function PreviewGallery({
                     key={`${current.fileId}-${current.page}`}
                     peek={current}
                     full
-                    className={`pop-in rounded-lg bg-white shadow-2xl ${FULL_FRAME[kindOf(current)]}`}
+                    // The whole frame; the page sits inside it at its real shape (a PDF of slides
+                    // shows wide, a page tall), never squeezed into a shape picked by file type.
+                    className="pop-in w-full h-full"
                   />
                 </div>
                 {/* Phones only; shows the first few times per device. */}

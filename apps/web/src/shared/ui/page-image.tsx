@@ -17,12 +17,17 @@ export function PagePreview({
   fileId: string | null;
   alt?: string;
   className?: string;
-  /** `top` shows the top of the page (cards); `full` shows the whole page (viewer). */
-  crop?: 'top' | 'full';
+  /**
+   * `top` shows the top of the page; `full` shows the whole page (viewer); `auto` decides from the
+   * image itself: a portrait page fills the frame from the top (its title stays readable), a
+   * landscape slide is shown whole and centred (a PDF of slides is never cut off at the sides).
+   */
+  crop?: 'top' | 'full' | 'auto';
   eager?: boolean;
 }) {
   const [state, setState] = useState<'loading' | 'loaded' | 'failed'>('loading');
   const [attempt, setAttempt] = useState(0);
+  const [landscape, setLandscape] = useState(false);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset whenever a different file is shown
   useEffect(() => {
@@ -46,7 +51,8 @@ export function PagePreview({
   }, [gaveUp]);
   const showImage = fileId && !gaveUp;
   return (
-    <div className={`relative overflow-hidden bg-sunk ${className}`}>
+    // `full` (the viewer) has no backdrop of its own: the page shows at its real shape, nothing around it.
+    <div className={`relative overflow-hidden ${crop === 'full' ? '' : 'bg-sunk'} ${className}`}>
       {state !== 'loaded' && !gaveUp && (
         <div className="skeleton absolute inset-0 rounded-none" aria-hidden="true" />
       )}
@@ -67,12 +73,19 @@ export function PagePreview({
           draggable={false}
           loading={eager ? 'eager' : 'lazy'}
           decoding="async"
-          onLoad={() => setState('loaded')}
+          onLoad={(e) => {
+            const img = e.currentTarget;
+            setLandscape(img.naturalWidth > img.naturalHeight);
+            setState('loaded');
+          }}
           onError={() => setState('failed')}
           onContextMenu={(e) => e.preventDefault()}
           data-loaded={state === 'loaded' ? '' : undefined}
-          className={`img-fade relative block w-full h-full no-select bg-white ${
-            crop === 'top' ? 'object-cover object-top' : 'object-contain'
+          data-orientation={state === 'loaded' ? (landscape ? 'landscape' : 'portrait') : undefined}
+          className={`img-fade relative block w-full h-full no-select ${
+            crop === 'top' || (crop === 'auto' && !landscape)
+              ? 'object-cover object-top bg-white'
+              : 'object-contain'
           }`}
         />
       )}
