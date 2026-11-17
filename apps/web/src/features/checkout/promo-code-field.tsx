@@ -31,9 +31,11 @@ export function PromoCodeField({
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { promo, applyPromo, clearPromo, signedIn } = buyState;
+  const { promo, applyPromo, clearPromo, signedIn, buy } = buyState;
 
-  if (!signedIn || (!active.data?.active && !promo)) return null;
+  // While a code is running everyone sees the link, so a student who heard about DIWALI20 knows
+  // where it goes. A visitor who taps it signs in first and comes back to this page.
+  if (!active.data?.active && !promo) return null;
 
   const muted = onDark ? 'text-on-brand2' : 'text-ink2';
   const linkClass = `self-start bg-transparent border-0 p-0 cursor-pointer text-[13px] font-semibold underline-offset-2 hover:underline ${
@@ -62,8 +64,13 @@ export function PromoCodeField({
 
   if (!open)
     return (
-      <button type="button" className={linkClass} onClick={() => setOpen(true)}>
-        Have a promo code?
+      <button
+        type="button"
+        className={linkClass}
+        // Signed out: buy() sends them to sign in and back here (it opens nothing else).
+        onClick={() => (signedIn ? setOpen(true) : void buy())}
+      >
+        Have a promo code?{signedIn ? '' : ' Sign in to use it'}
       </button>
     );
 

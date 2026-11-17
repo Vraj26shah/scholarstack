@@ -138,8 +138,9 @@ export function TabBar() {
       to: '/#catalogue',
       label: 'Catalogue',
       icon: <Catalogue size={20} />,
-      // A visitor at the top of the home page is on the welcome, not the catalogue yet.
-      active: pathname === '/' && !onToolbox && (status === 'ready' || hash === '#catalogue'),
+      // A tab is always lit, so a first-time visitor sees where they are: the whole home page
+      // (welcome included) and every course and bundle page belong to the Catalogue.
+      active: (pathname === '/' && !onToolbox) || pathname.startsWith('/c/') || pathname.startsWith('/b/'),
     },
     { to: '/shelf', label: 'Shelf', icon: <ShelfIcon size={20} />, active: pathname.startsWith('/shelf') },
     {

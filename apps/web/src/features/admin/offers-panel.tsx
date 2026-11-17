@@ -82,7 +82,9 @@ function useOfferRefresh() {
 
 function phase(o: AdminOfferDto): 'running' | 'scheduled' | 'ended' | 'draft' {
   if (o.status === 'draft') return 'draft';
-  if (o.running) return 'running';
+  // `running` was worked out when the list was read; an end time that has passed since wins
+  // (after "End now" the row says "ended", not "running").
+  if (o.running && new Date(o.endsAt) > new Date()) return 'running';
   return new Date(o.startsAt) > new Date() ? 'scheduled' : 'ended';
 }
 
@@ -371,7 +373,12 @@ function OfferRow({ o, onEdit, onCopy }: { o: AdminOfferDto; onEdit: () => void;
   const change = useMutation({
     mutationFn: (patch: Partial<{ status: 'draft' | 'live'; endsAt: string }>) =>
       api.adminSaveOffer(body(patch)),
-    onSuccess: refresh,
+    onSuccess: (_saved, patch) => {
+      refresh();
+      // "End now" ends the offer a second from now: read the list again just after, so the row
+      // (and the Today screen) show it ended without a reload.
+      if (patch.endsAt) setTimeout(refresh, 1500);
+    },
   });
   const del = useMutation({ mutationFn: () => api.adminDeleteOffer(o.id), onSuccess: refresh });
   const covers = o.everything
