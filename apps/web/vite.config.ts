@@ -19,13 +19,15 @@ const versionFile = (): Plugin => ({
  * the build writes source maps, uploads them to Sentry tagged with this release, then deletes
  * them, so they are never published with the site. Local and demo builds have no maps at all.
  */
-const uploadSourceMaps = !!process.env.SENTRY_AUTH_TOKEN;
+// Trimmed: a token pasted into GitHub with a trailing space or line break is otherwise refused (401).
+const sentryToken = process.env.SENTRY_AUTH_TOKEN?.trim() || undefined;
+const uploadSourceMaps = !!sentryToken;
 const sourceMaps = (): Plugin[] =>
   uploadSourceMaps
     ? sentryVitePlugin({
         org: process.env.SENTRY_ORG ?? 'scholars-stack',
         project: process.env.SENTRY_PROJECT ?? 'scholarstack-web',
-        authToken: process.env.SENTRY_AUTH_TOKEN,
+        authToken: sentryToken,
         // The same release the site tags its events with (analytics.ts).
         release: { name: process.env.VITE_APP_RELEASE },
         sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
