@@ -10,6 +10,7 @@ import type {
   PaymentState,
   ProfileRepository,
 } from '../domain/ports';
+import { reportServerError } from './error-reporter';
 import { fail } from './errors';
 import { type Priced, shownBundleTitle } from './offers';
 import type { PriceBook } from './price-book';
@@ -83,13 +84,16 @@ export class CheckoutService {
   }
 
   async start(principal: Principal, item: CheckoutItem & { promoCode?: string }): Promise<StartCheckoutDto> {
-    const { title, amountPaise, courseId, bundleId, courseIds, promo, fullPaise, offer, offerPaise } =
-      await this.price(
-        principal,
-        'bundleId' in item ? { bundleId: item.bundleId } : { courseId: item.courseId },
-        item.promoCode,
-      );
-    await this.profiles.ensure(principal);
+    // The price and the buyer's profile row don't depend on each other.
+    const [{ title, amountPaise, courseId, bundleId, courseIds, promo, fullPaise, offer, offerPaise }] =
+      await Promise.all([
+        this.price(
+          principal,
+          'bundleId' in item ? { bundleId: item.bundleId } : { courseId: item.courseId },
+          item.promoCode,
+        ),
+        this.profiles.ensure(principal),
+      ]);
 
     const receipt = `ss_${(bundleId ?? courseId ?? '').slice(0, 8)}_${Date.now().toString(36)}`;
     let gatewayOrderId: string;
@@ -102,6 +106,8 @@ export class CheckoutService {
         '[checkout] payment order could not be created:',
         error instanceof Error ? error.message : error,
       );
+      // A student was ready to pay and couldn't: worth an alert, not just a log line.
+      reportServerError(error, { where: 'checkout: Razorpay order' });
       throw fail.paymentsUnavailable();
     }
     const order = await this.orders.create({
@@ -146,12 +152,16 @@ export class CheckoutService {
   private async priceCourse(principal: Principal, courseId: string) {
     const course = await this.catalogue.findCourse(courseId);
     if (!course || course.status !== 'live') throw fail.notFound('That course');
-    const files = await this.catalogue.listFiles([course.id]);
+    // Independent reads, side by side: Apply and Buy wait for the slowest one, not all three in turn.
+    // Today's price: a running offer (Diwali, say) is charged exactly as the card showed it.
+    const [files, owned, today] = await Promise.all([
+      this.catalogue.listFiles([course.id]),
+      this.entitlements.has(principal.userId, course.id),
+      this.prices.coursePrice(course),
+    ]);
     if (!files.some((file) => file.conversionStatus === 'ready' && file.pageCount > 0))
       throw fail.notFound('That course');
-    if (await this.entitlements.has(principal.userId, course.id)) throw fail.alreadyOwned();
-    // Today's price: a running offer (Diwali, say) is charged exactly as the card showed it.
-    const today = await this.prices.coursePrice(course);
+    if (owned) throw fail.alreadyOwned();
     return {
       title: course.title,
       amountPaise: today.pricePaise,
@@ -170,7 +180,10 @@ export class CheckoutService {
     const liveCourses = (await this.catalogue.coursesByIds(bundle.courseIds)).filter(
       (course) => course.status === 'live',
     );
-    const files = await this.catalogue.listFiles(liveCourses.map((course) => course.id));
+    const [files, ownedIds] = await Promise.all([
+      this.catalogue.listFiles(liveCourses.map((course) => course.id)),
+      this.entitlements.listCourseIds(principal.userId),
+    ]);
     const readableCourses = new Set(
       files
         .filter((file) => file.conversionStatus === 'ready' && file.pageCount > 0)
@@ -178,7 +191,7 @@ export class CheckoutService {
     );
     const courses = liveCourses.filter((course) => readableCourses.has(course.id));
     if (courses.length === 0) throw fail.notFound('That bundle');
-    const owned = new Set(await this.entitlements.listCourseIds(principal.userId));
+    const owned = new Set(ownedIds);
     const remaining = courses.filter((c) => !owned.has(c.id));
     if (remaining.length === 0) throw fail.alreadyOwned();
     const today = await this.prices.bundlePrice(bundle, courses);

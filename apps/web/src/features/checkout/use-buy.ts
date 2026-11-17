@@ -68,7 +68,26 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
         setProblem({ kind: 'blocked', message: '' });
         reportProblem('blocked', 'The Razorpay payment window was blocked by the browser');
       } else if (e instanceof ApiError && e.code === 'ALREADY_OWNED') navigate('/shelf');
-      else if (e instanceof ApiError && e.code === 'PAYMENTS_UNAVAILABLE') {
+      else if (promo && e instanceof ApiError && e.code === 'BAD_REQUEST') {
+        // The code worked when it was applied but not any more (it ended, ran out, or was used on
+        // another order). Ask once more: if it really is the code, drop it so the button goes back
+        // to the normal price and the next tap buys, instead of failing on every tap.
+        const stillWorks = await api
+          .checkPromo(item, promo.code)
+          .then((quote) => {
+            setPromo(quote);
+            return true;
+          })
+          .catch((recheck) => {
+            setPromo(null);
+            setProblem({
+              kind: 'error',
+              message: `${friendly(recheck)} It has been removed, so you can buy at the normal price.`,
+            });
+            return false;
+          });
+        if (stillWorks) setProblem({ kind: 'error', message: friendly(e) });
+      } else if (e instanceof ApiError && e.code === 'PAYMENTS_UNAVAILABLE') {
         setProblem({ kind: 'unavailable', message: e.message });
         reportProblem('payment', 'Payments could not start (Razorpay refused the order)');
       } else

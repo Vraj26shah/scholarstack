@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { promoPricePaise } from '../src/application/promo-codes';
+import { PromoCodeService } from '../src/application/promo-service';
+import type { PromoCode } from '../src/domain/entities';
+import type { PromoCodeRepository } from '../src/domain/ports';
 import { Browser, setup } from './harness';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -165,6 +168,71 @@ describe('promo codes', () => {
     expect((await promo({ id: first.json.id, code: 'SAME', percentOff: 30 })).json.percentOff).toBe(30);
     expect((await admin.call('DELETE', `/admin/promo-codes/${first.json.id}`)).status).toBe(200);
     expect((await admin.call('GET', '/admin/promo-codes')).json).toHaveLength(0);
+  });
+});
+
+describe('"Have a promo code?" reaches students quickly', () => {
+  afterEach(() => vi.useRealTimers());
+
+  const liveCode = (): PromoCode => ({
+    id: 'p1',
+    code: 'DIWALI20',
+    kind: 'percent',
+    percentOff: 20,
+    amountOffPaise: null,
+    appliesTo: 'everything',
+    courseIds: [],
+    bundleIds: [],
+    startsAt: new Date(Date.now() - 60_000),
+    endsAt: null,
+    status: 'live',
+    maxUses: null,
+    oncePerStudent: true,
+    creatorName: null,
+    creatorContact: null,
+    commissionKind: null,
+    commissionValue: null,
+  });
+
+  /** One database read by several Cloudflare instances, each with its own PromoCodeService. */
+  function sharedTable() {
+    const rows: PromoCode[] = [];
+    let failing = false;
+    const repo = {
+      listAll: async () => {
+        if (failing) throw new Error('connection reset');
+        return [...rows];
+      },
+    } as unknown as PromoCodeRepository;
+    const fail = (on: boolean) => {
+      failing = on;
+    };
+    return { rows, repo, fail };
+  }
+
+  it('a code switched on through one instance shows on every other instance within 10 seconds', async () => {
+    vi.useFakeTimers();
+    const table = sharedTable();
+    const otherInstance = new PromoCodeService(table.repo);
+    expect(await otherInstance.anyRunning()).toBe(false); // remembered: no codes
+
+    table.rows.push(liveCode()); // the admin's save, handled by a different instance
+    vi.advanceTimersByTime(10_001);
+    expect(await otherInstance.anyRunning()).toBe(true);
+
+    table.rows.length = 0; // switched off again
+    vi.advanceTimersByTime(10_001);
+    expect(await otherInstance.anyRunning()).toBe(false);
+  });
+
+  it('a failed database read is not remembered as "no codes"', async () => {
+    const table = sharedTable();
+    table.rows.push(liveCode());
+    const service = new PromoCodeService(table.repo);
+    table.fail(true);
+    expect(await service.anyRunning()).toBe(false);
+    table.fail(false);
+    expect(await service.anyRunning()).toBe(true); // the very next page sees the code
   });
 });
 

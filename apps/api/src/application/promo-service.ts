@@ -36,24 +36,22 @@ export class PromoCodeService {
   ) {}
 
   // Course and bundle pages ask "is any code running?" to decide whether to show the box at all.
-  private readonly listMemo = new Memo<PromoCode[]>(
-    async () => {
-      try {
-        return await this.codes.listAll();
-      } catch (error) {
-        // No table yet, or the database hiccuped: just don't offer the box.
-        console.error('[promo] could not read codes:', error instanceof Error ? error.message : error);
-        return [];
-      }
-    },
-    20_000,
-    5 * 60_000,
-  );
+  // Each Cloudflare instance keeps its own copy and an admin's save clears only the instance that
+  // served it, so the copy is short-lived (10 s) and never served stale: a code switched on (or
+  // off) reaches every student within seconds. A failed read is not remembered, so one database
+  // hiccup can't hide the box for everyone until the copy expires.
+  private readonly listMemo = new Memo<PromoCode[]>(() => this.codes.listAll(), 10_000, 10_000);
 
   /** Whether students should see the "Have a promo code?" link. */
   async anyRunning(): Promise<boolean> {
     const now = this.now();
-    return (await this.listMemo.get()).some((p) => isOpen(p, now));
+    try {
+      return (await this.listMemo.get()).some((p) => isOpen(p, now));
+    } catch (error) {
+      // No table yet, or the database hiccuped: don't offer the box this time; the next page asks again.
+      console.error('[promo] could not read codes:', error instanceof Error ? error.message : error);
+      return false;
+    }
   }
 
   async list(): Promise<AdminPromoCodeDto[]> {

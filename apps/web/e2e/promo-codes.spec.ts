@@ -109,3 +109,47 @@ test('an admin switches a promo code on and a student pays the lower price with 
   await shot(admin, '8-discounts-paid');
   expect(errors).toEqual([]);
 });
+
+test('a code switched off after it was applied is dropped at Buy, and the student can still buy', async ({
+  browser,
+}, info) => {
+  test.skip(info.project.name !== 'desktop', 'one admin session per run');
+  test.setTimeout(90_000);
+  const code = `OFF${Date.now().toString(36).toUpperCase().slice(-6)}`;
+  const course = '/c/dsa-2025-cse-core';
+
+  const admin = await (await browser.newContext()).newPage();
+  await signIn(admin, 'librarian', '/admin');
+  await admin.getByRole('tablist', { name: 'Admin sections' }).getByRole('tab', { name: 'Courses' }).click();
+  await admin.getByRole('tab', { name: 'Promo codes', exact: true }).click();
+  await admin.getByRole('button', { name: 'New code' }).click();
+  await admin.getByPlaceholder('DIWALI20').fill(code);
+  await admin.getByLabel('Percent off').fill('20');
+  await admin.getByRole('button', { name: 'Save and switch on' }).click();
+  const row = admin.locator('li', { hasText: code }).first();
+  await expect(row.getByText('running')).toBeVisible();
+
+  const student = await (await browser.newContext()).newPage();
+  await signIn(student, unique('stale'), course);
+  const buy = student.getByRole('button', { name: /Buy for ₹/ }).first();
+  const fullPrice = rupees((await buy.textContent()) ?? '');
+  await student.getByRole('button', { name: 'Have a promo code?' }).click();
+  await student.getByLabel('Promo code').fill(code);
+  await student.getByRole('button', { name: 'Apply' }).click();
+  await expect(student.getByText(code, { exact: true })).toBeVisible();
+  expect(rupees((await buy.textContent()) ?? '')).toBeLessThan(fullPrice);
+
+  // The admin ends the code while the student is still on the page.
+  await row.getByRole('button', { name: 'Switch off' }).click();
+  await expect(row.getByText('draft')).toBeVisible();
+
+  await buy.click();
+  await expect(student.getByRole('alert').filter({ hasText: 'removed' })).toContainText(
+    "isn't a valid promo code",
+  );
+  await student.keyboard.press('Escape');
+  // The button is back to the normal price, and buying works on the next tap.
+  await expect(buy).toContainText(`₹${fullPrice}`);
+  await buy.click();
+  await expect(student.getByText("It's on your")).toBeVisible({ timeout: 20_000 });
+});

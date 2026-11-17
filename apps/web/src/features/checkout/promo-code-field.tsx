@@ -21,8 +21,11 @@ export function PromoCodeField({
   const active = useQuery({
     queryKey: ['promo-active'],
     queryFn: api.promoActive,
-    staleTime: 5 * 60_000,
-    retry: false,
+    // Short, so a code the admin just switched on shows up on the next page a student opens (or
+    // when they come back to the tab), not minutes later. The server answers from a 10 s copy.
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+    retry: 1,
   });
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState('');
