@@ -311,6 +311,23 @@ async function configureAuth(mgmt: SupabaseManagement) {
       );
     }
   }
+  // Custom SMTP (Brevo works): without it Supabase's built-in service sends only a few
+  // sign-in emails an hour and delays them — the quiet killer of email sign-in at launch.
+  const smtpHost = env.SMTP_HOST?.trim();
+  if (smtpHost && !isPlaceholder(smtpHost)) {
+    const patch: Record<string, unknown> = {
+      smtp_host: smtpHost,
+      smtp_port: Number(env.SMTP_PORT ?? 587),
+      smtp_user: env.SMTP_USER ?? '',
+      smtp_pass: env.SMTP_PASS ?? '',
+      // Never make one student's sign-in email wait behind another's.
+      smtp_max_frequency: 1,
+    };
+    if (env.SMTP_SENDER_EMAIL && !isPlaceholder(env.SMTP_SENDER_EMAIL))
+      patch.smtp_admin_email = env.SMTP_SENDER_EMAIL;
+    if (env.SMTP_SENDER_NAME) patch.smtp_sender_name = env.SMTP_SENDER_NAME;
+    steps.push(['custom SMTP (fast, unlimited sign-in emails)', patch]);
+  }
   for (const [label, patch] of steps) {
     try {
       await mgmt.updateAuthConfig(patch);

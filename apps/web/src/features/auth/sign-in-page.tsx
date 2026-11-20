@@ -38,6 +38,9 @@ export function SignInPage() {
   const [step, setStep] = useState<'email' | 'link-sent'>('email');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // True only when the link email itself failed to go out: that's the moment to offer
+  // Google right next to the error, so nobody is stuck without a way in.
+  const [sendFailed, setSendFailed] = useState(false);
   const [captcha, setCaptcha] = useState<string | undefined>();
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const [captchaProblem, setCaptchaProblem] = useState<string | null>(null);
@@ -94,9 +97,26 @@ export function SignInPage() {
     }
   }
 
+  async function startGoogleLogin() {
+    setError(null);
+    setBusy(true);
+    try {
+      sessionStorage.setItem('auth_next', returnTo);
+      await authGateway.startGoogle(isAdmin);
+    } catch (e) {
+      setError(
+        e instanceof ApiError
+          ? friendly(e)
+          : (e as Error).message || 'Google sign-in could not start. Please try again.',
+      );
+      setBusy(false);
+    }
+  }
+
   async function submitEmail(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSendFailed(false);
     // Students can request links only for campus addresses. The admin portal accepts a full
     // address, then the API checks it against the exact admin allowlist before sending anything.
     const allowed = isAdmin ? isWellFormedEmail(email) : isCollegeEmail(email, env.domain);
@@ -126,6 +146,7 @@ export function SignInPage() {
       if (isDemo) await finish();
       else setStep('link-sent');
     } catch (err) {
+      setSendFailed(true);
       setError(err instanceof ApiError ? friendly(err) : (err as Error).message || friendly(err));
     } finally {
       setBusy(false);
@@ -214,38 +235,29 @@ export function SignInPage() {
                 </p>
                 {authGateway.supportsGoogle && (
                   <>
-                    <Button
-                      variant="brand"
-                      size="lg"
-                      disabled={busy}
-                      onClick={async () => {
-                        setError(null);
-                        setBusy(true);
-                        try {
-                          sessionStorage.setItem('auth_next', returnTo);
-                          await authGateway.startGoogle(isAdmin);
-                        } catch (e) {
-                          setError(
-                            e instanceof ApiError
-                              ? friendly(e)
-                              : (e as Error).message || 'Google sign-in could not start. Please try again.',
-                          );
-                          setBusy(false);
-                        }
-                      }}
-                    >
-                      <span
-                        aria-hidden="true"
-                        className="w-6 h-6 rounded-full bg-white text-brand inline-flex items-center justify-center text-[13px] font-bold"
-                      >
-                        G
+                    <div className="relative">
+                      <span className="absolute -top-2 right-4 z-10 rounded-full bg-teal px-2.5 py-0.5 text-[11px] font-semibold text-white shadow-sm">
+                        Recommended · instant
                       </span>
-                      {busy
-                        ? 'Opening Google…'
-                        : isAdmin
-                          ? 'Continue with Admin Google'
-                          : 'Continue with Google'}
-                    </Button>
+                      <Button
+                        variant="brand"
+                        size="lg"
+                        disabled={busy}
+                        onClick={() => void startGoogleLogin()}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="w-6 h-6 rounded-full bg-white text-brand inline-flex items-center justify-center text-[13px] font-bold"
+                        >
+                          G
+                        </span>
+                        {busy
+                          ? 'Opening Google…'
+                          : isAdmin
+                            ? 'Continue with Admin Google'
+                            : 'Continue with Google'}
+                      </Button>
+                    </div>
                     <div className="flex items-center gap-3 font-mono text-[11px] tracking-[0.12em] text-ink2">
                       <span className="flex-1 h-px bg-line" />
                       or use email
@@ -343,12 +355,39 @@ export function SignInPage() {
                 >
                   Use a different email or resend
                 </button>
+                {authGateway.supportsGoogle && (
+                  <p className="m-0 text-[13px] text-ink2">
+                    No email after a minute or two?{' '}
+                    <button
+                      type="button"
+                      onClick={() => void startGoogleLogin()}
+                      className="text-teal-text font-semibold bg-transparent border-0 cursor-pointer p-0 underline"
+                    >
+                      Continue with Google
+                    </button>{' '}
+                    — it signs you in instantly.
+                  </p>
+                )}
               </div>
             )}
             {error && (
-              <p role="alert" className="m-0 text-sm bg-blush text-blush-text rounded-xl px-3 py-2">
-                {error}
-              </p>
+              <div
+                role="alert"
+                className="m-0 text-sm bg-blush text-blush-text rounded-xl px-3 py-2.5 flex flex-col gap-2.5"
+              >
+                <p className="m-0">{error}</p>
+                {sendFailed && authGateway.supportsGoogle && (
+                  <Button variant="mist" onClick={() => void startGoogleLogin()} disabled={busy}>
+                    <span
+                      aria-hidden="true"
+                      className="w-5 h-5 rounded-full bg-white text-brand inline-flex items-center justify-center text-[11px] font-bold"
+                    >
+                      G
+                    </span>
+                    Continue with Google instead
+                  </Button>
+                )}
+              </div>
             )}
             <p className="m-0 mt-2 text-xs text-ink2 text-center">
               By continuing you agree to the{' '}

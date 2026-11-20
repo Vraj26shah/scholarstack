@@ -93,6 +93,14 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           POOLER_HOST: ${{ vars.SUPABASE_POOLER_HOST || 'aws-1-ap-southeast-1.pooler.supabase.com' }}
           ADMIN_EMAILS: ${{ vars.ADMIN_EMAILS || secrets.ADMIN_EMAILS }}
+          # Optional: with these, every deploy also configures Supabase Auth's SMTP (fast,
+          # unlimited sign-in emails; Brevo: host smtp-relay.brevo.com, user = account email).
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_SENDER_EMAIL: ${{ secrets.SMTP_SENDER_EMAIL }}
+          SMTP_SENDER_NAME: ${{ secrets.SMTP_SENDER_NAME }}
         run: |
           # The ops tool reads a .env file; give it only what these two steps need.
           {
@@ -103,6 +111,10 @@ jobs:
             echo "ADMIN_EMAILS=$ADMIN_EMAILS"
             echo "APP_URL=$SITE_URL"
             echo "ALLOWED_EMAIL_DOMAIN=vitbhopal.ac.in"
+            for key in SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS SMTP_SENDER_EMAIL SMTP_SENDER_NAME; do
+              printenv "$key" >/dev/null 2>&1 && echo "$key=$(printenv "$key")"
+              true
+            done
           } > .env
           # 1) The access token (also refreshes sign-in settings). 2) If it is missing or expired,
           # the database password over the session pooler: the same idempotent apply-all.sql

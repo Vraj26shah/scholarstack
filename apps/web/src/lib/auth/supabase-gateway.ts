@@ -76,8 +76,23 @@ export class SupabaseAuthGateway implements AuthGateway {
             ? 'Security check failed. Check that this site is allowed in the Turnstile widget and that its secret is configured in Supabase Auth.'
             : 'The security check could not be completed. Please refresh the page and try again, or use "Continue with Google" instead.',
         );
+      // The mail service itself is capped (an hourly send limit on Supabase's built-in
+      // service). Say so plainly and point at the instant option.
+      if (
+        code.includes('over_email_send_rate_limit') ||
+        message.includes('email_send_rate_limit') ||
+        message.includes('maximum number of emails') ||
+        message.includes('emails you can send')
+      )
+        throw new Error(
+          admin
+            ? 'Supabase hit its hourly email-sending limit (the built-in service without custom SMTP). Configure SMTP in Supabase → Authentication → SMTP for unlimited sending.'
+            : "We can't send sign-in emails this minute — the mail service is busy. Continue with Google below: it's instant and needs no email.",
+        );
       if (code.includes('rate') || message.includes('rate limit'))
-        throw new Error('Too many sign-in attempts. Please wait a few minutes and try again.');
+        throw new Error(
+          'Too many sign-in attempts. Please wait a few minutes, or continue with Google — it is instant.',
+        );
       if (code.includes('email_address_not_authorized') || message.includes('only authorized'))
         throw new Error(
           admin
