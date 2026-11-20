@@ -1,5 +1,5 @@
-import type { PromoQuoteDto } from '@ss/contracts';
-import { useEffect, useState } from 'react';
+import type { CheckoutQuoteDto } from '@ss/contracts';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { track } from '../../lib/analytics';
 import { ApiError, api, friendly } from '../../lib/api';
@@ -20,44 +20,112 @@ export type BuyProblem = {
   message: string;
 };
 
-/** The buy button's logic for a course or a bundle: sign in if needed, pay, then confirm. */
+/**
+ * The buy button's logic for a course or a bundle: sign in if needed, then the check-out slip
+ * (price, offer, promo code, total, all worked out by the server), then Razorpay, then confirm.
+ * The slip is where a promo code goes, so every buyer passes the box on the way to paying.
+ */
 export function useBuy(item: { courseId: string } | { bundleId: string }, returnTo: string) {
   const { status } = useSession();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<BuyProblem | null>(null);
-  // A promo code the student applied: its quote sets the button's price, and the code goes with
-  // the order (the server checks it again and charges exactly that).
-  const [promo, setPromo] = useState<PromoQuoteDto | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [quote, setQuote] = useState<CheckoutQuoteDto | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  // Said once on the slip when a code that worked earlier no longer does.
+  const [notice, setNotice] = useState<string | null>(null);
+  // The latest request wins: a slow answer for an old code never overwrites a newer one.
+  const asked = useRef(0);
   const itemKey = 'courseId' in item ? `c:${item.courseId}` : `b:${item.bundleId}`;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a different course or bundle drops the code
-  useEffect(() => setPromo(null), [itemKey]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a different course or bundle starts a new slip
+  useEffect(() => {
+    setQuote(null);
+    setReviewing(false);
+    setNotice(null);
+  }, [itemKey]);
 
-  async function applyPromo(code: string) {
-    const quote = await api.checkPromo(item, code);
-    setPromo(quote);
-    track('apply_promo_code', { coupon: quote.code });
-    return quote;
+  const code = quote?.promo?.code;
+
+  /** Fetches the slip. With a code that no longer works, falls back to the plain price and says so. */
+  async function loadQuote(withCode?: string) {
+    const ask = ++asked.current;
+    setQuoteError(null);
+    try {
+      const next = await api.checkoutQuote(item, withCode);
+      if (ask === asked.current) setQuote(next);
+    } catch (e) {
+      if (ask !== asked.current) return;
+      if (withCode && e instanceof ApiError && e.code === 'BAD_REQUEST') {
+        setNotice(`${friendly(e)} It has been removed.`);
+        return loadQuote();
+      }
+      if (e instanceof ApiError && e.code === 'ALREADY_OWNED') {
+        setReviewing(false);
+        navigate('/shelf');
+        return;
+      }
+      setQuoteError(friendly(e));
+    }
   }
 
+  /** The buy button: signed out → sign in and come back; signed in → open the slip. */
   async function buy() {
     if (status !== 'ready') {
       navigate(`/sign-in?next=${encodeURIComponent(returnTo)}`);
       return;
     }
-    setBusy(true);
     setProblem(null);
+    setNotice(null);
+    setReviewing(true);
+    await loadQuote(code);
+  }
+
+  /** "Apply" on the slip. Throws the plain-language reason when the code doesn't work here. */
+  async function applyPromo(typed: string) {
+    const ask = ++asked.current;
+    const next = await api.checkoutQuote(item, typed);
+    if (ask === asked.current) setQuote(next);
+    setNotice(null);
+    if (next.promo) track('apply_promo_code', { coupon: next.promo.code });
+    return next;
+  }
+
+  function clearPromo() {
+    setNotice(null);
+    void loadQuote();
+  }
+
+  /** "Pay ₹…" on the slip: the server charges exactly the total it showed. */
+  async function pay() {
+    if (!quote || busy) return;
+    setBusy(true);
     try {
-      const order = await api.startCheckout(promo ? { ...item, promoCode: promo.code } : item);
+      let order: Awaited<ReturnType<typeof api.startCheckout>>;
+      try {
+        order = await api.startCheckout(code ? { ...item, promoCode: code } : item);
+      } catch (e) {
+        if (code && e instanceof ApiError && e.code === 'BAD_REQUEST') {
+          // The code ended or ran out between Apply and Pay: the slip drops it, shows the new
+          // total and stays open, so the next tap pays the normal price on purpose.
+          setNotice(`${friendly(e)} It has been removed, so check the new total.`);
+          await loadQuote();
+          return;
+        }
+        throw e;
+      }
       track('begin_checkout', {
         currency: 'INR',
         value: order.amountPaise / 100,
         ...('courseId' in item ? { item_id: item.courseId } : { item_id: item.bundleId }),
-        ...(promo ? { coupon: promo.code } : {}),
+        ...(code ? { coupon: code } : {}),
       });
+      // Close the slip before Razorpay opens its own window, so the two never fight over focus.
+      setReviewing(false);
       const payment = await checkoutGateway.pay(order);
       navigate(`/checkout/${order.orderId}`, { state: { order, payment } });
     } catch (e) {
+      setReviewing(false);
       if (e instanceof PaymentCancelled)
         setProblem(
           e.failure
@@ -68,33 +136,10 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
         setProblem({ kind: 'blocked', message: '' });
         reportProblem('blocked', 'The Razorpay payment window was blocked by the browser');
       } else if (e instanceof ApiError && e.code === 'ALREADY_OWNED') navigate('/shelf');
-      else if (promo && e instanceof ApiError && e.code === 'BAD_REQUEST') {
-        // The code worked when it was applied but not any more (it ended, ran out, or was used on
-        // another order). Ask once more: if it really is the code, drop it so the button goes back
-        // to the normal price and the next tap buys, instead of failing on every tap.
-        const stillWorks = await api
-          .checkPromo(item, promo.code)
-          .then((quote) => {
-            setPromo(quote);
-            return true;
-          })
-          .catch((recheck) => {
-            setPromo(null);
-            setProblem({
-              kind: 'error',
-              message: `${friendly(recheck)} It has been removed, so you can buy at the normal price.`,
-            });
-            return false;
-          });
-        if (stillWorks) setProblem({ kind: 'error', message: friendly(e) });
-      } else if (e instanceof ApiError && e.code === 'PAYMENTS_UNAVAILABLE') {
+      else if (e instanceof ApiError && e.code === 'PAYMENTS_UNAVAILABLE') {
         setProblem({ kind: 'unavailable', message: e.message });
         reportProblem('payment', 'Payments could not start (Razorpay refused the order)');
-      } else
-        setProblem({
-          kind: 'error',
-          message: friendly(e),
-        });
+      } else setProblem({ kind: 'error', message: friendly(e) });
     } finally {
       setBusy(false);
     }
@@ -102,14 +147,24 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
 
   return {
     buy,
+    pay,
     busy,
     problem,
     /** Every outcome opens the result window (PaymentProblem) — nothing is left inline. */
     dismiss: () => setProblem(null),
     signedIn: status === 'ready',
-    /** The applied promo code's quote, or null. */
-    promo,
+    /** The check-out slip: open, its lines, and why it couldn't load. */
+    reviewing,
+    closeReview: () => {
+      if (!busy) setReviewing(false);
+    },
+    quote,
+    quoteError,
+    retryQuote: () => void loadQuote(code),
+    notice,
     applyPromo,
-    clearPromo: () => setPromo(null),
+    clearPromo,
   };
 }
+
+export type BuyState = ReturnType<typeof useBuy>;

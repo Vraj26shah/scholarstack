@@ -1,4 +1,10 @@
-import { type OrderDto, type PromoQuoteDto, RazorpayWebhook, type StartCheckoutDto } from '@ss/contracts';
+import {
+  type CheckoutQuoteDto,
+  type OrderDto,
+  type PromoQuoteDto,
+  RazorpayWebhook,
+  type StartCheckoutDto,
+} from '@ss/contracts';
 import type { Principal } from '../domain/entities';
 import type {
   BundleRepository,
@@ -80,6 +86,27 @@ export class CheckoutService {
       fullPaise: promo.fullPaise,
       pricePaise: promo.pricePaise,
       discountPaise: promo.discountPaise,
+    };
+  }
+
+  /**
+   * The check-out slip shown before the payment window: the price, the offer, the code and the
+   * total, worked out exactly as `start` will charge it. Creates nothing.
+   */
+  async quote(principal: Principal, item: CheckoutItem, code?: string): Promise<CheckoutQuoteDto> {
+    const p = await this.price(principal, item, code);
+    const fullPaise = Math.max(p.fullPaise, p.offerPaise);
+    return {
+      title: p.title,
+      kind: p.bundleId ? 'bundle' : 'course',
+      courseCount: p.courseIds.length,
+      fullPaise,
+      offer:
+        p.offer && fullPaise > p.offerPaise
+          ? { title: p.offer.title, percentOff: p.offer.percentOff, discountPaise: fullPaise - p.offerPaise }
+          : null,
+      promo: p.promo ? { code: p.promo.promo.code, discountPaise: p.promo.discountPaise } : null,
+      totalPaise: p.amountPaise,
     };
   }
 

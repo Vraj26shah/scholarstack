@@ -12,8 +12,8 @@ import { ArrowRight, Check } from '../../shared/ui/icons';
 import { PriceTag, Ribbon, keepDot } from '../../shared/ui/index-card';
 import { Reveal } from '../../shared/ui/motion';
 import { PreviewBar } from '../../shared/ui/preview-bar';
+import { CheckoutSlip } from '../checkout/checkout-slip';
 import { PaymentProblem } from '../checkout/payment-problem';
-import { PromoCodeField } from '../checkout/promo-code-field';
 import { useBuy } from '../checkout/use-buy';
 
 export function BundlePage() {
@@ -147,11 +147,11 @@ export function BundlePage() {
                   {buyState.busy
                     ? 'Opening payment…'
                     : buyState.signedIn
-                      ? `Get all ${b.courseCount - b.ownedCount} for ${formatRupees(buyState.promo?.pricePaise ?? b.yourPricePaise)}`
+                      ? `Get all ${b.courseCount - b.ownedCount} for ${formatRupees(b.yourPricePaise)}`
                       : 'Sign in to buy'}
                 </Button>
               )}
-              {!allOwned && !b.preview && <PromoCodeField buyState={buyState} />}
+              {!allOwned && !b.preview && <CheckoutSlip buyState={buyState} />}
               <PaymentProblem problem={buyState.problem} onRetry={buyState.buy} onClose={buyState.dismiss} />
               <span className="text-[13px] leading-relaxed text-ink2">
                 One payment, every course below on your shelf. All sales are final.

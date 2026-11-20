@@ -4,6 +4,12 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Check-out slip
+- **Buy now opens a check-out slip before Razorpay**: the price, the running offer and what it takes off, the promo code, and the total, one line each, then "Pay ₹…". Every line comes from the server (`POST /api/checkout/quote`), worked out exactly as the order is, so the slip and the payment window always show the same amount.
+- **The promo box is on every slip**, closed behind "Have a promo code?", so a student with a code always finds it and one without goes straight to Pay. It replaces the small link under the buy button that only showed while a code was running (and was easy to miss).
+- A code that ends or runs out between Apply and Pay is dropped on the slip with the reason, and the slip shows the new total instead of charging it; the next tap pays the normal price on purpose.
+- **Diwali 2026 set up as a real offer** (`supabase/seed/diwali-offer-2026.sql`): 20% off everything till 30 Nov, 11:59 pm IST, plus `DIWALI10` (a further 10%, once per student). The packs had been renamed "Diwali pack" through the pack-name setting, which changed only the name; that is back to "Semester pack", and the offer shows them as "Diwali pack · …" while it runs.
+
 ### Monitoring (Sentry)
 - **Real-user monitoring now works.** Before, the CDN bundle never had tracing turned on, so Sentry recorded no page loads or Web Vitals at all. Sentry now records every page load and route change, grouped by route ("/c/:slug"), with LCP, INP, CLS, TTFB and FCP, the API calls under them, and "main thread blocked" warnings.
 - **Session Replay:** 10% of visits, and every visit that hits an error. All text and inputs are masked and media (notes pages) blocked.

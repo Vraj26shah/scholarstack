@@ -1,4 +1,4 @@
-import { CheckPromoBody, StartCheckoutBody, VerifyPaymentBody } from '@ss/contracts';
+import { CheckPromoBody, CheckoutQuoteBody, StartCheckoutBody, VerifyPaymentBody } from '@ss/contracts';
 import { Hono } from 'hono';
 import { type AppEnv, requireLive, throttle } from '../helpers';
 
@@ -24,6 +24,16 @@ checkoutRoutes.post('/promo/check', async (c) => {
   const body = CheckPromoBody.parse(await c.req.json());
   const item = 'bundleId' in body ? { bundleId: body.bundleId } : { courseId: body.courseId };
   return c.json(await c.get('container').checkout.quotePromo(principal, item, body.code));
+});
+
+/** The check-out slip before the payment window: price, offer, optional code, total. */
+checkoutRoutes.post('/checkout/quote', async (c) => {
+  const { principal } = await requireLive(c);
+  const body = CheckoutQuoteBody.parse(await c.req.json());
+  // A typed code is a guess worth limiting; the plain slip (no code) is not.
+  if (body.code?.trim()) await throttle(c, 'promo', principal.userId);
+  const item = 'bundleId' in body ? { bundleId: body.bundleId } : { courseId: body.courseId };
+  return c.json(await c.get('container').checkout.quote(principal, item, body.code));
 });
 
 checkoutRoutes.post('/orders/verify', async (c) => {

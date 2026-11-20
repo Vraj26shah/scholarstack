@@ -109,7 +109,7 @@ const toForm = (p: AdminPromoCodeDto): Form => ({
 function useCodeRefresh() {
   const qc = useQueryClient();
   return () => {
-    for (const k of ['admin-promo-codes', 'promo-active']) void qc.invalidateQueries({ queryKey: [k] });
+    void qc.invalidateQueries({ queryKey: ['admin-promo-codes'] });
   };
 }
 

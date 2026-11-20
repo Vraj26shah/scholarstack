@@ -408,6 +408,28 @@ export const CheckPromoBody = z.union([
   z.object({ bundleId: z.string().min(1), code: PromoCodeText.min(1) }),
 ]);
 
+/** The check-out slip: what this student pays for a course or bundle, line by line. */
+export const CheckoutQuoteBody = z.union([
+  z.object({ courseId: z.string().min(1), code: PromoCodeText.optional() }),
+  z.object({ bundleId: z.string().min(1), code: PromoCodeText.optional() }),
+]);
+
+export interface CheckoutQuoteDto {
+  /** The name on the payment window ("Diwali pack · 2025 BCE" while an offer runs). */
+  title: string;
+  kind: 'course' | 'bundle';
+  /** Courses this order puts on the shelf (a bundle skips the ones already owned). */
+  courseCount: number;
+  /** Before any offer or code (owned courses already left out of a bundle). */
+  fullPaise: number;
+  /** A running offer and what it takes off, or null. */
+  offer: { title: string; percentOff: number; discountPaise: number } | null;
+  /** The applied code and what it takes off, after the offer, or null. */
+  promo: { code: string; discountPaise: number } | null;
+  /** What Razorpay will charge. */
+  totalPaise: number;
+}
+
 /** A promo code that works on this course or bundle for this student, and what it saves. */
 export interface PromoQuoteDto {
   code: string;

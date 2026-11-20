@@ -23,6 +23,7 @@ import type {
   BundleDetailDto,
   CatalogueIndexDto,
   CatalogueSearchDto,
+  CheckoutQuoteDto,
   ContributionCourseInput,
   ContributionMetaInput,
   ContributionReviewInput,
@@ -226,9 +227,11 @@ export class ApiClient {
   /** Sales running right now, for the catalogue banner. */
   runningOffers = () => this.request<RunningOfferDto[]>('GET', '/offers/running');
   /** Whether any promo code is running (the "Have a promo code?" link shows only then). */
-  promoActive = () => this.request<{ active: boolean }>('GET', '/promo/active');
   checkPromo = (item: { courseId: string } | { bundleId: string }, code: string) =>
     this.request<PromoQuoteDto>('POST', '/promo/check', { ...item, code });
+  /** The check-out slip: price, running offer, optional promo code, and the total to pay. */
+  checkoutQuote = (item: { courseId: string } | { bundleId: string }, code?: string) =>
+    this.request<CheckoutQuoteDto>('POST', '/checkout/quote', code ? { ...item, code } : item);
   verifyPayment = (b: {
     orderId: string;
     gatewayOrderId: string;

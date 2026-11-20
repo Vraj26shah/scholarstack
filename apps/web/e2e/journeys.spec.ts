@@ -26,6 +26,7 @@ async function buyDbms(page: Page) {
     .getByRole('button', { name: /Buy for ₹/ })
     .first()
     .click();
+  await page.getByRole('button', { name: /^Pay ₹/ }).click();
   await expect(page.getByText("It's on your")).toBeVisible({ timeout: 20_000 });
 }
 
@@ -95,6 +96,7 @@ test.describe('buy and read', () => {
       .getByRole('button', { name: /Buy for ₹/ })
       .first()
       .click();
+    await page.getByRole('button', { name: /^Pay ₹/ }).click();
     await expect(page.getByText("It's on your")).toBeVisible({ timeout: 20_000 });
     await shot(page, 'checkout-paid', info);
 
@@ -356,6 +358,7 @@ test.describe('previews, bundles and the toolbox', () => {
     await signIn(page, unique('bundler'), '/b/cse-sem-3-pack');
     await expect(page.getByText('28%').first()).toBeVisible();
     await page.getByRole('button', { name: /Get all 3 for ₹199/ }).click();
+    await page.getByRole('button', { name: 'Pay ₹199' }).click();
     await expect(page.getByText("They're on your")).toBeVisible({ timeout: 20_000 });
     await shot(page, 'bundle-paid', info);
     await page.goto('/shelf');

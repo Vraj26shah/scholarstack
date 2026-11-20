@@ -1,8 +1,9 @@
 import { type Page, expect, test } from '@playwright/test';
 
 /**
- * Promo codes through the real UI: with no code running the course page looks as it always has;
- * the admin switches a code on; a student applies it, sees the lower price and pays exactly that.
+ * Promo codes through the real UI: Buy opens the check-out slip, which always has the promo box;
+ * the admin switches a code on; a student applies it on the slip, sees the lower total and pays
+ * exactly that.
  */
 const SHOTS = process.env.E2E_SHOTS; // folder for review screenshots (optional)
 const shot = async (page: Page, name: string) => {
@@ -35,9 +36,11 @@ test('an admin switches a promo code on and a student pays the lower price with 
   await expect(buy).toBeVisible();
   const fullPrice = rupees((await buy.textContent()) ?? '');
   expect(fullPrice).toBeGreaterThan(1);
-  // No code running: nothing new on the page.
-  await expect(student.getByRole('button', { name: 'Have a promo code?' })).toHaveCount(0);
-  await shot(student, '1-course-no-codes');
+  // Buy opens the slip at the normal price; with no code, Pay is the same amount.
+  await buy.click();
+  await expect(student.getByRole('button', { name: `Pay ₹${fullPrice}` })).toBeVisible();
+  await shot(student, '1-slip-no-code');
+  await student.keyboard.press('Escape');
 
   const admin = await (await browser.newContext()).newPage();
   await signIn(admin, 'librarian', '/admin');
@@ -59,10 +62,10 @@ test('an admin switches a promo code on and a student pays the lower price with 
   await expect(row.getByText('running')).toBeVisible();
   await shot(admin, '3-admin-list');
 
-  await student.reload();
+  await buy.click();
   const link = student.getByRole('button', { name: 'Have a promo code?' });
   await expect(link).toBeVisible();
-  await shot(student, '4-course-link');
+  await shot(student, '4-slip-link');
   await link.click();
   const box = student.getByLabel('Promo code');
   await box.fill('NOT-A-CODE');
@@ -71,11 +74,12 @@ test('an admin switches a promo code on and a student pays the lower price with 
   await box.fill(code.toLowerCase());
   await student.getByRole('button', { name: 'Apply' }).click();
   await expect(student.getByText(`${code}`, { exact: true })).toBeVisible();
-  const discounted = rupees((await buy.textContent()) ?? '');
+  const pay = student.getByRole('button', { name: /^Pay ₹/ });
+  const discounted = rupees((await pay.textContent()) ?? '');
   expect(discounted).toBe(Math.floor((fullPrice * 80) / 100));
-  await shot(student, '5-course-applied');
+  await shot(student, '5-slip-applied');
 
-  await buy.click();
+  await pay.click();
   await expect(student.getByText("It's on your")).toBeVisible({ timeout: 20_000 });
   await expect(student.getByText(`₹${discounted}`).first()).toBeVisible();
   await shot(student, '6-paid');
@@ -133,23 +137,24 @@ test('a code switched off after it was applied is dropped at Buy, and the studen
   await signIn(student, unique('stale'), course);
   const buy = student.getByRole('button', { name: /Buy for ₹/ }).first();
   const fullPrice = rupees((await buy.textContent()) ?? '');
+  await buy.click();
   await student.getByRole('button', { name: 'Have a promo code?' }).click();
   await student.getByLabel('Promo code').fill(code);
   await student.getByRole('button', { name: 'Apply' }).click();
   await expect(student.getByText(code, { exact: true })).toBeVisible();
-  expect(rupees((await buy.textContent()) ?? '')).toBeLessThan(fullPrice);
+  const pay = student.getByRole('button', { name: /^Pay ₹/ });
+  expect(rupees((await pay.textContent()) ?? '')).toBeLessThan(fullPrice);
 
-  // The admin ends the code while the student is still on the page.
+  // The admin ends the code while the slip is still open.
   await row.getByRole('button', { name: 'Switch off' }).click();
   await expect(row.getByText('draft')).toBeVisible();
 
-  await buy.click();
-  await expect(student.getByRole('alert').filter({ hasText: 'removed' })).toContainText(
+  // Pay: the slip drops the code, says why, and shows the normal total instead of charging it.
+  await pay.click();
+  await expect(student.getByRole('status').filter({ hasText: 'removed' })).toContainText(
     "isn't a valid promo code",
   );
-  await student.keyboard.press('Escape');
-  // The button is back to the normal price, and buying works on the next tap.
-  await expect(buy).toContainText(`₹${fullPrice}`);
-  await buy.click();
+  await expect(pay).toHaveText(new RegExp(`Pay ₹${fullPrice}`));
+  await pay.click();
   await expect(student.getByText("It's on your")).toBeVisible({ timeout: 20_000 });
 });

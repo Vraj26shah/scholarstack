@@ -14,6 +14,7 @@ test('a student can move to any module while reading, including in full screen',
     .getByRole('button', { name: /Buy for ₹/ })
     .first()
     .click();
+  await page.getByRole('button', { name: /^Pay ₹/ }).click();
   await expect(page.getByText("It's on your")).toBeVisible({ timeout: 20_000 });
 
   // Start reading a Module 1 file.
@@ -82,6 +83,7 @@ test('Back in the reader returns to where the student came from, not always the 
     .getByRole('button', { name: /Buy for ₹/ })
     .first()
     .click();
+  await page.getByRole('button', { name: /^Pay ₹/ }).click();
   await expect(page.getByText("It's on your")).toBeVisible({ timeout: 20_000 });
 
   // From the course page: open a file, switch to another file, then Back → the course page.

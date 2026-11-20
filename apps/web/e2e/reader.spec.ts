@@ -11,6 +11,7 @@ async function buyAndOpen(page: Page) {
     .getByRole('button', { name: /Buy for ₹/ })
     .first()
     .click();
+  await page.getByRole('button', { name: /^Pay ₹/ }).click();
   await expect(page.getByText("It's on your")).toBeVisible({ timeout: 20_000 });
   await page.goto('/c/dbms-2025-cse-core');
   await page.locator('a[href^="/read/"]').first().click();

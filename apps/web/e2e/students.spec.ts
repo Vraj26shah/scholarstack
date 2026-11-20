@@ -30,6 +30,7 @@ test('admin blocks a student course with a reason; the student sees why on their
     .getByRole('button', { name: /Buy for ₹/ })
     .first()
     .click();
+  await student.getByRole('button', { name: /^Pay ₹/ }).click();
   await expect(student.getByText("It's on your")).toBeVisible({ timeout: 20_000 });
 
   const admin = await (await browser.newContext()).newPage();

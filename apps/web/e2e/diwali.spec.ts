@@ -73,17 +73,20 @@ test('Diwali: 20% off every bundle, a DIWALI10 code on top, and the student pays
   expect(onSale).toBeLessThan(before);
   await shot(student, '4-bundle-on-sale');
 
-  // The code comes off the sale price.
+  // The slip shows the offer line; the code comes off the sale price.
+  await buy.click();
+  await expect(student.getByRole('dialog').getByText('Diwali offer')).toBeVisible();
   await student.getByRole('button', { name: 'Have a promo code?' }).click();
   await student.getByLabel('Promo code').fill(code.toLowerCase());
   await student.getByRole('button', { name: 'Apply' }).click();
   await expect(student.getByText(code, { exact: true })).toBeVisible();
-  const withCode = rupees((await buy.textContent()) ?? '');
+  const pay = student.getByRole('button', { name: /^Pay ₹/ });
+  const withCode = rupees((await pay.textContent()) ?? '');
   expect(withCode).toBe(Math.floor((onSale * 90) / 100));
   await shot(student, '5-code-applied');
 
   // Payment is for exactly that amount, and the bundle is theirs.
-  await buy.click();
+  await pay.click();
   await expect(student.getByRole('heading', { name: /on your shelf/ })).toBeVisible({ timeout: 20_000 });
   await expect(student.getByText(`₹${withCode}`).first()).toBeVisible();
   await shot(student, '6-paid');
