@@ -17,4 +17,6 @@ export interface AppConfig {
   emailDailyLimit: number;
   /** Emails kept back each day for personal mail (receipts, answers, reminders). */
   emailReserve: number;
+  /** Sign-in link emails the whole site may send in a day (see the sign-in guard). */
+  signinEmailDailyLimit: number;
 }

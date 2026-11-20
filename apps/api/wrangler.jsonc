@@ -26,7 +26,8 @@
     "PAGES_PER_DAY": "600",
     "IMPORT_ROOT": "drive-imports/",
     "CONVERTER_GITHUB_REPOSITORY": "Vraj26shah/scholarstack",
-    "EMAIL_DAILY_LIMIT": "300"
+    "EMAIL_DAILY_LIMIT": "300",
+    "SIGNIN_EMAIL_DAILY_LIMIT": "250"
   },
   "env": {
     "staging": {
@@ -43,7 +44,8 @@
         "PAGES_PER_DAY": "600",
         "IMPORT_ROOT": "drive-imports/",
         "CONVERTER_GITHUB_REPOSITORY": "Vraj26shah/scholarstack",
-        "EMAIL_DAILY_LIMIT": "300"
+        "EMAIL_DAILY_LIMIT": "300",
+        "SIGNIN_EMAIL_DAILY_LIMIT": "250"
       }
     },
     "production": {
@@ -61,7 +63,8 @@
         "PAGES_PER_DAY": "600",
         "IMPORT_ROOT": "drive-imports/",
         "CONVERTER_GITHUB_REPOSITORY": "Vraj26shah/scholarstack",
-        "EMAIL_DAILY_LIMIT": "300"
+        "EMAIL_DAILY_LIMIT": "300",
+        "SIGNIN_EMAIL_DAILY_LIMIT": "250"
       }
     }
   }

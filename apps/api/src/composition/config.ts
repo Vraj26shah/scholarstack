@@ -32,6 +32,7 @@ export interface WorkerEnv {
   SENTRY_DSN?: string;
   EMAIL_DAILY_LIMIT?: string;
   EMAIL_RESERVE?: string;
+  SIGNIN_EMAIL_DAILY_LIMIT?: string;
   NOTES: R2Bucket;
   PAGE_LIMITER?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   ASSETS?: Fetcher;
@@ -76,6 +77,8 @@ export function buildConfig(env: Partial<Record<keyof WorkerEnv, unknown>>, now 
     emailDailyLimit: num(s('EMAIL_DAILY_LIMIT'), 250),
     // Room kept every day for receipts, answers and reminders, so news never crowds them out.
     emailReserve: Math.min(num(s('EMAIL_RESERVE'), 20), Math.floor(num(s('EMAIL_DAILY_LIMIT'), 250) / 2)),
+    // Under the provider's total cap so announcements and receipts still go out.
+    signinEmailDailyLimit: num(s('SIGNIN_EMAIL_DAILY_LIMIT'), 250),
   };
 }
 

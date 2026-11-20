@@ -625,8 +625,9 @@ export function friendly(error: unknown): string {
       case 'NOT_COLLEGE_EMAIL':
         return `Only @${env.domain} accounts can sign in.`;
       case 'RATE_LIMITED':
-        // A blocked network is told until when; ordinary speed limits get the calm line.
-        if (/network/i.test(error.message)) return error.message;
+        // A blocked network or a spent mail budget is told why and until when (and pointed at
+        // Google, which needs no email); ordinary speed limits get the calm line.
+        if (/network|Google|links are available/i.test(error.message)) return error.message;
         return "You're going a bit fast. Take a breath and try again in a minute.";
       case 'DEVICE_COOLDOWN':
         return error.message;
