@@ -152,7 +152,7 @@ test('a code switched off after it was applied is dropped at Buy, and the studen
   // Pay: the slip drops the code, says why, and shows the normal total instead of charging it.
   await pay.click();
   await expect(student.getByRole('status').filter({ hasText: 'removed' })).toContainText(
-    "isn't a valid promo code",
+    'its validity is now over',
   );
   await expect(pay).toHaveText(new RegExp(`Pay ₹${fullPrice}`));
   await pay.click();

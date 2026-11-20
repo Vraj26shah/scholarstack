@@ -373,7 +373,7 @@ export function PacksCard() {
           <strong className="text-ink">
             {formatMoney(Math.max(0, Math.floor((prices.averagePaise * 5 - five * 100) / 100) * 100))}
           </strong>
-          . A pack is never priced above 85% of its own courses one by one; the drawer list says when one is
+          . A pack is never priced above 92% of its own courses one by one; the drawer list says when one is
           lowered for that.
         </p>
       )}

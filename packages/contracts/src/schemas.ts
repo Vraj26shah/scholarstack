@@ -914,20 +914,21 @@ export const PACK_SIZES = [2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 export type PackLadder = Record<string, number>;
 
 /**
- * The suggested pack prices: round, "ends in 9" prices where every bigger pack costs more in total
- * and less per course (₹74.50 a course for 2, ₹59.80 for 5, ₹54.90 for 10, against ₹79–₹99 one by
- * one). The admin can change them in Courses › Bundles › Drawer packs.
+ * The suggested pack prices: "ends in 9" prices where every extra course takes a little more off
+ * each course, gently. Against ₹99 one by one: ₹89.50 a course for 2 (10% off), ₹83 for 3,
+ * ₹77.80 for 5 (21%), ₹70.90 for 10 (28%). Bigger packs still cost more in total. The admin can
+ * change them in Courses › Bundles › Drawer packs.
  */
 export const PACK_LADDER_RUPEES: PackLadder = {
-  2: 149,
-  3: 199,
-  4: 249,
-  5: 299,
-  6: 349,
-  7: 399,
-  8: 449,
-  9: 499,
-  10: 549,
+  2: 179,
+  3: 249,
+  4: 319,
+  5: 389,
+  6: 449,
+  7: 519,
+  8: 589,
+  9: 649,
+  10: 709,
 };
 
 export const PackLadderSchema = z.record(

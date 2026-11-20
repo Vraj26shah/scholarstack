@@ -108,23 +108,23 @@ describe('PacksCard', () => {
     const line = screen.getByText(
       (_, el) => el?.tagName === 'P' && /^Your live courses are/.test(el.textContent ?? ''),
     );
-    // ₹79 to ₹99, ₹93 on average: 5 × ₹93 − ₹299 = ₹166 saved.
+    // ₹79 to ₹99, ₹93 on average: 5 × ₹93 − ₹389 = ₹76 saved.
     expect(line.textContent).toContain('₹79 to ₹99 one by one (₹93 on average)');
-    expect(line.textContent).toContain('a 5-course pack at ₹299 saves about ₹166');
+    expect(line.textContent).toContain('a 5-course pack at ₹389 saves about ₹76');
 
     const four = screen.getByLabelText('Price for 4 courses, rupees');
-    fireEvent.change(four, { target: { value: '279' } }); // ₹69.75 a course: dearer than 3 for ₹199
+    fireEvent.change(four, { target: { value: '349' } }); // ₹87.25 a course: dearer than 3 for ₹249
     expect(screen.getByRole('list', { name: 'Price problems' }).textContent).toContain(
-      '4 courses: Must be cheaper per course than the 3-course pack: ₹265 or less.',
+      '4 courses: Must be cheaper per course than the 3-course pack: ₹331 or less.',
     );
     expect(screen.getByText('Fix the highlighted prices or name to see what would change.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Apply changes' }).hasAttribute('disabled')).toBe(true);
 
-    fireEvent.change(four, { target: { value: '245' } }); // ₹61.25 a course: between 3 and 5
+    fireEvent.change(four, { target: { value: '329' } }); // ₹82.25 a course: between 3 and 5
     expect(screen.queryByRole('list', { name: 'Price problems' })).toBeNull();
     const apply = await screen.findByRole('button', { name: 'Apply to 49 packs' }, { timeout: 3000 });
     expect(calls).toHaveBeenCalledWith(
-      expect.objectContaining({ dryRun: true, ladder: { ...PACK_LADDER_RUPEES, 4: 245 } }),
+      expect.objectContaining({ dryRun: true, ladder: { ...PACK_LADDER_RUPEES, 4: 329 } }),
     );
     const before = calls.mock.calls.length;
     await act(async () => apply.click());
@@ -132,7 +132,7 @@ describe('PacksCard', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: /^Apply to/ })).toBeNull());
     expect(calls.mock.calls.length).toBe(before + 1);
     expect(calls).toHaveBeenLastCalledWith(
-      expect.objectContaining({ dryRun: false, ladder: { ...PACK_LADDER_RUPEES, 4: 245 } }),
+      expect.objectContaining({ dryRun: false, ladder: { ...PACK_LADDER_RUPEES, 4: 329 } }),
     );
   });
 });

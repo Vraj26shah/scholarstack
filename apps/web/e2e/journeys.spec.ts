@@ -336,7 +336,7 @@ test.describe('account and admin', () => {
 test.describe('previews, bundles and the toolbox', () => {
   test('anyone can flip through page one of every unit', async ({ page }, info) => {
     await page.goto('/c/dbms-2025-cse-core');
-    const thumb = page.getByRole('button', { name: /Preview page 1 of UNIT 3/ });
+    const thumb = page.getByRole('button', { name: /Preview page 1 of .*UNIT 3:/ });
     await thumb.scrollIntoViewIfNeeded();
     await thumb.click();
     const dialog = page.getByRole('dialog');

@@ -40,9 +40,9 @@ function usableLadder(ladder: PackLadder | undefined): PackLadder {
 
 /**
  * The pack price for this many courses: the admin's price for that size, but always clearly the
- * better deal: under 85% of the courses one by one, and each course in it under 95% of the
+ * better deal: under 92% of the courses one by one, and each course in it under 95% of the
  * cheapest course bought alone. When the ladder price would break that (two cheap courses, say),
- * the pack drops to 15% off, at most 90% of the cheapest each, ending in 9.
+ * the pack drops to 10% off, at most 92% of the cheapest each, ending in 9.
  */
 export function packPricePaise(
   count: number,
@@ -55,10 +55,10 @@ export function packPricePaise(
 
 function packPrice(count: number, listPaise: number, cheapestPaise: number, ladder: PackLadder) {
   const rupees = ladderRupees(ladder, count) * 100;
-  if (rupees > 0 && rupees <= listPaise * 0.85 && rupees / count <= cheapestPaise * 0.95)
+  if (rupees > 0 && rupees <= listPaise * 0.92 && rupees / count <= cheapestPaise * 0.95)
     return { pricePaise: rupees, lowered: false, ladderPaise: rupees };
   return {
-    pricePaise: charmDownPaise(Math.min(listPaise * 0.85, cheapestPaise * 0.9 * count)),
+    pricePaise: charmDownPaise(Math.min(listPaise * 0.9, cheapestPaise * 0.92 * count)),
     lowered: rupees > 0,
     ladderPaise: rupees,
   };

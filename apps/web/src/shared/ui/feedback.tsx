@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { type ReactNode, useSyncExternalStore } from 'react';
 import { Button } from './button';
+import { Cross } from './icons';
 
 export function Skeleton({ className = '' }: { className?: string }) {
   return <div className={`skeleton ${className}`} aria-hidden="true" />;
@@ -73,12 +74,15 @@ export function Sheet({
   title,
   children,
   dismissible = true,
+  closeButton = false,
 }: {
   open: boolean;
   onOpenChange?: (open: boolean) => void;
   title: ReactNode;
   children: ReactNode;
   dismissible?: boolean;
+  /** A × in the top corner, for sheets people may want to back out of (the check-out slip). */
+  closeButton?: boolean;
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -90,6 +94,15 @@ export function Sheet({
           className="fixed z-50 inset-x-2.5 bottom-2.5 sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[460px] bg-surface text-ink rounded-[30px] px-6 pt-4 pb-6 flex flex-col gap-4 shadow-2xl"
         >
           <span aria-hidden="true" className="self-center w-10 h-[5px] rounded-full bg-line sm:hidden" />
+          {closeButton && (
+            <Dialog.Close
+              aria-label="Close"
+              disabled={!dismissible}
+              className="press absolute right-4 top-4 sm:right-5 sm:top-5 grid place-items-center w-10 h-10 rounded-full border-0 bg-sunk text-ink2 cursor-pointer hover:text-ink hover:bg-line disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Cross size={18} />
+            </Dialog.Close>
+          )}
           <Dialog.Title className="m-0 font-display font-extrabold text-[34px] leading-[0.98] tracking-[-0.05em]">
             {title}
           </Dialog.Title>

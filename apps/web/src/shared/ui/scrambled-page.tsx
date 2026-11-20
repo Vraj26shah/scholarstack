@@ -14,6 +14,7 @@ export function ScrambledPage({
   className = '',
   label,
   fit = 'width',
+  eager = false,
 }: {
   fileId: string;
   page: number;
@@ -28,12 +29,36 @@ export function ScrambledPage({
    * whole page at its real shape inside the frame (the large viewer).
    */
   fit?: 'width' | 'auto' | 'contain';
+  /** Fetch at once (the large viewer). Otherwise only when the page comes near the screen. */
+  eager?: boolean;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [landscape, setLandscape] = useState(false);
+  // A gallery can hold dozens of free pages; each is a full page image, so only fetch the ones
+  // about to be seen (and stay under the per-visitor preview limit).
+  const [near, setNear] = useState(eager);
 
   useEffect(() => {
+    if (near) return;
+    const el = box.current;
+    if (!el || !('IntersectionObserver' in window)) return setNear(true);
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setNear(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: '400px 0px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [near]);
+
+  useEffect(() => {
+    if (!near) return;
     let cancelled = false;
     setState('loading');
     (async () => {
@@ -74,10 +99,11 @@ export function ScrambledPage({
     return () => {
       cancelled = true;
     };
-  }, [fileId, page, admin, stamp]);
+  }, [fileId, page, admin, stamp, near]);
 
   return (
     <div
+      ref={box}
       className={`relative overflow-hidden ${(fit === 'auto' && landscape) || fit === 'contain' ? '' : 'bg-white'} ${className}`}
     >
       {state === 'loading' && <div className="skeleton absolute inset-0 rounded-none" aria-hidden="true" />}

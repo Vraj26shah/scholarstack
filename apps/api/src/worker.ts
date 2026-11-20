@@ -5,6 +5,7 @@ import { workerContainer } from './composition/worker';
 import { createApp } from './http/app';
 import { withEdgeCache } from './http/edge-cache';
 import { SECURITY_HEADERS } from './http/security-headers';
+import { bundleMeta, courseMeta, isShareBot, sharedItem, withShareMeta } from './http/share-preview';
 
 const app = createApp((env) => workerContainer(env as WorkerEnv));
 
@@ -18,13 +19,50 @@ setErrorReporter((error, { where, requestId }) => {
   });
 });
 
+/** index.html with a course's (or bundle's) title and description in its preview tags. */
+async function sharePage(
+  request: Request,
+  url: URL,
+  item: { kind: 'course' | 'bundle'; slug: string },
+  env: WorkerEnv,
+  ctx: ExecutionContext,
+): Promise<Response | null> {
+  const api = new URL(`/api/${item.kind === 'course' ? 'courses' : 'bundles'}/${item.slug}`, url);
+  const [shell, data] = await Promise.all([
+    env.ASSETS!.fetch(new Request(new URL('/', url), request)),
+    app.fetch(new Request(api, { headers: { accept: 'application/json' } }), env, ctx),
+  ]);
+  if (!shell.ok || !data.ok) return null;
+  const pageUrl = `${url.origin}/${item.kind === 'course' ? 'c' : 'b'}/${item.slug}`;
+  const json = await data.json();
+  const meta =
+    item.kind === 'course'
+      ? courseMeta(json as Parameters<typeof courseMeta>[0], pageUrl)
+      : bundleMeta(json as Parameters<typeof bundleMeta>[0], pageUrl);
+  const out = new Response(withShareMeta(await shell.text(), meta), {
+    status: 200,
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' },
+  });
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) out.headers.set(k, v);
+  return out;
+}
+
 const handler = {
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/'))
       return withEdgeCache(request, ctx, () => Promise.resolve(app.fetch(request, env, ctx)));
-    // Everything else is the static website (single-page app).
-    const res = await env.ASSETS!.fetch(request);
+    // A course or bundle link opened by a link-preview crawler (LinkedIn, WhatsApp, X…): the page
+    // with that course's own title and description. Any trouble: the plain page, as for people.
+    const item = sharedItem(url.pathname);
+    if (item && isShareBot(request.headers.get('user-agent'))) {
+      const shared = await sharePage(request, url, item, env, ctx).catch(() => null);
+      if (shared) return shared;
+    }
+    // Everything else is the static website (single-page app). Course and bundle paths reach
+    // here first (for the crawlers above), so a miss falls back to the app shell itself.
+    let res = await env.ASSETS!.fetch(request);
+    if (res.status === 404 && item) res = await env.ASSETS!.fetch(new Request(new URL('/', url), request));
     const out = new Response(res.body, res);
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) out.headers.set(k, v);
     return out;

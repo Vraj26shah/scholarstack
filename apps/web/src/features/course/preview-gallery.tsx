@@ -38,6 +38,20 @@ export function peeksOf(units: CourseUnitDto[]): Peek[] {
   });
 }
 
+/** Free pages shown before "Show all": four rows of three on a laptop. */
+const FIRST_SHOWN = 12;
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** "Unit-2-SQL_notes.pdf" → "Unit 2 SQL notes": the name a student would say. */
+function fileTitle(name: string): string {
+  return name
+    .replace(/\.[a-z0-9]{2,5}$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const kindOf = (peek: Peek): FormatKind => formatKind(peek.format, peek.fileName);
 /** "Slide 3" for decks, "Page 12" for everything else. */
 const unitWord = (peek: Peek) => FORMAT_UNIT[kindOf(peek)];
@@ -63,6 +77,7 @@ function PeekPage({
       page={peek.page}
       label={`${unitWord(peek)} ${peek.page} of ${peek.fileName}`}
       fit={full ? 'contain' : (fit ?? 'width')}
+      eager={full}
       className={className}
     />
   );
@@ -87,6 +102,9 @@ export function PreviewGallery({
 }) {
   const peeks = peeksOf(units);
   const [open, setOpen] = useState<number | null>(null);
+  // A course with many units and files can have dozens of free pages: the first rows show at
+  // once and the rest on request (the large viewer still flips through every one).
+  const [limit, setLimit] = useState(FIRST_SHOWN);
   const touchStart = useRef<{ x: number; y: number; at: number } | null>(null);
 
   const step = useCallback(
@@ -132,6 +150,9 @@ export function PreviewGallery({
 
   if (peeks.length === 0) return null;
   const current = open === null ? null : peeks[open];
+  const fileCount = new Set(peeks.map((p) => p.fileId)).size;
+  const filesIn = (unitKey: string) =>
+    new Set(peeks.filter((x) => x.unit.key === unitKey).map((x) => x.fileId)).size;
 
   return (
     <section aria-labelledby="peek-title" className={className}>
@@ -143,7 +164,9 @@ export function PreviewGallery({
           Peek inside
         </h2>
         <span className="text-sm text-ink2">
-          Free pages from every unit{peeks.length > 1 ? ` · ${peeks.length} pages` : ''}
+          Free pages from every unit
+          {peeks.length > 1 ? ` · ${plural(peeks.length, 'page')}` : ''}
+          {fileCount > 1 ? ` from ${fileCount} files` : ''}
         </span>
       </div>
       {/*
@@ -153,57 +176,75 @@ export function PreviewGallery({
         never on top of the page.
       */}
       <ul className="list-none m-0 p-0 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-x-4 gap-y-5 pt-1">
-        {peeks.map((p, i) => (
-          <li key={`${p.fileId}-${p.page}`} className="deal-in min-w-0" style={{ ['--i' as string]: i }}>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(i);
-                track('peek_open', { format: kindOf(p), unit: p.unit.label });
-              }}
-              aria-label={`Preview ${unitWord(p).toLowerCase()} ${p.page} of ${p.unit.label}: ${p.unit.title}`}
-              className="group flex flex-col w-full h-full p-0 rounded-xl overflow-hidden border border-line bg-surface text-left cursor-zoom-in lift shadow-[0_14px_28px_-22px_var(--shadow)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
-            >
-              <span className="relative block aspect-[4/3] overflow-hidden bg-sunk border-b border-line">
-                {/* Absolute, so the page can't stretch the frame (an aspect box grows to its content). */}
-                <span className="absolute inset-0">
-                  <PeekPage peek={p} fit="auto" className="w-full h-full" />
-                </span>
-                {/* Pointer: a "Look" pill on hover. Touch: the small eye below is always there. */}
-                <span
-                  aria-hidden="true"
-                  className="absolute inset-0 grid place-items-center bg-[rgba(22,27,58,0)] transition-colors duration-200 group-hover:bg-[rgba(22,27,58,0.28)]"
-                >
-                  <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full bg-white text-[#161B3A] text-[13px] font-semibold shadow-md opacity-0 translate-y-1 transition duration-200 group-hover:opacity-100 group-hover:translate-y-0">
-                    <Eye size={15} /> Look inside
+        {peeks.map((p, i) => {
+          if (i >= limit) return null;
+          // When a unit shows pages from more than one file, each card names its file.
+          const manyFiles = filesIn(p.unit.key) > 1;
+          return (
+            <li key={`${p.fileId}-${p.page}`} className="deal-in min-w-0" style={{ ['--i' as string]: i }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(i);
+                  track('peek_open', { format: kindOf(p), unit: p.unit.label });
+                }}
+                aria-label={`Preview ${unitWord(p).toLowerCase()} ${p.page} of ${p.fileName || p.unit.title}, ${p.unit.label}: ${p.unit.title}`}
+                className="group flex flex-col w-full h-full p-0 rounded-xl overflow-hidden border border-line bg-surface text-left cursor-zoom-in lift shadow-[0_14px_28px_-22px_var(--shadow)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
+              >
+                <span className="relative block aspect-[4/3] overflow-hidden bg-sunk border-b border-line">
+                  {/* Absolute, so the page can't stretch the frame (an aspect box grows to its content). */}
+                  <span className="absolute inset-0">
+                    <PeekPage peek={p} fit="auto" className="w-full h-full" />
+                  </span>
+                  {/* Pointer: a "Look" pill on hover. Touch: the small eye below is always there. */}
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-0 grid place-items-center bg-[rgba(22,27,58,0)] transition-colors duration-200 group-hover:bg-[rgba(22,27,58,0.28)]"
+                  >
+                    <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full bg-white text-[#161B3A] text-[13px] font-semibold shadow-md opacity-0 translate-y-1 transition duration-200 group-hover:opacity-100 group-hover:translate-y-0">
+                      <Eye size={15} /> Look inside
+                    </span>
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className="absolute right-2 bottom-2 grid place-items-center w-8 h-8 rounded-full bg-white/95 text-[#161B3A] shadow-sm transition-opacity group-hover:opacity-0"
+                  >
+                    <Eye size={15} />
                   </span>
                 </span>
-                <span
-                  aria-hidden="true"
-                  className="absolute right-2 bottom-2 grid place-items-center w-8 h-8 rounded-full bg-white/95 text-[#161B3A] shadow-sm transition-opacity group-hover:opacity-0"
-                >
-                  <Eye size={15} />
-                </span>
-              </span>
-              <span className="flex flex-1 flex-col gap-2 p-3">
-                {/* Chip above the title, so the title has the card's full width (no mid-word breaks). */}
-                <span className="self-start whitespace-nowrap font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-brand text-white">
-                  {p.unit.label}
-                </span>
-                <span className="text-[15px] font-semibold leading-snug line-clamp-2" title={p.unit.title}>
-                  {p.unit.title}
-                </span>
-                <span className="mt-auto flex items-center gap-1.5 min-w-0 text-[12.5px] text-ink2">
-                  <FormatBadge format={p.format} name={p.fileName} sm />
-                  <span className="truncate">
-                    {unitWord(p)} {p.page} of {p.pageCount}
+                <span className="flex flex-1 flex-col gap-2 p-3">
+                  {/* Chip above the title, so the title has the card's full width (no mid-word breaks). */}
+                  <span className="self-start whitespace-nowrap font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-brand text-white">
+                    {p.unit.label}
+                  </span>
+                  <span className="text-[15px] font-semibold leading-snug line-clamp-2" title={p.unit.title}>
+                    {p.unit.title}
+                  </span>
+                  {/* A unit showing several files: its own line, so the page number below never gets cut. */}
+                  {manyFiles && (
+                    <span className="-mt-1 truncate text-[12.5px] text-ink" title={p.fileName}>
+                      {fileTitle(p.fileName)}
+                    </span>
+                  )}
+                  <span className="mt-auto flex items-center gap-1.5 min-w-0 text-[12.5px] text-ink2">
+                    <FormatBadge format={p.format} name={p.fileName} sm />
+                    <span className="truncate">
+                      {unitWord(p)} {p.page} of {p.pageCount}
+                    </span>
                   </span>
                 </span>
-              </span>
-            </button>
-          </li>
-        ))}
+              </button>
+            </li>
+          );
+        })}
       </ul>
+      {peeks.length > limit && (
+        <div className="flex justify-center mt-5">
+          <Button variant="outline" onClick={() => setLimit(peeks.length)}>
+            Show all {peeks.length} free pages
+          </Button>
+        </div>
+      )}
 
       <Dialog.Root open={open !== null} onOpenChange={(o) => !o && setOpen(null)}>
         <Dialog.Portal>

@@ -77,10 +77,14 @@ describe('promo codes', () => {
       student.call('POST', '/promo/check', { ...item, code });
 
     expect((await check('NOPE')).json.error.message).toContain("isn't a valid promo code");
+    // Switched off by the admin: it existed, so the student is told its validity is over.
     await promo({ code: 'DRAFTY', status: 'draft' });
-    expect((await check('DRAFTY')).status).toBe(400);
+    const off = await check('DRAFTY');
+    expect(off.status).toBe(400);
+    expect(off.json.error.message).toBe('The code DRAFTY was valid, but its validity is now over.');
+    // Not started yet: stays unknown, so a campaign isn't given away early.
     await promo({ code: 'LATER', startsAt: at(2), endsAt: at(4) });
-    expect((await check('LATER')).status).toBe(400);
+    expect((await check('LATER')).json.error.message).toContain("isn't a valid promo code");
 
     await promo({ code: 'BUNDLESONLY', appliesTo: 'bundles' });
     expect((await check('BUNDLESONLY')).json.error.message).toContain("doesn't work on this course");

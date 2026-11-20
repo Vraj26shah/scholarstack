@@ -4,6 +4,20 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Gentler pack prices
+- **Drawer packs take a little more off each course as they grow**, instead of a steep cut: against ₹99 courses, 2 for ₹179 (10% off), 3 for ₹249, 5 for ₹389 (21%), 10 for ₹709 (28%). Was ₹149 / ₹199 / ₹299 / ₹549 (up to 45% off). Live packs re-price on the next hourly run.
+- A pack must now be under 92% of its courses one by one (was 85%, which forced at least 15% off); when courses are on sale, a bundle stays about 8% under their sale prices (was 15%).
+
+### Check-out slip
+- **A close (×) button**, for students who want to go back.
+- **A code the admin switched off says so**: "The code X was valid, but its validity is now over." A code that was never in the admin panel is still "isn't a valid promo code", and one that hasn't started yet stays unknown. A code that ends mid-checkout shows as a spent coupon with a "Validity over" tag.
+
+### Peek inside, link previews, speed
+- **Peek inside with many units and files**: cards name their file when a unit shows several, pages load only as they come near the screen (and stay under the per-visitor preview limit), and big galleries show 12 pages first with "Show all".
+- **Link previews**: course and bundle links shared on LinkedIn, WhatsApp, X, Telegram or Slack show that course's own title, price and description (the Worker fills them in for link-preview crawlers only; people get the page as before). The card image URL is versioned so apps that cached it fetch it again; added the image alt, type and Twitter tags.
+- **Faster repeat visits**: theme-init.js, the icons, the share card and the manifest are cached at Cloudflare's edge and in the browser instead of re-checked on every page load. Deployed with the site by GitHub Actions (`_headers`, generated from `security-headers.ts`).
+- **No more "Install app" offer**: the site was installable by accident, and an installed copy counted as another of a student's two devices and didn't receive sign-in links. The manifest now says `display: browser`; the offline cache stays.
+
 ### Check-out slip
 - **Buy now opens a check-out slip before Razorpay**: the price, the running offer and what it takes off, the promo code, and the total, one line each, then "Pay ₹…". Every line comes from the server (`POST /api/checkout/quote`), worked out exactly as the order is, so the slip and the payment window always show the same amount.
 - **The promo box is on every slip**, closed behind "Have a promo code?", so a student with a code always finds it and one without goes straight to Pay. It replaces the small link under the buy button that only showed while a code was running (and was easy to miss).

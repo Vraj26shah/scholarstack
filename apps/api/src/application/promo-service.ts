@@ -148,9 +148,14 @@ export class PromoCodeService {
     const code = normaliseCode(rawCode);
     const promo = code ? await this.codes.findByCode(code) : null;
     const now = this.now();
-    if (!promo || promo.status !== 'live' || !hasStarted(promo, now))
+    // A code that has not started yet stays unknown, so a campaign isn't revealed early.
+    if (!promo || !hasStarted(promo, now))
       throw fail.badRequest(`${code || 'That'} isn't a valid promo code.`);
-    if (hasEnded(promo, now)) throw fail.badRequest(`The code ${code} has expired.`);
+    // One that ran and was switched off (or ran past its end date) did exist: say so plainly,
+    // so a student who was given it knows it worked once and has simply ended.
+    if (promo.status !== 'live')
+      throw fail.badRequest(`The code ${code} was valid, but its validity is now over.`);
+    if (hasEnded(promo, now)) throw fail.badRequest(`The code ${code} has expired. Its validity is over.`);
     if (!promoCovers(promo, item))
       throw fail.badRequest(
         `The code ${code} doesn't work on this ${'courseId' in item ? 'course' : 'bundle'}.`,

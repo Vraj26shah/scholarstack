@@ -238,12 +238,12 @@ test('build drawer packs: preview, then build as drafts', async () => {
   await expect(card.getByText(/Leave festival names out/)).toHaveCount(0);
   // A price list where a bigger pack costs more per course is refused, with the limit spelled out.
   const four = card.getByLabel('Price for 4 courses, rupees');
-  await four.fill('279');
+  await four.fill('349'); // ₹87.25 a course: dearer than 3 for ₹249
   await expect(card.getByRole('list', { name: 'Price problems' })).toContainText(
     'Must be cheaper per course than the 3-course pack',
   );
   if (process.env.E2E_SHOTS) await card.screenshot({ path: `${process.env.E2E_SHOTS}/packs-1-invalid.png` });
-  await four.fill('245');
+  await four.fill('329'); // ₹82.25 a course: between the 3- and 5-course packs
   await expect(card.getByRole('list', { name: 'Price problems' })).toHaveCount(0);
   await card.getByLabel('On the site').selectOption('draft');
   await card.getByRole('checkbox', { name: 'Keep in step every hour' }).uncheck();
@@ -259,7 +259,7 @@ test('build drawer packs: preview, then build as drafts', async () => {
   await expect(card.getByText(/^Done:/)).toBeVisible({ timeout: 20_000 });
   // Saved: nothing left to change, and the box keeps the new price.
   await expect(card.getByRole('button', { name: 'Build packs' })).toBeVisible();
-  await expect(four).toHaveValue('245');
+  await expect(four).toHaveValue('329');
   // Packs fold away under their own toggle, and show as drafts with their all-year name.
   await page.getByRole('button', { name: /Show \d+ drawer packs? in the list/ }).click();
   const pack = page

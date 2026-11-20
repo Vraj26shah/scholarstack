@@ -34,7 +34,8 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
   const [quote, setQuote] = useState<CheckoutQuoteDto | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   // Said once on the slip when a code that worked earlier no longer does.
-  const [notice, setNotice] = useState<string | null>(null);
+  // A code that stopped working (switched off, run out, expired): which one, and why.
+  const [notice, setNotice] = useState<{ code: string; message: string } | null>(null);
   // The code the student just applied, for the one-off "you save" moment on the slip.
   const [justApplied, setJustApplied] = useState<string | null>(null);
   // The latest request wins: a slow answer for an old code never overwrites a newer one.
@@ -59,7 +60,7 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
     } catch (e) {
       if (ask !== asked.current) return;
       if (withCode && e instanceof ApiError && e.code === 'BAD_REQUEST') {
-        setNotice(`${friendly(e)} It has been removed.`);
+        setNotice({ code: withCode.trim().toUpperCase(), message: `${friendly(e)} It has been removed.` });
         return loadQuote();
       }
       if (e instanceof ApiError && e.code === 'ALREADY_OWNED') {
@@ -113,7 +114,7 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
         if (code && e instanceof ApiError && e.code === 'BAD_REQUEST') {
           // The code ended or ran out between Apply and Pay: the slip drops it, shows the new
           // total and stays open, so the next tap pays the normal price on purpose.
-          setNotice(`${friendly(e)} It has been removed, so check the new total.`);
+          setNotice({ code, message: `${friendly(e)} It has been removed, so check the new total.` });
           await loadQuote();
           return;
         }

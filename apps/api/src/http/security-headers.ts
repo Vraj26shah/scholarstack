@@ -28,11 +28,29 @@ export const SECURITY_HEADERS: Record<string, string> = {
   'cross-origin-opener-policy': 'same-origin-allow-popups',
 };
 
+/**
+ * How long files without a content hash in their name are kept at the edge and in the browser:
+ * served at once and refreshed in the background, instead of re-checked on every page load.
+ * theme-init.js blocks the first paint, so it matters most. Bump ?v= in index.html to change
+ * og-image.png at once.
+ */
+const STATIC_CACHE: [path: string, cacheControl: string][] = [
+  ['/assets/*', 'public, max-age=31536000, immutable'],
+  ['/theme-init.js', 'public, max-age=3600, stale-while-revalidate=86400'],
+  ['/favicon.svg', 'public, max-age=86400, stale-while-revalidate=604800'],
+  ['/apple-touch-icon.png', 'public, max-age=86400, stale-while-revalidate=604800'],
+  ['/og-image.png', 'public, max-age=86400, stale-while-revalidate=604800'],
+  ['/site.webmanifest', 'public, max-age=3600, stale-while-revalidate=86400'],
+  ['/robots.txt', 'public, max-age=3600'],
+  ['/sw.js', 'no-cache'],
+  ['/version.json', 'no-store'],
+];
+
 /** The Cloudflare `_headers` file for the static site assets. */
 export function headersFile(): string {
-  return `/*\n${Object.entries(SECURITY_HEADERS)
+  const security = Object.entries(SECURITY_HEADERS)
     .map(([k, v]) => `  ${k}: ${v}`)
-    .join(
-      '\n',
-    )}\n\n/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n\n/sw.js\n  Cache-Control: no-cache\n\n/version.json\n  Cache-Control: no-store\n`;
+    .join('\n');
+  const caching = STATIC_CACHE.map(([path, value]) => `${path}\n  Cache-Control: ${value}`).join('\n\n');
+  return `/*\n${security}\n\n${caching}\n`;
 }

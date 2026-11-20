@@ -164,13 +164,14 @@ export class PriceBook {
       : { pricePaise: bundle.pricePaise };
     const separately = courses.reduce((s, c) => s + (coursePrices.get(c.id)?.pricePaise ?? c.pricePaise), 0);
     // A big sale on single courses must never make the bundle the dearer (or equal) way to buy:
-    // then it stays about 15% under its courses at their sale prices, ending in 9.
+    // then it stays about 8% under its courses at their sale prices, ending in 9. (Gently: the
+    // pack is already a deal, and the sale comes on top of it.)
     const listPaise = courses.reduce((s, c) => s + c.pricePaise, 0);
     // Only while single courses are on sale: the admin's own bundle price stands otherwise.
-    if (courses.length > 1 && separately < listPaise && own.pricePaise >= separately * 0.9) {
+    if (courses.length > 1 && separately < listPaise && own.pricePaise >= separately * 0.95) {
       const first = [...coursePrices.values()].find((p) => p.offer);
       return {
-        pricePaise: Math.min(own.pricePaise, charmDownPaise(separately * 0.85)),
+        pricePaise: Math.min(own.pricePaise, charmDownPaise(separately * 0.92)),
         ...(first?.offer
           ? { offer: { ...first.offer, fullPricePaise: bundle.pricePaise }, offerId: first.offerId }
           : {}),

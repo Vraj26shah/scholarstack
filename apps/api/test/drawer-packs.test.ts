@@ -1,3 +1,4 @@
+import { PACK_LADDER_RUPEES } from '@ss/contracts';
 import { describe, expect, it } from 'vitest';
 import { packPricePaise } from '../src/application/packs';
 import { Browser, setup } from './harness';
@@ -14,13 +15,22 @@ async function world() {
 }
 
 describe('pack prices', () => {
+  it('take a little more off each course as packs grow, never a steep cut', () => {
+    const per = [2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => packPricePaise(n, n * 9900) / n / 9900);
+    // 2 courses about 10% off, 10 courses under 30% off; every step down is small.
+    expect(1 - per[0]!).toBeGreaterThan(0.08);
+    expect(1 - per[0]!).toBeLessThan(0.12);
+    expect(1 - per.at(-1)!).toBeLessThan(0.3);
+    for (let i = 1; i < per.length; i++) expect(per[i - 1]! - per[i]!).toBeLessThan(0.07);
+  });
+
   it('follow the ladder: every bigger pack costs more in total and less per course, past 10 too', () => {
-    expect(packPricePaise(2, 19800)).toBe(14900);
-    expect(packPricePaise(3, 29700)).toBe(19900);
-    expect(packPricePaise(4, 39600)).toBe(24900);
-    expect(packPricePaise(5, 49500)).toBe(29900);
-    expect(packPricePaise(9, 89100)).toBe(49900);
-    expect(packPricePaise(12, 118800)).toBe(64900);
+    expect(packPricePaise(2, 19800)).toBe(17900);
+    expect(packPricePaise(3, 29700)).toBe(24900);
+    expect(packPricePaise(4, 39600)).toBe(31900);
+    expect(packPricePaise(5, 49500)).toBe(38900);
+    expect(packPricePaise(9, 89100)).toBe(64900);
+    expect(packPricePaise(12, 118800)).toBe(80900);
     const sizes = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 20];
     const totals = sizes.map((n) => packPricePaise(n, n * 9900));
     for (let i = 1; i < sizes.length; i++) {
@@ -49,8 +59,8 @@ describe('pack prices', () => {
       expect(pack / prices.length).toBeLessThan(cheapest);
       expect(String(pack / 100).endsWith('9')).toBe(true);
     }
-    // Two ₹79 courses: ₹149 would be ₹74.50 each, too close to ₹79, so the pack is ₹129.
-    expect(packPricePaise(2, 15800, 7900)).toBe(12900);
+    // Two ₹79 courses: ₹179 would be dearer than buying them, so the pack is about 10% off: ₹139.
+    expect(packPricePaise(2, 15800, 7900)).toBe(13900);
   });
 });
 
@@ -73,7 +83,8 @@ describe('drawer packs', () => {
     expect(bce25.status).toBe('live');
     expect(bce25.offeredTo).toEqual([{ batchYear: 2025, branchSlug: 'bce' }]);
     const list = bce25.courseIds.reduce((s, id) => s + env.db.courses.get(id)!.pricePaise, 0);
-    expect(bce25.pricePaise).toBe(packPricePaise(bce25.courseIds.length, list));
+    const cheapest = Math.min(...bce25.courseIds.map((id) => env.db.courses.get(id)!.pricePaise));
+    expect(bce25.pricePaise).toBe(packPricePaise(bce25.courseIds.length, list, cheapest));
     expect(bce25.pricePaise).toBeLessThan(list);
   });
 
@@ -196,7 +207,9 @@ describe('editing pack prices', () => {
     });
     expect(bad.status).toBe(400);
     expect(bad.json.error.message).toContain('4 courses: Must be cheaper per course than the 3-course pack');
-    expect((await admin.call('GET', '/admin/bundles/packs')).json.settings.ladder['4']).toBe(249);
+    expect((await admin.call('GET', '/admin/bundles/packs')).json.settings.ladder['4']).toBe(
+      PACK_LADDER_RUPEES['4'],
+    );
   });
 
   it('a preview never clears the public catalogue cache', async () => {

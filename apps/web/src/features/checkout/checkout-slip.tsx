@@ -20,6 +20,7 @@ export function CheckoutSlip({ buyState }: { buyState: BuyState }) {
       open={reviewing}
       onOpenChange={(o) => !o && closeReview()}
       dismissible={!busy}
+      closeButton
       title={
         <>
           Check out<span className="text-teal-text">.</span>
@@ -38,11 +39,7 @@ export function CheckoutSlip({ buyState }: { buyState: BuyState }) {
       ) : (
         <>
           <Slip quote={quote} />
-          {notice && (
-            <p role="status" className="m-0 rounded-xl bg-blush text-blush-text px-3.5 py-2.5 text-[14px]">
-              {notice}
-            </p>
-          )}
+          {notice && <EndedCoupon code={notice.code} message={notice.message} />}
           {quote && <PromoBox key={quote.promo?.code ?? 'none'} buyState={buyState} />}
           <Button variant="buy" size="lg" onClick={pay} disabled={!quote || busy} className="w-full">
             {busy ? 'Opening payment…' : quote ? `Pay ${formatRupees(quote.totalPaise)}` : 'Pay'}
@@ -153,6 +150,34 @@ function Line({ label, value, tone }: { label: ReactNode; value: string; tone?: 
     <div className="flex items-baseline justify-between gap-4 py-1.5">
       <dt className={`m-0 min-w-0 truncate ${tone === 'save' ? 'font-semibold' : 'text-ink2'}`}>{label}</dt>
       <dd className={`m-0 tabular-nums ${tone === 'save' ? 'font-semibold text-teal-text' : ''}`}>{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * A code that worked earlier but has ended (switched off by the admin, run out, or past its end
+ * date): shown as a spent coupon, so the student sees it was real and simply isn't valid any more.
+ */
+function EndedCoupon({ code, message }: { code: string; message: string }) {
+  return (
+    <div
+      role="status"
+      className="relative flex items-center gap-3 rounded-2xl border-[1.5px] border-dashed border-line bg-sunk pl-3.5 pr-3 py-3"
+    >
+      <span className="flex-none grid place-items-center w-9 h-9 rounded-full bg-line text-ink2">
+        <Ticket size={18} />
+      </span>
+      <span className="flex-1 min-w-0 flex flex-col">
+        <span className="text-[14.5px] leading-snug">
+          <span className="font-mono font-bold tracking-[0.04em] text-ink2 line-through decoration-1">
+            {code}
+          </span>{' '}
+          <span className="ml-1 inline-flex items-center h-5 px-2 rounded-md bg-blush text-blush-text text-[11.5px] font-bold uppercase tracking-[0.06em] align-[1px]">
+            Validity over
+          </span>
+        </span>
+        <span className="text-[13.5px] leading-snug text-ink2">{message}</span>
+      </span>
     </div>
   );
 }
