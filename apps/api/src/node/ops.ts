@@ -167,6 +167,16 @@ async function check() {
       (cfg.hook_before_user_created_enabled ? ok : warn)(
         `college-only sign-up hook ${cfg.hook_before_user_created_enabled ? 'on' : 'off → pnpm ops db:apply turns it on'}`,
       );
+      const showsCode = /\.Token/.test(String(cfg.mailer_templates_magic_link_content ?? ''));
+      (showsCode ? warn : ok)(
+        `sign-in email ${showsCode ? 'shows a code — pnpm ops db:apply makes it link-only' : 'is a one-tap link (no code)'}`,
+      );
+      const smtp = typeof cfg.smtp_host === 'string' ? cfg.smtp_host.trim() : '';
+      (smtp ? ok : warn)(
+        smtp
+          ? `custom SMTP (${smtp}) sends the sign-in emails`
+          : 'no custom SMTP: Supabase’s built-in email service sends only a few emails an hour and often delays them → configure SMTP (Supabase → Authentication → SMTP)',
+      );
     } catch (e) {
       bad(`management API: ${(e as Error).message}`);
     }
@@ -245,6 +255,22 @@ async function dbApply() {
   }
 }
 
+/**
+ * The sign-in email is a one-tap link, never a one-time code: the site has no code entry, so a
+ * code in the email leaves students stuck. Both templates below use only {{ .ConfirmationURL }};
+ * re-applying on every deploy also reverts a dashboard edit that puts {{ .Token }} back.
+ */
+const MAGIC_LINK_EMAIL = `<h2>Your sign-in link</h2>
+<p>Tap the button below to sign in to Scholars Stack. The link works once and expires in ten minutes, and it must be opened in the same browser you requested it from.</p>
+<p><a href="{{ .ConfirmationURL }}">Sign in to Scholars Stack</a></p>
+<p>If the button doesn't work, copy this address into the same browser: {{ .ConfirmationURL }}</p>
+<p>Didn't ask for this? You can safely ignore this email.</p>`;
+
+const CONFIRM_EMAIL = `<h2>Confirm your email</h2>
+<p>Tap the button below to confirm your address and finish signing in to Scholars Stack.</p>
+<p><a href="{{ .ConfirmationURL }}">Confirm my email</a></p>
+<p>Didn't ask for this? You can safely ignore this email.</p>`;
+
 /** College-only gate, short access tokens and refresh-token rotation (SETUP.md step 3). */
 async function configureAuth(mgmt: SupabaseManagement) {
   const steps: [string, Record<string, unknown>][] = [
@@ -262,6 +288,8 @@ async function configureAuth(mgmt: SupabaseManagement) {
       'refresh-token rotation',
       { refresh_token_rotation_enabled: true, security_refresh_token_reuse_interval: 10 },
     ],
+    ['sign-in email is a link, never a code', { mailer_templates_magic_link_content: MAGIC_LINK_EMAIL }],
+    ['sign-up confirmation email is a link', { mailer_templates_confirmation_content: CONFIRM_EMAIL }],
   ];
   if (!isPlaceholder(env.APP_URL) && !/localhost/.test(env.APP_URL ?? '')) {
     steps.push(['site URL', { site_url: env.APP_URL }]);

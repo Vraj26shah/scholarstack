@@ -22,6 +22,29 @@ export class R2ManifestConversionQueue implements ConversionQueue {
     private readonly repository?: string,
   ) {}
 
+  /**
+   * Cloudflare now and then answers R2 reads with a busy "internal error" (10001) or drops the
+   * connection — a blip on their side that a short retry almost always clears. Without this, one
+   * blip fails the whole five-minute wake-up run (and files a server error) for nothing.
+   */
+  private async withRetry<T>(run: () => Promise<T>): Promise<T> {
+    const transient = (error: unknown) =>
+      /internal error|\(10001\)|network connection lost|exceeded the time allowed/i.test(
+        String((error as Error)?.message ?? error),
+      );
+    let last: unknown;
+    for (const waitMs of [0, 500, 2000]) {
+      if (waitMs) await new Promise((done) => setTimeout(done, waitMs));
+      try {
+        return await run();
+      } catch (error) {
+        last = error;
+        if (!transient(error)) throw error;
+      }
+    }
+    throw last;
+  }
+
   async enqueue(jobs: ConversionJob[]): Promise<void> {
     if (jobs.length === 0) return;
     const callbackUrl = this.validatedCallbackUrl();
@@ -46,10 +69,10 @@ export class R2ManifestConversionQueue implements ConversionQueue {
     let cursor: string | undefined;
     const seen = new Set<string>();
     do {
-      const page = await this.bucket.list({ prefix: PREFIX, cursor, limit: 1000 });
+      const page = await this.withRetry(() => this.bucket.list({ prefix: PREFIX, cursor, limit: 1000 }));
       for (const item of page.objects) {
         if (!item.key.endsWith('.json')) continue;
-        const object = await this.bucket.get(item.key);
+        const object = await this.withRetry(() => this.bucket.get(item.key));
         if (!object) continue;
         let value: unknown;
         try {
@@ -94,11 +117,11 @@ export class R2ManifestConversionQueue implements ConversionQueue {
       let queuedJobs = 0;
       let oldest = Number.POSITIVE_INFINITY;
       do {
-        const page = await this.bucket.list({ prefix: PREFIX, cursor, limit: 1000 });
+        const page = await this.withRetry(() => this.bucket.list({ prefix: PREFIX, cursor, limit: 1000 }));
         for (const item of page.objects) {
           if (!item.key.endsWith('.json')) continue;
           oldest = Math.min(oldest, item.uploaded?.getTime?.() ?? Number.POSITIVE_INFINITY);
-          const object = await this.bucket.get(item.key);
+          const object = await this.withRetry(() => this.bucket.get(item.key));
           if (!object) continue;
           const value: unknown = JSON.parse(await object.text());
           if (Array.isArray(value)) queuedJobs += value.length;
@@ -158,10 +181,10 @@ export class R2ManifestConversionQueue implements ConversionQueue {
     let cursor: string | undefined;
     const seen = new Set<string>();
     do {
-      const page = await this.bucket.list({ prefix: PREFIX, cursor, limit: 1000 });
+      const page = await this.withRetry(() => this.bucket.list({ prefix: PREFIX, cursor, limit: 1000 }));
       for (const item of page.objects) {
         if (!item.key.endsWith('.json')) continue;
-        const object = await this.bucket.get(item.key);
+        const object = await this.withRetry(() => this.bucket.get(item.key));
         if (!object) continue;
         const value: unknown = JSON.parse(await object.text());
         if (Array.isArray(value)) queuedJobs += value.length;

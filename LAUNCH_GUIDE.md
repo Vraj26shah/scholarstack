@@ -148,9 +148,7 @@ How announcements are delivered:
 ### If emails stop arriving (checked 3 Nov 2026)
 
 1. **Brevo blocks unknown addresses.** Brevo's "Authorized IPs" refuses any request from an address it hasn't seen. Cloudflare and Supabase send from many changing addresses, so with it on no email goes out (Brevo answers "We have detected you are using an unrecognised IP address"). In Brevo: **Settings → Security → Authorized IPs → Deactivate for API** and **Deactivate for SMTP**. The admin's Today page shows an "Email" problem card while this is on.
-2. **Put the code in the sign-in email.** Students often open the email in the Gmail app, which opens the link in a different browser, where the link can't finish sign-in. The sign-in page now also takes the code from the email. In Supabase → Authentication → Emails → **Magic Link**, make sure the template shows the code, for example:
-   `<p>Your sign-in code: <strong>{{ .Token }}</strong></p><p>Or <a href="{{ .ConfirmationURL }}">sign in with this link</a> in the same browser.</p>`
-   Do the same for **Confirm signup** (first-time students get that one).
+2. **The sign-in email is a one-tap link, never a code.** The sign-in page takes no code any more, so a code in the email would leave students stuck. `pnpm ops db:apply` (run by every deploy) writes a link-only **Magic Link** and **Confirm signup** template automatically, and reverts any dashboard edit that puts `{{ .Token }}` back. To set it by hand instead: Supabase → Authentication → Email Templates → **Magic Link**, keep only `{{ .ConfirmationURL }}` and delete every `{{ .Token }}`. Do the same for **Confirm signup** (first-time students get that one).
 3. **Send from your own domain, not a Gmail address.** `EMAIL_FROM` (and the sender in Supabase's SMTP settings) is a gmail.com address today. Mail "from Gmail" sent by Brevo fails Gmail's checks and lands in Spam or is dropped, especially at a college Google inbox. Add a domain in Brevo (Senders, Domains & Dedicated IPs → Domains), add its DNS records, and send from e.g. `notes@yourdomain`.
 
 ### If UPI doesn't show at checkout

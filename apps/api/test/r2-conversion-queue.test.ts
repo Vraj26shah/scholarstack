@@ -129,6 +129,38 @@ describe('R2 conversion manifest queue', () => {
     }
   });
 
+  it('rides out a transient Cloudflare internal error (10001) instead of failing the wake-up', async () => {
+    const bucket = {
+      list: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('list: We encountered an internal error. Please try again. (10001)'))
+        .mockResolvedValueOnce({
+          objects: [{ key: '_system/conversion-queues/1-waiting.json' }],
+          truncated: false,
+        }),
+      get: vi.fn(async () => ({
+        text: async () =>
+          JSON.stringify({ version: 1, callbackUrl, jobs: [{ fileId: 'a' }, { fileId: 'b' }] }),
+      })),
+    } as unknown as R2Bucket;
+    const queue = new R2ManifestConversionQueue(bucket, callbackUrl);
+
+    await expect(queue.wakeIfQueued()).resolves.toBe(2);
+    expect(bucket.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('still surfaces a non-transient R2 failure immediately', async () => {
+    const bucket = {
+      list: vi.fn(async () => {
+        throw new Error('get: The specified bucket does not exist');
+      }),
+    } as unknown as R2Bucket;
+    const queue = new R2ManifestConversionQueue(bucket, callbackUrl);
+
+    await expect(queue.wakeIfQueued()).rejects.toThrow('does not exist');
+    expect(bucket.list).toHaveBeenCalledOnce();
+  });
+
   it('reports the exact number of queued files after reading all manifests', async () => {
     const bucket = {
       list: vi.fn(async () => ({

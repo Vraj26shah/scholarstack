@@ -5,9 +5,12 @@ import type { Principal } from '../domain/entities';
 import type { AuthVerifier } from '../domain/ports';
 
 /**
- * How the person proved they own the inbox. Only these sign-ins count: a Google login, a
- * one-time code or a magic link. A password sign-up proves nothing about the inbox (anyone can
- * type someone else's address), so it is refused outright, as are anonymous sessions.
+ * How the person proved they own the inbox. Only these sign-ins count: a Google login or an
+ * emailed magic link (the sign-in email is a link, never a one-time code — see ops.ts
+ * configureAuth). 'otp' stays accepted because Supabase records link sign-ins under it on some
+ * flows; no screen of this app ever asks for a code. A password sign-up proves nothing about the
+ * inbox (anyone can type someone else's address), so it is refused outright, as are anonymous
+ * sessions.
  */
 const PROVEN = new Set(['otp', 'oauth', 'magiclink', 'email/signup', 'invite', 'sso/saml', 'email_change']);
 const REFUSED = new Set(['password', 'anonymous']);
