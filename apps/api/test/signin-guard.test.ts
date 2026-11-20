@@ -8,10 +8,11 @@ describe('sign-in check', () => {
   it('accepts college addresses and admin addresses of any domain; refuses everything else', async () => {
     const { app, env } = setup();
     const b = new Browser(app);
-    expect((await check(b, 'rahul.23bce10001@vitbhopal.ac.in')).json).toEqual({ ok: true, admin: false });
+    // The answer never says which addresses are special: a link may be sent, or it may not.
+    expect((await check(b, 'rahul.23bce10001@vitbhopal.ac.in')).json).toEqual({ ok: true });
     env.db.admins.push({ email: 'owner@gmail.com', source: 'github', addedAt: new Date() });
     env.container.admins.forget();
-    expect((await check(b, 'Owner@Gmail.com')).json).toEqual({ ok: true, admin: true });
+    expect((await check(b, 'Owner@Gmail.com')).json).toEqual({ ok: true });
     const r = await check(b, 'stranger@gmail.com');
     expect(r.status).toBe(403);
     expect(r.json.error.code).toBe('NOT_COLLEGE_EMAIL');

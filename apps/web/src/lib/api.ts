@@ -211,8 +211,7 @@ export class ApiClient {
   unsubscribe = (token: string) => this.request<{ ok: true }>('POST', '/email/unsubscribe', { token });
 
   // Account
-  checkSignInEmail = (email: string) =>
-    this.request<{ ok: true; admin: boolean }>('POST', '/auth/check-email', { email });
+  checkSignInEmail = (email: string) => this.request<{ ok: true }>('POST', '/auth/check-email', { email });
   claim = (label: string) => this.request<MeDto>('POST', '/session/claim', { label });
   me = () => this.request<MeDto>('GET', '/me');
   updateName = (fullName: string) => this.request<MeDto>('PATCH', '/me', { fullName });

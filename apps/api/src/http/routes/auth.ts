@@ -11,5 +11,8 @@ authRoutes.post('/auth/check-email', async (c) => {
   const key = await networkKey(c);
   await throttle(c, 'signin-check', key);
   const { email } = Body.parse(await c.req.json());
-  return c.json(await c.get('container').signInGuard.check(email, key));
+  await c.get('container').signInGuard.check(email, key);
+  // Only ever "yes, a link may be sent": never which addresses are special, so nobody can
+  // probe the site for privileged inboxes.
+  return c.json({ ok: true });
 });

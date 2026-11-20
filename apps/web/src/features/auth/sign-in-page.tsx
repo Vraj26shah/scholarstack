@@ -117,9 +117,10 @@ export function SignInPage() {
     e.preventDefault();
     setError(null);
     setSendFailed(false);
-    // Students can request links only for campus addresses. The admin portal accepts a full
-    // address, then the API checks it against the exact admin allowlist before sending anything.
-    const allowed = isAdmin ? isWellFormedEmail(email) : isCollegeEmail(email, env.domain);
+    // A typed username must form a campus address; a full address of any domain is left to the
+    // server, which sends to the addresses it knows (campus, plus a few unadvertised ones) and
+    // refuses the rest without saying who or why.
+    const allowed = isAdmin || isFullEmail ? isWellFormedEmail(email) : isCollegeEmail(email, env.domain);
     if (!username.trim() || !allowed) {
       setError(
         isAdmin
@@ -138,8 +139,8 @@ export function SignInPage() {
     }
     setBusy(true);
     try {
-      // The server says whether this address may sign in (college, or an admin of any domain),
-      // and blocks a network that keeps trying addresses that can't.
+      // The server decides which full addresses may sign in (answering only ever "yes" or
+      // "not a college address"), and blocks a network that keeps trying addresses that can't.
       await api.checkSignInEmail(email);
       sessionStorage.setItem('auth_next', returnTo);
       await authGateway.startEmail(email, captcha, isAdmin);
@@ -235,29 +236,24 @@ export function SignInPage() {
                 </p>
                 {authGateway.supportsGoogle && (
                   <>
-                    <div className="relative">
-                      <span className="absolute -top-2 right-4 z-10 rounded-full bg-teal px-2.5 py-0.5 text-[11px] font-semibold text-white shadow-sm">
-                        Recommended · instant
-                      </span>
-                      <Button
-                        variant="brand"
-                        size="lg"
-                        disabled={busy}
-                        onClick={() => void startGoogleLogin()}
-                      >
-                        <span
-                          aria-hidden="true"
-                          className="w-6 h-6 rounded-full bg-white text-brand inline-flex items-center justify-center text-[13px] font-bold"
-                        >
-                          G
-                        </span>
-                        {busy
-                          ? 'Opening Google…'
-                          : isAdmin
-                            ? 'Continue with Admin Google'
-                            : 'Continue with Google'}
-                      </Button>
+                    <div className="flex items-center gap-3 font-mono text-[11px] tracking-[0.12em] text-ink2">
+                      <span className="flex-1 h-px bg-line" />
+                      recommended
+                      <span className="flex-1 h-px bg-line" />
                     </div>
+                    <Button variant="brand" size="lg" disabled={busy} onClick={() => void startGoogleLogin()}>
+                      <span
+                        aria-hidden="true"
+                        className="w-6 h-6 rounded-full bg-white text-brand inline-flex items-center justify-center text-[13px] font-bold"
+                      >
+                        G
+                      </span>
+                      {busy
+                        ? 'Opening Google…'
+                        : isAdmin
+                          ? 'Continue with Admin Google'
+                          : 'Continue with Google'}
+                    </Button>
                     <div className="flex items-center gap-3 font-mono text-[11px] tracking-[0.12em] text-ink2">
                       <span className="flex-1 h-px bg-line" />
                       or use email
@@ -330,9 +326,7 @@ export function SignInPage() {
                   <p id="email-hint" className="m-0 text-sm text-ink2">
                     {isAdmin
                       ? 'Admin accounts only. We’ll email you a sign-in link.'
-                      : isFullEmail && !email.endsWith(`@${env.domain}`)
-                        ? 'Only listed admins can use this email.'
-                        : 'Enter your college username for a sign-in link.'}
+                      : `Enter your college username, or a full @${env.domain} address, for a sign-in link.`}
                   </p>
                 </form>
               </>
