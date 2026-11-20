@@ -365,21 +365,12 @@ export function SignInPage() {
               </div>
             )}
             {error && (
-              <div
-                role="alert"
-                className="m-0 text-sm bg-blush text-blush-text rounded-xl px-3 py-2.5 flex flex-col gap-2.5"
-              >
+              <div role="alert" className="m-0 text-sm bg-blush text-blush-text rounded-xl px-3 py-2.5">
                 <p className="m-0">{error}</p>
                 {sendFailed && authGateway.supportsGoogle && (
-                  <Button variant="mist" onClick={() => void startGoogleLogin()} disabled={busy}>
-                    <span
-                      aria-hidden="true"
-                      className="w-5 h-5 rounded-full bg-white text-brand inline-flex items-center justify-center text-[11px] font-bold"
-                    >
-                      G
-                    </span>
-                    Continue with Google instead
-                  </Button>
+                  <p className="m-0 mt-1 text-[13px] font-medium">
+                    Continue with Google above needs no email and signs you in instantly.
+                  </p>
                 )}
               </div>
             )}
