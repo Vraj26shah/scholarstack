@@ -166,11 +166,20 @@ export interface DiscountLedger {
   addPayout(p: Omit<PromoPayout, 'id' | 'paidAt'>): Promise<PromoPayout>;
 }
 
+export type BundleFields = Partial<
+  Pick<Bundle, 'title' | 'description' | 'pricePaise' | 'status' | 'offeredTo'>
+>;
+
 export interface BundleRepository {
   listLive(): Promise<Bundle[]>;
   listAll(): Promise<Bundle[]>;
   find(idOrSlug: string): Promise<Bundle | null>;
   save(bundle: Omit<Bundle, 'id'> & { id?: string }): Promise<Bundle>;
+  /**
+   * Change a bundle's own fields (price, name, description, status, drawers) without touching its
+   * courses: one database call, where `save` takes four or five. False when there is no such bundle.
+   */
+  updateFields(id: string, patch: BundleFields): Promise<boolean>;
   /** Delete for good. False when an order points at it (its sales history must stay). */
   remove(id: string): Promise<boolean>;
 }

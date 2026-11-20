@@ -65,6 +65,55 @@ describe('pack prices', () => {
 });
 
 describe('drawer packs', () => {
+  it('a new price list reaches every pack, a capped run at a time, with one write per pack', async () => {
+    const { env, run } = await world();
+    await run({ titlePrefix: 'Semester pack' });
+    const packs = () => [...env.db.bundles.values()].filter((b) => b.autoDrawer && b.status === 'live');
+    expect(packs().length).toBeGreaterThan(2);
+    // Every pack's price is out of date (an old price list), but its courses are the same.
+    for (const b of packs()) env.db.bundles.set(b.id, { ...b, pricePaise: b.pricePaise - 1000 });
+    const saves: string[] = [];
+    const updates: string[] = [];
+    // The pack builder's own repository, so the count is of what it actually writes.
+    const repo = (env.container.packs as unknown as { bundles: unknown }).bundles as {
+      save: (...a: unknown[]) => Promise<unknown>;
+      updateFields: (...a: unknown[]) => Promise<unknown>;
+    };
+    const save = repo.save.bind(repo);
+    const updateFields = repo.updateFields.bind(repo);
+    repo.save = (...a) => {
+      saves.push('save');
+      return save(...a);
+    };
+    repo.updateFields = (...a) => {
+      updates.push('update');
+      return updateFields(...a);
+    };
+
+    // A capped run changes at most that many packs and leaves the rest for the next one.
+    const first = await env.container.packs.run(
+      { dryRun: false, titlePrefix: 'Semester pack', status: 'live', keepInSync: true },
+      false,
+      2,
+    );
+    expect(updates.length).toBe(2);
+    expect(saves.length).toBe(0); // price only: never the costly full save
+    expect(first.totals.update).toBe(2);
+    // The next runs finish the job; afterwards nothing is left to change.
+    for (let i = 0; i < 20; i++)
+      await env.container.packs.run(
+        { dryRun: false, titlePrefix: 'Semester pack', status: 'live', keepInSync: true },
+        false,
+        2,
+      );
+    expect(updates.length).toBe(packs().length);
+    for (const b of packs()) {
+      const list = b.courseIds.reduce((s, id) => s + env.db.courses.get(id)!.pricePaise, 0);
+      const cheapest = Math.min(...b.courseIds.map((id) => env.db.courses.get(id)!.pricePaise));
+      expect(b.pricePaise).toBe(packPricePaise(b.courseIds.length, list, cheapest));
+    }
+  });
+
   it('a dry run changes nothing; a real run makes one live pack per drawer with two or more courses', async () => {
     const { env, admin, run } = await world();
     const before = env.db.bundles.size;

@@ -87,6 +87,16 @@ const handler = {
         const queued = await container.conversionQueue.wakeIfQueued?.();
         if (queued) console.log(JSON.stringify({ level: 'info', event: 'conversion.wake.cron', queued }));
       });
+      // Drawer packs follow their drawers (a course going live or leaving, a new price list). Once
+      // an hour, at :45, in this run rather than the :17 one: a run may make only so many database
+      // calls, and the hourly jobs together used them up after a handful of packs.
+      if (new Date(_event.scheduledTime).getUTCMinutes() === 45)
+        job('drawer-packs', () =>
+          container.packs.sync().then((r) => {
+            if (r && r.totals.create + r.totals.update + r.totals.retire > 0)
+              console.log(JSON.stringify({ level: 'info', event: 'packs.cron', ...r.totals }));
+          }),
+        );
       return;
     }
     // A real database read every hour keeps the free Supabase project from pausing.
@@ -109,13 +119,6 @@ const handler = {
       }),
     );
     job('signin-strikes', () => container.signInStrikes.prune());
-    // Drawer packs follow their drawers: a course going live (or leaving) updates its packs.
-    job('drawer-packs', () =>
-      container.packs.sync().then((r) => {
-        if (r && r.totals.create + r.totals.update + r.totals.retire > 0)
-          console.log(JSON.stringify({ level: 'info', event: 'packs.cron', ...r.totals }));
-      }),
-    );
     // Once a day (the 03:00 UTC run): trim history past its keep period so the database stays small.
     if (new Date(_event.scheduledTime).getUTCHours() === 3)
       job('housekeeping', () =>

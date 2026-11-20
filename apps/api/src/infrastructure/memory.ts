@@ -42,6 +42,7 @@ import { isVisible } from '../domain/entities';
 import type {
   AccessLog,
   AnnouncementRepository,
+  BundleFields,
   BundleRepository,
   CatalogueReader,
   CatalogueWriter,
@@ -1175,6 +1176,14 @@ export class MemoryBundles implements BundleRepository {
       this.db.bundles.get(idOrSlug) ?? [...this.db.bundles.values()].find((b) => b.slug === idOrSlug) ?? null
     );
   }
+  async updateFields(id: string, patch: BundleFields) {
+    const bundle = this.db.bundles.get(id);
+    if (!bundle) return false;
+    const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+    this.db.bundles.set(id, { ...bundle, ...defined });
+    return true;
+  }
+
   async save(b: Omit<Bundle, 'id'> & { id?: string }) {
     const bundle: Bundle = {
       ...b,

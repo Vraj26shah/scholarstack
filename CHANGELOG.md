@@ -6,6 +6,7 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ### Gentler pack prices
 - **Drawer packs take a little more off each course as they grow**, instead of a steep cut: against ₹99 courses, 2 for ₹179 (10% off), 3 for ₹249, 5 for ₹389 (21%), 10 for ₹709 (28%). Was ₹149 / ₹199 / ₹299 / ₹549 (up to 45% off). Live packs re-price on the next hourly run.
+- **Fixed: the hourly pack update stopped after a handful of packs**, silently. A Worker run may make only 50 database calls on Cloudflare's free plan; each pack saved its courses again (4–5 calls) and shared the run with five other hourly jobs, so a new price list reached 9 of 49 packs. A price or name change now writes the pack row only (one call), packs update in their own run at :45 past the hour, and each run changes at most 25 packs (the rest the next hour) so it always finishes.
 - A pack must now be under 92% of its courses one by one (was 85%, which forced at least 15% off); when courses are on sale, a bundle stays about 8% under their sale prices (was 15%).
 
 ### Check-out slip

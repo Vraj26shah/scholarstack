@@ -65,6 +65,10 @@ export function cachedBundles(repo: BundleRepository): ForgettableBundles {
       live.forget();
       return repo.save(b);
     },
+    updateFields: async (id, patch) => {
+      live.forget();
+      return repo.updateFields(id, patch);
+    },
     remove: async (id) => {
       live.forget();
       return repo.remove(id);

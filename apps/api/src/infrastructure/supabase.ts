@@ -39,6 +39,7 @@ import type {
 import type {
   AccessLog,
   AnnouncementRepository,
+  BundleFields,
   BundleRepository,
   CatalogueReader,
   CatalogueWriter,
@@ -1390,6 +1391,19 @@ export class SupabaseBundles implements BundleRepository {
     ) as Row | null;
     return row ? toBundle(row) : null;
   }
+  async updateFields(id: string, patch: BundleFields) {
+    if (!isUuid(id)) return false;
+    const values: Row = {};
+    if (patch.title !== undefined) values.title = patch.title;
+    if (patch.description !== undefined) values.description = patch.description;
+    if (patch.pricePaise !== undefined) values.price_paise = patch.pricePaise;
+    if (patch.status !== undefined) values.status = patch.status;
+    if (patch.offeredTo !== undefined) values.offered_to = patch.offeredTo;
+    if (Object.keys(values).length === 0) return true;
+    const rows = must(await this.db.from('bundles').update(values).eq('id', id).select('id')) as Row[];
+    return rows.length > 0;
+  }
+
   async save(b: Omit<Bundle, 'id'> & { id?: string }) {
     const values = {
       slug: b.slug,

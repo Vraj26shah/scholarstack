@@ -25,6 +25,14 @@ import { charmDownPaise } from './offers';
  */
 
 const SETTINGS_KEY = 'drawer_packs';
+
+/**
+ * Most packs the hourly run changes at a time. A Cloudflare Worker may make only so many
+ * database calls per run (50 on the free plan), so a big change (a new price list for every
+ * pack) is spread over a few runs instead of failing part way with nothing said. The admin's
+ * own "Apply" is not capped: it saves price-only changes with one call each.
+ */
+export const SYNC_WRITES_PER_RUN = 25;
 type PackSettings = PackRunDto['settings'];
 const DEFAULTS: PackSettings = {
   status: 'live',
@@ -95,12 +103,12 @@ export class PackService {
   async sync(): Promise<PackRunDto | null> {
     const s = await this.savedSettings();
     if (!s.keepInSync) return null;
-    const out = await this.run({ ...s, dryRun: false }, false);
+    const out = await this.run({ ...s, dryRun: false }, false, SYNC_WRITES_PER_RUN);
     if (out.totals.create + out.totals.update + out.totals.retire > 0) this.catalogue.forget();
     return out;
   }
 
-  async run(input: PackRunBody, remember = true): Promise<PackRunDto> {
+  async run(input: PackRunBody, remember = true, maxWrites = Number.POSITIVE_INFINITY): Promise<PackRunDto> {
     if (input.ladder) {
       const problems = ladderProblems(input.ladder);
       if (problems.length)
@@ -131,7 +139,11 @@ export class PackService {
         .map((b) => `${b.offeredTo![0]!.batchYear}:${b.offeredTo![0]!.branchSlug}`),
     );
     const usedSlugs = new Set(all.map((b) => b.slug));
-    const plans: (PackPlanDto & { save?: Omit<Bundle, 'id'> & { id?: string } })[] = [];
+    const plans: (PackPlanDto & {
+      save?: Omit<Bundle, 'id'> & { id?: string };
+      /** Courses unchanged: only the pack's own fields are written (one database call). */
+      fieldsOnly?: boolean;
+    })[] = [];
 
     for (const batch of index.batches) {
       for (const branch of programmes) {
@@ -266,6 +278,7 @@ export class PackService {
           ...(same
             ? {}
             : {
+                fieldsOnly: sameCourses,
                 save: {
                   ...existing,
                   ...next,
@@ -300,8 +313,27 @@ export class PackService {
         });
 
     if (!input.dryRun) {
+      let writes = 0;
       for (const plan of plans) {
         if (!plan.save) continue;
+        // The rest waits for the next run (they are planned again from scratch then).
+        if (writes >= maxWrites) {
+          plan.action = 'same';
+          plan.note = 'Next hour: this run changed as many packs as it can';
+          continue;
+        }
+        writes++;
+        if (plan.fieldsOnly && plan.save.id) {
+          const { title, description, pricePaise, status, offeredTo } = plan.save;
+          await this.bundles.updateFields(plan.save.id, {
+            title,
+            description,
+            pricePaise,
+            status,
+            offeredTo,
+          });
+          continue;
+        }
         const saved = await this.bundles.save(plan.save);
         plan.bundleId = saved.id;
       }
