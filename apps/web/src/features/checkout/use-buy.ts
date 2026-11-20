@@ -35,6 +35,8 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
   const [quoteError, setQuoteError] = useState<string | null>(null);
   // Said once on the slip when a code that worked earlier no longer does.
   const [notice, setNotice] = useState<string | null>(null);
+  // The code the student just applied, for the one-off "you save" moment on the slip.
+  const [justApplied, setJustApplied] = useState<string | null>(null);
   // The latest request wins: a slow answer for an old code never overwrites a newer one.
   const asked = useRef(0);
   const itemKey = 'courseId' in item ? `c:${item.courseId}` : `b:${item.bundleId}`;
@@ -77,6 +79,7 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
     }
     setProblem(null);
     setNotice(null);
+    setJustApplied(null);
     setReviewing(true);
     await loadQuote(code);
   }
@@ -87,12 +90,14 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
     const next = await api.checkoutQuote(item, typed);
     if (ask === asked.current) setQuote(next);
     setNotice(null);
+    setJustApplied(next.promo?.code ?? null);
     if (next.promo) track('apply_promo_code', { coupon: next.promo.code });
     return next;
   }
 
   function clearPromo() {
     setNotice(null);
+    setJustApplied(null);
     void loadQuote();
   }
 
@@ -162,6 +167,7 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
     quoteError,
     retryQuote: () => void loadQuote(code),
     notice,
+    justApplied,
     applyPromo,
     clearPromo,
   };

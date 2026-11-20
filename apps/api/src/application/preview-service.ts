@@ -1,4 +1,4 @@
-import type { UnitPreviewInput } from '@ss/contracts';
+import { PREVIEW_LIMITS, type PreviewPick, type UnitPreviewInput } from '@ss/contracts';
 import { isReaderReady } from '../domain/entities';
 import type { CatalogueReader, CatalogueWriter, ObjectStore, RateLimiter, TileSeeder } from '../domain/ports';
 import { fail } from './errors';
@@ -11,7 +11,7 @@ export interface PreviewPage {
 }
 
 /**
- * Free previews the admin chooses: per unit, one file and up to five of its pages. The public
+ * Free previews the admin chooses: per unit, up to four files with up to five pages each. The public
  * can fetch exactly those pages of live courses (tile-scrambled, like the reader); admins can
  * look at any page of any file while choosing.
  */
@@ -51,20 +51,33 @@ export class PreviewService {
     return this.page(fileId, pageNo);
   }
 
-  /** Choose a unit's free preview. `fileId: null` goes back to the default (page 1 of the first file). */
+  /**
+   * Choose a unit's free previews: one or more files of the unit, each with up to five pages
+   * (ten pages in all). An empty list goes back to the default (page 1 of the first file).
+   */
   async choose(courseId: string, unitKey: string, input: UnitPreviewInput) {
-    const pages = [...new Set(input.pages)].sort((a, b) => a - b);
-    if (input.fileId) {
-      const file = await this.writer.findAnyFile(input.fileId);
+    const previews: PreviewPick[] = [];
+    for (const pick of input.previews) {
+      if (previews.some((p) => p.fileId === pick.fileId))
+        throw fail.badRequest('Each file can be picked once; tick more pages of it instead.');
+      const file = await this.writer.findAnyFile(pick.fileId);
       if (!file || file.courseId !== courseId || file.unitKey !== unitKey)
-        throw fail.badRequest('Pick a file from this unit.');
-      if (!isReaderReady(file)) throw fail.badRequest('That file has no pages yet. Make its pages first.');
-      const tooFar = pages.filter((n) => n > file.pageCount);
-      if (tooFar.length)
-        throw fail.badRequest(`That file has ${file.pageCount} pages; page ${tooFar[0]} doesn’t exist.`);
+        throw fail.badRequest('Pick files from this unit.');
+      if (!isReaderReady(file)) throw fail.badRequest(`${file.name} has no pages yet. Make its pages first.`);
+      const pages = [...new Set(pick.pages)].sort((a, b) => a - b);
+      const tooFar = pages.find((n) => n > file.pageCount);
+      if (tooFar)
+        throw fail.badRequest(`${file.name} has ${file.pageCount} pages; page ${tooFar} doesn’t exist.`);
+      previews.push({ fileId: file.id, pages });
     }
-    const ok = await this.writer.setUnitPreview(courseId, unitKey, input.fileId, input.fileId ? pages : [1]);
+    if (previews.length > PREVIEW_LIMITS.files)
+      throw fail.badRequest(`Pick at most ${PREVIEW_LIMITS.files} files to preview.`);
+    if (previews.reduce((s, p) => s + p.pages.length, 0) > PREVIEW_LIMITS.pages)
+      throw fail.badRequest(
+        `Students can peek at up to ${PREVIEW_LIMITS.pages} pages per unit. Untick a few.`,
+      );
+    const ok = await this.writer.setUnitPreview(courseId, unitKey, previews);
     if (!ok) throw fail.notFound('That unit');
-    return { fileId: input.fileId, pages: input.fileId ? pages : [1] };
+    return { previews };
   }
 }

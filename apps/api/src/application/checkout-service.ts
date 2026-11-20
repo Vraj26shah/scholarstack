@@ -105,7 +105,14 @@ export class CheckoutService {
         p.offer && fullPaise > p.offerPaise
           ? { title: p.offer.title, percentOff: p.offer.percentOff, discountPaise: fullPaise - p.offerPaise }
           : null,
-      promo: p.promo ? { code: p.promo.promo.code, discountPaise: p.promo.discountPaise } : null,
+      promo: p.promo
+        ? {
+            code: p.promo.promo.code,
+            discountPaise: p.promo.discountPaise,
+            percentOff: p.promo.promo.kind === 'percent' ? p.promo.promo.percentOff : null,
+            creatorName: p.promo.promo.creatorName,
+          }
+        : null,
       totalPaise: p.amountPaise,
     };
   }

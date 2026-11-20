@@ -147,9 +147,8 @@ export interface CourseFile {
   sort: number;
   /** Watermarked, unscrambled page 1 (public preview). */
   previewKey: string | null;
-  /** The unit's chosen free preview: a file of this unit and its pages. Unset = the default. */
-  unitPreviewFileId?: string | null;
-  unitPreviewPages?: number[];
+  /** The unit's chosen free previews: files of this unit and their pages. Empty/unset = the default. */
+  unitPreviews?: { fileId: string; pages: number[] }[];
 }
 
 export interface Bundle {

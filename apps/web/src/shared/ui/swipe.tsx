@@ -83,6 +83,19 @@ export function useSectionSwipe(opts: {
       m.style.transition = ms ? `transform ${ms}ms cubic-bezier(.22,1,.36,1)` : 'none';
       m.style.transform = x ? `translate3d(${x.toFixed(1)}px,0,0)` : '';
     };
+    // While a finger drags the page, it moves as one GPU layer and the doodles hold still, so
+    // every frame is a cheap move rather than a repaint. Both end when the page settles.
+    const grab = (on: boolean) => {
+      const m = el();
+      if (m) m.style.willChange = on ? 'transform' : '';
+      if (on) document.documentElement.dataset.swiping = '';
+      else delete document.documentElement.dataset.swiping;
+    };
+    let release: number | undefined;
+    const settleLater = (ms: number) => {
+      window.clearTimeout(release);
+      release = window.setTimeout(() => grab(false), ms + 40);
+    };
     const down = (e: TouchEvent) => {
       if (leaving || e.touches.length !== 1 || ownsSwipe(e.target)) {
         start = null;
@@ -115,6 +128,8 @@ export function useSectionSwipe(opts: {
             return;
           }
           sideways = true;
+          window.clearTimeout(release);
+          grab(true);
         }
       }
       if (!sideways) return;
@@ -133,7 +148,11 @@ export function useSectionSwipe(opts: {
       const width = el()?.clientWidth || window.innerWidth;
       const flick = ms < 280 && Math.abs(dx) > 50;
       const go = dx < 0 ? ref.current.onNext : ref.current.onPrev;
-      if (!go || (Math.abs(dx) < width * COMMIT && !flick)) return set(0, 220);
+      if (!go || (Math.abs(dx) < width * COMMIT && !flick)) {
+        settleLater(220);
+        return set(0, 220);
+      }
+      settleLater(170 + 320);
       // Carry it off the screen, then show the next one sliding in from that side.
       leaving = true;
       set(dx < 0 ? -window.innerWidth : window.innerWidth, 170);
@@ -157,6 +176,7 @@ export function useSectionSwipe(opts: {
       start = null;
       sideways = false;
       set(0, 200);
+      settleLater(200);
     };
     document.addEventListener('touchstart', down, { passive: true });
     document.addEventListener('touchmove', move, { passive: true });
@@ -168,6 +188,8 @@ export function useSectionSwipe(opts: {
       document.removeEventListener('touchmove', move);
       document.removeEventListener('touchend', up);
       document.removeEventListener('touchcancel', cancel);
+      window.clearTimeout(release);
+      grab(false);
       set(0);
     };
   }, [opts.enabled]);

@@ -73,7 +73,7 @@ import {
   unitKindOf,
   unitSortOf,
 } from './folders';
-import { fileOrder, previewFileOf, previewPagesOf, toBundleCard, toCard, unitLabel } from './mappers';
+import { fileOrder, previewChosen, previewsOf, toBundleCard, toCard, unitLabel } from './mappers';
 import { explicitlySharedCourseCodes, offeringsOf } from './offerings';
 import { ALL, bundleAudience, shownBundleTitle } from './offers';
 import type { PriceBook } from './price-book';
@@ -1624,11 +1624,12 @@ export class AdminService {
     const visible = files.filter((f) => !f.hidden && !f.unitHidden);
     for (const unit of units.values()) {
       const mine = visible.filter((f) => f.unitKey === unit.key).sort(fileOrder);
-      const first = files.find((f) => f.unitKey === unit.key);
+      const picks = previewsOf(mine);
       unit.preview = {
-        fileId: previewFileOf(mine)?.id ?? null,
-        pages: previewPagesOf(mine),
-        chosen: !!first?.unitPreviewFileId,
+        fileId: picks[0]?.file.id ?? null,
+        pages: picks[0]?.pages ?? [1],
+        chosen: previewChosen(mine),
+        files: picks.map((p) => ({ fileId: p.file.id, pages: p.pages })),
       };
     }
     return [...units.values()];

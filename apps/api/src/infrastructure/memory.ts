@@ -86,8 +86,7 @@ export class MemoryDb {
       kind: CourseFile['unitKind'];
       sort: number;
       hidden: boolean;
-      previewFileId?: string | null;
-      previewPages?: number[];
+      previews?: { fileId: string; pages: number[] }[];
     }
   >();
   pages = new Map<string, { imageKey: string; tileSeed: string }[]>();
@@ -329,8 +328,7 @@ export class MemoryCatalogue implements CatalogueReader, CatalogueWriter {
           unitKind: unit.kind,
           unitSort: unit.sort,
           unitHidden: unit.hidden,
-          unitPreviewFileId: unit.previewFileId ?? null,
-          unitPreviewPages: unit.previewPages ?? [1],
+          unitPreviews: unit.previews ?? [],
         }
       : f;
   }
@@ -365,11 +363,11 @@ export class MemoryCatalogue implements CatalogueReader, CatalogueWriter {
     const f = await this.findAnyFile(fileId);
     return f && isVisible(f) ? f : null;
   }
-  async setUnitPreview(courseId: string, unitKey: string, fileId: string | null, pages: number[]) {
+  async setUnitPreview(courseId: string, unitKey: string, previews: { fileId: string; pages: number[] }[]) {
     const key = `${courseId}|${unitKey}`;
     const unit = this.db.units.get(key);
     if (!unit) return false;
-    this.db.units.set(key, { ...unit, previewFileId: fileId, previewPages: pages });
+    this.db.units.set(key, { ...unit, previews });
     return true;
   }
   async setUnitHidden(courseId: string, unitKey: string, hidden: boolean) {

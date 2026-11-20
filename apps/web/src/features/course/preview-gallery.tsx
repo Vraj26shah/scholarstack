@@ -19,19 +19,22 @@ interface Peek {
   page: number;
 }
 
-/** Every free page, unit by unit: the admin's chosen pages, or page 1 of each unit. */
+/** Every free page, unit by unit and file by file: the admin's picks, or page 1 of each unit. */
 export function peeksOf(units: CourseUnitDto[]): Peek[] {
   return units.flatMap((u) => {
-    if (!u.previewFileId) return [];
-    const file = u.files.find((f) => f.id === u.previewFileId);
-    return (u.previewPages ?? [1]).map((page) => ({
-      unit: u,
-      fileId: u.previewFileId!,
-      fileName: file?.name ?? '',
-      format: file?.format ?? 'pdf',
-      pageCount: file?.pageCount ?? 1,
-      page,
-    }));
+    const picks =
+      u.previews ?? (u.previewFileId ? [{ fileId: u.previewFileId, pages: u.previewPages ?? [1] }] : []);
+    return picks.flatMap((pick) => {
+      const file = u.files.find((f) => f.id === pick.fileId);
+      return pick.pages.map((page) => ({
+        unit: u,
+        fileId: pick.fileId,
+        fileName: file?.name ?? '',
+        format: file?.format ?? 'pdf',
+        pageCount: file?.pageCount ?? 1,
+        page,
+      }));
+    });
   });
 }
 

@@ -1068,3 +1068,80 @@ code {
     animation: none;
   }
 }
+
+/* Check-out slip: an applied promo code lands like a coupon, with a short burst from the tick. */
+@keyframes coupon-in {
+  0% {
+    transform: scale(0.94);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.015);
+    opacity: 1;
+  }
+}
+
+.coupon-in {
+  animation: coupon-in 0.36s var(--ease-out) both;
+}
+
+@keyframes confetti {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.4);
+    opacity: 0;
+  }
+}
+
+.confetti {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  pointer-events: none;
+  animation: confetti 0.62s var(--ease-out) 0.08s both;
+}
+
+@keyframes shake {
+  20%,
+  60% {
+    transform: translateX(-4px);
+  }
+  40%,
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+.shake {
+  animation: shake 0.32s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confetti {
+    display: none;
+  }
+}
+
+/* Smoothness: nothing repaints behind the page while a finger is dragging it sideways. */
+html[data-swiping] .doodle path,
+html[data-swiping] .stack-word {
+  animation-play-state: paused;
+}
+
+/*
+ * Touch screens: the paper grain is drawn plainly instead of blended into the blue underneath.
+ * Blending makes the phone redraw the whole band every time anything in it changes; the plain
+ * layer looks the same at a glance and costs nothing to move.
+ */
+@media (pointer: coarse) {
+  .ambient-grain {
+    mix-blend-mode: normal;
+    opacity: 0.05;
+  }
+}

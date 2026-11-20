@@ -54,6 +54,7 @@ export class SignInGuard {
    * a student out: the answer is always "Continue with Google, which needs no email".
    */
   private async budgetLink(email: string, ipHash: string): Promise<void> {
+    if (!this.config.signinLinkBudgets) return; // the demo server: no email is ever sent
     const addressKey = (await sha256Hex(`mailto|${email}`)).slice(0, 32);
     const budgets: [key: string, limit: number, hours: number, message: string][] = [
       [

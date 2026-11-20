@@ -56,11 +56,10 @@ function loadSentry(): void {
         environment: import.meta.env.DEV ? 'development' : env.mode === 'demo' ? 'demo' : 'production',
         release,
         tunnel: `${env.apiBase.replace(/\/+$/, '')}/monitoring`,
-        // Every visit's speed (the site is small enough); lower this if the span quota runs short.
-        tracesSampleRate: 1,
-        // Replays: 1 in 10 visits, and every visit that hits an error.
+        // Speed of 1 visit in 5: plenty for page-load and Web Vitals trends, at a fifth of the work.
+        tracesSampleRate: 0.2,
+        // Replays: 1 in 10 laptop visits (see sentry.ts: phones never, and no background buffering).
         replaysSessionSampleRate: 0.1,
-        replaysOnErrorSampleRate: 1,
       });
       applyUser(sentry);
       for (const e of early.splice(0)) sentry.captureException(e);

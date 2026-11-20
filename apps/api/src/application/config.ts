@@ -19,4 +19,10 @@ export interface AppConfig {
   emailReserve: number;
   /** Sign-in link emails the whole site may send in a day (see the sign-in guard). */
   signinEmailDailyLimit: number;
+  /**
+   * Whether sign-in links are budgeted per address, network and site. Always on for the real
+   * site; off only for the demo server, which signs in instantly and sends no email (so the
+   * end-to-end suite's many sign-ins from one machine aren't refused as a mail-draining attack).
+   */
+  signinLinkBudgets: boolean;
 }

@@ -1,16 +1,16 @@
 import type { CheckoutQuoteDto } from '@ss/contracts';
-import { type FormEvent, type ReactNode, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { friendly } from '../../lib/api';
 import { formatRupees } from '../../lib/format';
 import { Button } from '../../shared/ui/button';
 import { Sheet, Skeleton } from '../../shared/ui/feedback';
-import { ArrowRight } from '../../shared/ui/icons';
+import { ArrowRight, Check, ChevronRight } from '../../shared/ui/icons';
 import type { BuyState } from './use-buy';
 
 /**
  * The check-out slip between the buy button and Razorpay: what the card costs, what the running
- * offer takes off, the promo code box, and the total Razorpay will charge. Every line comes from
- * the server, worked out exactly as the order will be, so the slip and the payment window always
+ * offer takes off, the promo code, and the total Razorpay will charge. Every line comes from the
+ * server, worked out exactly as the order will be, so the slip and the payment window always
  * show the same amount.
  */
 export function CheckoutSlip({ buyState }: { buyState: BuyState }) {
@@ -57,10 +57,37 @@ export function CheckoutSlip({ buyState }: { buyState: BuyState }) {
   );
 }
 
+/** Counts from the last shown amount to the new one, so a code visibly takes money off. */
+function useCountTo(target: number) {
+  const [shown, setShown] = useState(target);
+  const from = useRef(target);
+  useEffect(() => {
+    const start = from.current;
+    from.current = target;
+    if (start === target || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setShown(target);
+      return;
+    }
+    const began = performance.now();
+    let frame = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - began) / 420);
+      const eased = 1 - (1 - t) ** 3;
+      setShown(Math.round(start + (target - start) * eased));
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target]);
+  // Whole rupees while counting, so the digits don't flicker through paise.
+  return Math.round(shown / 100) * 100;
+}
+
 /** The ruled card: one line per thing that changes the price, then the total. */
 function Slip({ quote }: { quote: CheckoutQuoteDto | null }) {
+  const total = useCountTo(quote?.totalPaise ?? 0);
   return (
-    <div className="ruled relative rounded-[14px] px-[18px] pt-3.5 pb-4 shadow-[0_18px_34px_-24px_var(--shadow),0_0_0_1px_var(--line)]">
+    <div className="relative rounded-[14px] bg-card px-[18px] pt-3.5 pb-4 shadow-[0_18px_34px_-24px_var(--shadow),0_0_0_1px_var(--line)]">
       <div className="flex justify-between font-mono text-[11px] tracking-[0.08em] text-ink2 pb-2 border-b-2 border-card-head">
         <span>CHECK-OUT SLIP</span>
         <span>
@@ -76,7 +103,7 @@ function Slip({ quote }: { quote: CheckoutQuoteDto | null }) {
           <div className="font-display font-extrabold text-[22px] leading-[1.08] tracking-[-0.03em] mt-2.5 mb-2 text-balance">
             {quote.title}
           </div>
-          <dl className="m-0 flex flex-col text-[15px]">
+          <dl className="m-0 flex flex-col text-[15px] divide-y divide-dashed divide-line">
             <Line label="Price" value={formatRupees(quote.fullPaise)} />
             {quote.offer && (
               <Line
@@ -91,26 +118,21 @@ function Slip({ quote }: { quote: CheckoutQuoteDto | null }) {
               />
             )}
             {quote.promo && (
-              <Line
-                label={
-                  <>
-                    Code <span className="font-mono">{quote.promo.code}</span>
-                  </>
-                }
-                value={`−${formatRupees(quote.promo.discountPaise)}`}
-                tone="save"
-              />
+              <Line label="Promo code" value={`−${formatRupees(quote.promo.discountPaise)}`} tone="save" />
             )}
           </dl>
           <div className="flex items-baseline justify-between mt-1 pt-2.5 border-t-2 border-card-head">
             <span className="font-semibold">To pay</span>
-            <span className="font-display font-extrabold text-[30px] leading-none tracking-[-0.04em] tabular-nums">
-              {formatRupees(quote.totalPaise)}
+            <span
+              className="font-display font-extrabold text-[30px] leading-none tracking-[-0.04em] tabular-nums"
+              aria-label={formatRupees(quote.totalPaise)}
+            >
+              {formatRupees(total)}
             </span>
           </div>
           {quote.totalPaise < quote.fullPaise && (
             <p className="m-0 mt-1.5 text-right text-[13px] font-semibold text-teal-text">
-              You save {formatRupees(quote.fullPaise - quote.totalPaise)}
+              You save {formatRupees(quote.fullPaise - quote.totalPaise)} in all
             </p>
           )}
         </>
@@ -128,40 +150,109 @@ function Slip({ quote }: { quote: CheckoutQuoteDto | null }) {
 
 function Line({ label, value, tone }: { label: ReactNode; value: string; tone?: 'save' }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 h-7">
+    <div className="flex items-baseline justify-between gap-4 py-1.5">
       <dt className={`m-0 min-w-0 truncate ${tone === 'save' ? 'font-semibold' : 'text-ink2'}`}>{label}</dt>
       <dd className={`m-0 tabular-nums ${tone === 'save' ? 'font-semibold text-teal-text' : ''}`}>{value}</dd>
     </div>
   );
 }
 
+/** A small ticket glyph for the coupon row. */
+const Ticket = ({ size = 20 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path
+      d="M3 8.5V6.8C3 5.8 3.8 5 4.8 5h14.4c1 0 1.8.8 1.8 1.8v1.7a2.5 2.5 0 0 0 0 5v1.7c0 1-.8 1.8-1.8 1.8H4.8c-1 0-1.8-.8-1.8-1.8v-1.7a2.5 2.5 0 0 0 0-5Z"
+      stroke="currentColor"
+      strokeWidth="1.7"
+    />
+    <path d="M9.5 5v14" stroke="currentColor" strokeWidth="1.7" strokeDasharray="2 2.2" />
+  </svg>
+);
+
+/** Ten bits of paper thrown out from the tick when a code goes on. Decoration only. */
+const BURST = Array.from({ length: 10 }, (_, i) => {
+  const angle = (i / 10) * Math.PI * 2 + 0.3;
+  const reach = 30 + (i % 3) * 9;
+  return {
+    dx: `${Math.round(Math.cos(angle) * reach)}px`,
+    dy: `${Math.round(Math.sin(angle) * reach)}px`,
+    color: ['var(--marigold)', 'var(--teal)', 'var(--card-head)'][i % 3],
+  };
+});
+
 /**
- * "Have a promo code?" on the slip. Closed by default, so a student without one goes straight to
- * Pay; open, it is one field and Apply. An applied code shows as a line on the slip with Remove here.
+ * The promo code, as a coupon. Closed, it is one row ("Have a promo code?"), so a student without
+ * one goes straight to Pay. Open, a field and Apply. Applied, a ticket: the code, what it saves,
+ * who shared it, and Remove, with a short burst the moment it goes on.
  */
 function PromoBox({ buyState }: { buyState: BuyState }) {
-  const { quote, applyPromo, clearPromo, busy: paying } = buyState;
+  const { quote, applyPromo, clearPromo, busy: paying, justApplied } = buyState;
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const link =
-    'self-start bg-transparent border-0 p-0 cursor-pointer text-[14px] font-semibold text-teal-text underline-offset-2 hover:underline disabled:opacity-50';
+  // Bumped on every refusal so the field shakes again for a second wrong code.
+  const [shake, setShake] = useState(0);
 
-  if (quote?.promo)
+  const promo = quote?.promo;
+  if (promo) {
+    const fresh = justApplied === promo.code;
     return (
-      <p className="m-0 text-[14px] text-ink2" aria-live="polite">
-        <span className="font-mono font-semibold text-teal-text">{quote.promo.code}</span> applied.{' '}
-        <button type="button" className={link} disabled={paying} onClick={clearPromo}>
+      <div
+        className={`relative flex items-center gap-3 rounded-2xl border-[1.5px] border-dashed border-teal/40 bg-teal/5 pl-3.5 pr-3 py-3 ${fresh ? 'coupon-in' : ''}`}
+        aria-live="polite"
+      >
+        <span className="relative flex-none grid place-items-center w-9 h-9 rounded-full bg-teal text-white">
+          <Check size={18} />
+          {fresh && (
+            <span aria-hidden="true" className="absolute inset-0">
+              {BURST.map((b) => (
+                <span
+                  key={`${b.dx}${b.dy}`}
+                  className="confetti"
+                  style={{ ['--dx' as string]: b.dx, ['--dy' as string]: b.dy, background: b.color }}
+                />
+              ))}
+            </span>
+          )}
+        </span>
+        <span className="flex-1 min-w-0 flex flex-col">
+          <span className="text-[14.5px] leading-snug">
+            <span className="font-mono font-bold tracking-[0.04em] text-teal-text">{promo.code}</span>{' '}
+            <span className="font-semibold">applied</span>
+          </span>
+          <span className="text-[13.5px] leading-snug text-ink2">
+            You save <b className="text-ink">{formatRupees(promo.discountPaise)}</b>
+            {promo.percentOff ? ` · ${promo.percentOff}% off` : ''}
+            {promo.creatorName ? ` · shared by ${promo.creatorName}` : ''}
+          </span>
+        </span>
+        <button
+          type="button"
+          className="flex-none bg-transparent border-0 px-1.5 py-1 cursor-pointer text-[13.5px] font-semibold text-ink2 hover:text-blush-text disabled:opacity-50"
+          disabled={paying}
+          onClick={clearPromo}
+        >
           Remove
         </button>
-      </p>
+      </div>
     );
+  }
 
   if (!open)
     return (
-      <button type="button" className={link} onClick={() => setOpen(true)}>
-        Have a promo code?
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="press group flex items-center gap-3 w-full text-left rounded-2xl border-[1.5px] border-dashed border-line bg-transparent px-3.5 py-3 cursor-pointer hover:border-teal/40 hover:bg-teal/5"
+      >
+        <span className="flex-none text-teal-text">
+          <Ticket />
+        </span>
+        <span className="flex-1 text-[15px] font-semibold">Have a promo code?</span>
+        <span className="flex items-center gap-0.5 text-[14px] font-semibold text-teal-text">
+          Apply <ChevronRight size={16} />
+        </span>
       </button>
     );
 
@@ -174,36 +265,48 @@ function PromoBox({ buyState }: { buyState: BuyState }) {
       await applyPromo(code);
     } catch (err) {
       setError(friendly(err));
+      setShake((n) => n + 1);
       setBusy(false);
     }
   }
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">
+      <div
+        key={shake}
+        className={`flex items-center gap-1.5 rounded-2xl border-[1.5px] bg-surface pl-3 pr-1.5 py-1.5 focus-within:border-teal ${
+          error ? 'border-blush-text shake' : 'border-line'
+        }`}
+      >
+        <span className="flex-none text-ink2">
+          <Ticket size={18} />
+        </span>
         <input
           // biome-ignore lint/a11y/noAutofocus: opened on purpose by the student
           autoFocus
           aria-label="Promo code"
           aria-invalid={!!error}
-          placeholder="Promo code"
+          placeholder="Enter promo code"
           autoComplete="off"
           autoCapitalize="characters"
+          enterKeyHint="go"
           spellCheck={false}
           maxLength={40}
           value={code}
           onChange={(e) => {
-            setCode(e.target.value.toUpperCase());
+            setCode(e.target.value.toUpperCase().replace(/\s+/g, ''));
             setError(null);
           }}
-          className={`h-11 flex-1 min-w-0 rounded-xl bg-surface border-[1.5px] px-3.5 font-mono text-[15px] tracking-[0.04em] text-ink outline-none focus:border-teal ${error ? 'border-blush-text' : 'border-line'}`}
+          // The pill around it shows focus (focus-within); a second ring inside it looked broken.
+          style={{ outline: 'none' }}
+          className="h-10 flex-1 min-w-0 bg-transparent border-0 px-1 font-mono text-[15px] tracking-[0.06em] text-ink outline-none placeholder:font-sans placeholder:tracking-normal"
         />
-        <Button type="submit" variant="outline" disabled={busy || !code.trim()}>
+        <Button type="submit" size="sm" variant="brand" disabled={busy || !code.trim()} className="h-10 px-4">
           {busy ? 'Checking…' : 'Apply'}
         </Button>
       </div>
       {error && (
-        <span role="alert" className="text-[13.5px] text-blush-text">
+        <span role="alert" className="pl-1 text-[13.5px] text-blush-text">
           {error}
         </span>
       )}

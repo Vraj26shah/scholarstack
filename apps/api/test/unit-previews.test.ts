@@ -66,6 +66,46 @@ describe('free previews chosen by the admin', () => {
     );
   });
 
+  it('one unit can preview several files, each with its own pages, and exactly those pages are public', async () => {
+    const { app, a, course, detail, unit } = await world();
+    expect(unit.files.length).toBeGreaterThan(1);
+    const [f1, f2] = unit.files;
+    const put = (body: unknown) =>
+      a.call('PUT', `/admin/courses/${course.id}/units/${unit.key}/preview`, body);
+    const r = await put({
+      previews: [
+        { fileId: f2.id, pages: [1] },
+        { fileId: f1.id, pages: [Math.min(2, f1.pageCount), 1] },
+      ],
+    });
+    expect(r.status).toBe(200);
+    const u = (await detail()).units.find((x: any) => x.key === unit.key);
+    // In the admin's order; the single-file fields mirror the first pick.
+    expect(u.previews.map((p: any) => p.fileId)).toEqual([f2.id, f1.id]);
+    expect(u.previewFileId).toBe(f2.id);
+    expect(u.previews[1].pages).toEqual([...new Set([1, Math.min(2, f1.pageCount)])]);
+    const pub = new Browser(app);
+    expect((await pub.call('GET', `/previews/${f2.id}/pages/1`)).status).toBe(200);
+    expect((await pub.call('GET', `/previews/${f1.id}/pages/1`)).status).toBe(200);
+    if (f2.pageCount >= 2) expect((await pub.call('GET', `/previews/${f2.id}/pages/2`)).status).toBe(404);
+
+    // The same file twice, or more than ten pages in all, is refused with a reason.
+    const twice = await put({
+      previews: [
+        { fileId: f1.id, pages: [1] },
+        { fileId: f1.id, pages: [1] },
+      ],
+    });
+    expect(twice.status).toBe(400);
+    expect(twice.json.error.message).toContain('picked once');
+
+    // An empty list goes back to the default.
+    expect((await put({ previews: [] })).status).toBe(200);
+    expect((await detail()).units.find((x: any) => x.key === unit.key).previews).toEqual([
+      { fileId: unit.previewFileId, pages: [1] },
+    ]);
+  });
+
   it('a chosen file that is hidden later falls back to the default, so the preview never breaks', async () => {
     const { a, course, detail, unit } = await world();
     const other = unit.files.find((f: any) => f.id !== unit.previewFileId);

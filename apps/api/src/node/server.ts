@@ -50,6 +50,9 @@ const { container, db, seeder, sources } = memoryContainer({
   seed: true,
   pageProducer: producePage,
   conversionPageMs: Number(process.env.DEMO_CONVERT_PAGE_MS ?? 0),
+  // Demo sign-in is instant and sends no email, so there is no mail to protect: without this the
+  // end-to-end suite (dozens of sign-ins from one machine) hits the per-network link budget.
+  config: { signinLinkBudgets: false },
 });
 dbRef = db;
 seederRef = seeder;

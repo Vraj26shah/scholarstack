@@ -59,6 +59,7 @@ import type {
   OrderDto,
   PackRunBody,
   PackRunDto,
+  PreviewPick,
   ProblemDto,
   PromoPayoutBody,
   PromoPayoutDto,
@@ -278,11 +279,12 @@ export class ApiClient {
     if (!res.ok) throw new ApiError(res.status, 'NOT_FOUND', 'That page isn’t available.');
     return { blob: await res.blob(), seed: res.headers.get(TILE_SEED_HEADER) ?? '' };
   }
-  adminSetUnitPreview = (courseId: string, unitKey: string, fileId: string | null, pages: number[]) =>
-    this.request<{ fileId: string | null; pages: number[] }>(
+  /** A unit's free previews, in order; an empty list goes back to the default. */
+  adminSetUnitPreview = (courseId: string, unitKey: string, previews: PreviewPick[]) =>
+    this.request<{ previews: PreviewPick[] }>(
       'PUT',
       `/admin/courses/${encodeURIComponent(courseId)}/units/${encodeURIComponent(unitKey)}/preview`,
-      { fileId, pages },
+      { previews },
     );
 
   // Contributions

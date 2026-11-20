@@ -79,6 +79,7 @@ export function buildConfig(env: Partial<Record<keyof WorkerEnv, unknown>>, now 
     emailReserve: Math.min(num(s('EMAIL_RESERVE'), 20), Math.floor(num(s('EMAIL_DAILY_LIMIT'), 250) / 2)),
     // Under the provider's total cap so announcements and receipts still go out.
     signinEmailDailyLimit: num(s('SIGNIN_EMAIL_DAILY_LIMIT'), 250),
+    signinLinkBudgets: true,
   };
 }
 

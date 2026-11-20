@@ -552,6 +552,55 @@ function CodeRow({ p, onEdit }: { p: AdminPromoCodeDto; onEdit: () => void }) {
   );
 }
 
+type Show = 'all' | 'creators' | 'other';
+
+/**
+ * Each creator at a glance: their codes, paid uses and what they have earned. What is paid and
+ * still owed lives in Money › Discounts; this is the quick look while making codes.
+ */
+function CreatorSummary({ codes }: { codes: AdminPromoCodeDto[] }) {
+  const byCreator = new Map<string, { name: string; codes: string[]; uses: number; earned: number }>();
+  for (const p of codes) {
+    if (!p.creatorName) continue;
+    const key = p.creatorName.toLowerCase();
+    const row = byCreator.get(key) ?? { name: p.creatorName, codes: [], uses: 0, earned: 0 };
+    row.codes.push(p.code);
+    row.uses += p.uses;
+    row.earned += p.earnedPaise;
+    byCreator.set(key, row);
+  }
+  const rows = [...byCreator.values()].sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name));
+  if (rows.length === 0) return null;
+  return (
+    <section aria-label="Creators" className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="m-0 font-semibold">Creators</h3>
+        <span className="text-[13px] text-ink2">Payments and what's owed: Money › Discounts</span>
+      </div>
+      <div role="list" className="grid gap-2 grid-cols-[repeat(auto-fill,minmax(220px,1fr))]">
+        {rows.map((r) => (
+          <div
+            role="listitem"
+            key={r.name}
+            className="rounded-2xl border border-line bg-surface px-4 py-3 flex flex-col gap-1"
+          >
+            <span className="font-semibold truncate">{r.name}</span>
+            <span className="font-mono text-[12px] text-ink2 truncate">{r.codes.join(' · ')}</span>
+            <span className="flex items-baseline justify-between gap-2 text-[13.5px]">
+              <span className="text-ink2">
+                <b className="text-ink tabular-nums">{r.uses}</b> paid {r.uses === 1 ? 'use' : 'uses'}
+              </span>
+              <span className="text-ink2">
+                earned <b className="text-teal-text tabular-nums">{formatMoney(r.earned)}</b>
+              </span>
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 /**
  * Promo codes: a code students type at checkout for a percentage or a flat amount off. Prices on
  * courses and bundles are never edited; a student without a code pays the normal price.
@@ -561,6 +610,10 @@ export function PromoCodesPanel() {
   const courses = useQuery({ queryKey: ['admin-courses'], queryFn: api.adminCourses });
   const bundles = useQuery({ queryKey: ['admin-bundles'], queryFn: api.adminBundles });
   const [editing, setEditing] = useState<Form | null>(null);
+  const [show, setShow] = useState<Show>('all');
+  const all = codes.data ?? [];
+  const hasCreators = all.some((p) => p.creatorName);
+  const shown = all.filter((p) => show === 'all' || (show === 'creators') === !!p.creatorName);
   const liveBundles = (bundles.data ?? []).filter((b) => b.status === 'live');
 
   return (
@@ -575,9 +628,9 @@ export function PromoCodesPanel() {
       }
     >
       <p className="m-0 text-sm text-ink2 max-w-[760px]">
-        A code like DIWALI20 that students type under the buy button. The "Have a promo code?" link only shows
-        while a code is switched on, so without one the pages look as they always do. Only paid orders count
-        as a use.
+        A code like DIWALI20 that students type on the check-out slip, after Buy and before paying. Give a
+        code to a creator (a campus ambassador, a YouTuber) to see every sale it brings and what they earn;
+        students see "shared by" their name. Only paid orders count as a use.
       </p>
       {editing && courses.data && (
         <CodeForm
@@ -597,12 +650,41 @@ export function PromoCodesPanel() {
           onRetry={() => codes.refetch()}
         />
       ) : (
-        <ul className="list-none m-0 p-0 flex flex-col gap-2.5">
-          {(codes.data ?? []).map((p) => (
-            <CodeRow key={p.id} p={p} onEdit={() => setEditing(toForm(p))} />
-          ))}
-          {codes.data?.length === 0 && <li className="text-ink2">No promo codes yet.</li>}
-        </ul>
+        <>
+          <CreatorSummary codes={all} />
+          {hasCreators && (
+            <div role="radiogroup" aria-label="Show codes" className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  ['all', `All · ${all.length}`],
+                  ['creators', `Creator codes · ${all.filter((p) => p.creatorName).length}`],
+                  ['other', `Other codes · ${all.filter((p) => !p.creatorName).length}`],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={show === value}
+                  onClick={() => setShow(value)}
+                  className={`press h-8 px-3.5 rounded-full text-[13px] font-semibold cursor-pointer border-[1.5px] ${
+                    show === value
+                      ? 'bg-ink text-bg border-ink'
+                      : 'bg-transparent text-ink border-line hover:border-ink2'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          <ul className="list-none m-0 p-0 flex flex-col gap-2.5">
+            {shown.map((p) => (
+              <CodeRow key={p.id} p={p} onEdit={() => setEditing(toForm(p))} />
+            ))}
+            {all.length === 0 && <li className="text-ink2">No promo codes yet.</li>}
+          </ul>
+        </>
       )}
     </Panel>
   );

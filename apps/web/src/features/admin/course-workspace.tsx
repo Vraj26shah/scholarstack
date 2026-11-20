@@ -1,18 +1,18 @@
-import type { AdminCourseDto, AdminUnitDto, CourseInventoryDto } from '@ss/contracts';
+import type { AdminCourseDto, CourseInventoryDto } from '@ss/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { Button, LinkButton } from '../../shared/ui/button';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { ChevronLeft } from '../../shared/ui/icons';
-import { ScrambledPage } from '../../shared/ui/scrambled-page';
 import { BooksManager } from './books-manager';
 import { CourseDetails } from './course-details';
 import { DeleteSheet } from './delete-sheet';
 import { PublishSteps } from './publish-steps';
 import { type R2FileSyncProgress, pickUpChanges } from './r2-file-sync';
 import { StatusPill, plural } from './ui';
+import { UnitPreview } from './unit-preview';
 
 type Obj = CourseInventoryDto['objects'][number];
 
@@ -466,182 +466,6 @@ function FilesTab({ c }: { c: AdminCourseDto }) {
   );
 }
 
-const PAGE_STRIP = 8;
-
-/** One unit's free preview: pick a file, look at its pages, tick up to five, save. */
-function UnitPreview({ c, unit }: { c: AdminCourseDto; unit: AdminUnitDto }) {
-  const qc = useQueryClient();
-  const ready = unit.files.filter((f) => f.status === 'ready' && f.pageCount > 0 && !f.hidden);
-  const current = unit.preview ?? { fileId: null, pages: [1], chosen: false };
-  const [fileId, setFileId] = useState(current.fileId ?? ready[0]?.id ?? '');
-  const [pages, setPages] = useState<number[]>(current.pages);
-  const [from, setFrom] = useState(1);
-  const [editing, setEditing] = useState(false);
-  const saved = `${current.fileId}|${current.pages.join(',')}`;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset when the saved choice changes
-  useEffect(() => {
-    setFileId(current.fileId ?? ready[0]?.id ?? '');
-    setPages(current.pages);
-  }, [saved]);
-  const file = ready.find((f) => f.id === fileId);
-  const save = useMutation({
-    mutationFn: (choice: { fileId: string | null; pages: number[] }) =>
-      api.adminSetUnitPreview(c.id, unit.key, choice.fileId, choice.pages),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['admin-units', c.id] });
-      void qc.invalidateQueries({ queryKey: ['course'] });
-    },
-  });
-  const toggle = (n: number) =>
-    setPages((p) =>
-      p.includes(n) ? p.filter((x) => x !== n) : p.length >= 5 ? p : [...p, n].sort((a, b) => a - b),
-    );
-  const changed = fileId !== current.fileId || pages.join(',') !== current.pages.join(',');
-
-  return (
-    <section
-      className="rounded-2xl bg-card shadow-[0_0_0_1px_var(--line)] p-4 flex flex-col gap-3"
-      aria-label={`Free preview for ${unit.label}`}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-brand text-white">
-          {unit.label}
-        </span>
-        <strong className="mr-auto">{unit.title}</strong>
-        <span className="text-[13px] text-ink2">
-          Students see{' '}
-          {current.fileId
-            ? `page${current.pages.length > 1 ? 's' : ''} ${current.pages.join(', ')} of ${
-                ready.find((f) => f.id === current.fileId)?.name ?? 'a file'
-              }`
-            : 'nothing yet'}
-          {current.chosen ? ' (your choice)' : ' (default)'}
-        </span>
-        {!unit.hidden && ready.length > 0 && (
-          <Button size="sm" variant={editing ? 'ghost' : 'outline'} onClick={() => setEditing(!editing)}>
-            {editing ? 'Close' : 'Change'}
-          </Button>
-        )}
-      </div>
-      {unit.hidden ? (
-        <p className="m-0 text-sm text-ink2">This unit is hidden, so it has no free preview.</p>
-      ) : ready.length === 0 ? (
-        <p className="m-0 text-sm text-ink2">
-          No file in this unit has pages yet. Make its pages in the Files tab first.
-        </p>
-      ) : !editing ? null : (
-        <>
-          <label className="flex flex-col gap-1 text-[13px] font-semibold">
-            File to preview
-            <select
-              className="h-10 px-3 rounded-xl bg-surface border-[1.5px] border-line text-[14px] font-normal"
-              value={fileId}
-              onChange={(e) => {
-                setFileId(e.target.value);
-                setPages([1]);
-                setFrom(1);
-              }}
-            >
-              {ready.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name} · {plural(f.pageCount, 'page')}
-                </option>
-              ))}
-            </select>
-          </label>
-          {file && (
-            <>
-              <p className="m-0 text-[13px] text-ink2">
-                Tick up to 5 pages students can read free ({pages.length} ticked). Pages {from}–
-                {Math.min(file.pageCount, from + PAGE_STRIP - 1)} of {file.pageCount}:
-              </p>
-              <ul className="m-0 p-0 list-none grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-                {Array.from(
-                  { length: Math.min(PAGE_STRIP, file.pageCount - from + 1) },
-                  (_, i) => from + i,
-                ).map((n) => {
-                  const on = pages.includes(n);
-                  return (
-                    <li key={n}>
-                      <button
-                        type="button"
-                        aria-pressed={on}
-                        aria-label={`${on ? 'Untick' : 'Tick'} page ${n}`}
-                        onClick={() => toggle(n)}
-                        className={`relative block w-full p-0 rounded-lg overflow-hidden border-2 cursor-pointer bg-white ${
-                          on ? 'border-teal shadow-[0_0_0_3px_rgba(25,149,173,0.25)]' : 'border-line'
-                        }`}
-                      >
-                        <ScrambledPage
-                          fileId={file.id}
-                          page={n}
-                          admin
-                          stamp=""
-                          className="aspect-[1/1.414]"
-                        />
-                        <span
-                          className={`absolute left-1.5 top-1.5 min-w-6 h-6 px-1.5 rounded-full text-[11px] font-bold inline-flex items-center justify-center ${
-                            on ? 'bg-teal text-white' : 'bg-white/90 text-ink'
-                          }`}
-                        >
-                          {on ? `✓ ${n}` : n}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={from === 1}
-                  onClick={() => setFrom(Math.max(1, from - PAGE_STRIP))}
-                >
-                  ← Earlier pages
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={from + PAGE_STRIP > file.pageCount}
-                  onClick={() => setFrom(from + PAGE_STRIP)}
-                >
-                  Later pages →
-                </Button>
-                <span className="ml-auto flex gap-2">
-                  {current.chosen && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={save.isPending}
-                      onClick={() => save.mutate({ fileId: null, pages: [1] })}
-                    >
-                      Use the default
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    disabled={!changed || pages.length === 0 || save.isPending}
-                    onClick={() => save.mutate({ fileId, pages })}
-                  >
-                    {save.isPending ? 'Saving…' : 'Save preview'}
-                  </Button>
-                </span>
-              </div>
-            </>
-          )}
-        </>
-      )}
-      {save.isError && <p className="m-0 text-sm text-blush-text">{friendly(save.error)}</p>}
-      {save.isSuccess && !changed && (
-        <p className="m-0 text-sm text-teal-text" role="status">
-          Saved. Students see it now.
-        </p>
-      )}
-    </section>
-  );
-}
-
 function PreviewTab({ c }: { c: AdminCourseDto }) {
   const units = useQuery({ queryKey: ['admin-units', c.id], queryFn: () => api.adminUnits(c.id) });
   if (units.isPending) return <Skeleton className="h-72" />;
@@ -656,7 +480,8 @@ function PreviewTab({ c }: { c: AdminCourseDto }) {
   return (
     <div className="flex flex-col gap-4">
       <p className="m-0 text-[14px] text-ink2">
-        Free pages students see before buying: page 1 by default, or up to five you pick.
+        Free pages students see in Peek inside before buying: page 1 by default, or pages you pick from one or
+        more files of each unit (up to 10 per unit).
       </p>
       {units.data.map((u) => (
         <UnitPreview key={u.key} c={c} unit={u} />

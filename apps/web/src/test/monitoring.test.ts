@@ -45,7 +45,8 @@ describe('analytics → Sentry', () => {
         dsn: 'https://k@o1.ingest.us.sentry.io/2',
         tunnel: '/api/monitoring',
         release: 'abc123',
-        replaysOnErrorSampleRate: 1,
+        replaysSessionSampleRate: 0.1,
+        tracesSampleRate: 0.2,
       }),
     );
     expect(sdk.captureException).toHaveBeenCalledWith(early);

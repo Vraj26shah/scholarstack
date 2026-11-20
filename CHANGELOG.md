@@ -8,11 +8,24 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 - **Buy now opens a check-out slip before Razorpay**: the price, the running offer and what it takes off, the promo code, and the total, one line each, then "Pay ₹…". Every line comes from the server (`POST /api/checkout/quote`), worked out exactly as the order is, so the slip and the payment window always show the same amount.
 - **The promo box is on every slip**, closed behind "Have a promo code?", so a student with a code always finds it and one without goes straight to Pay. It replaces the small link under the buy button that only showed while a code was running (and was easy to miss).
 - A code that ends or runs out between Apply and Pay is dropped on the slip with the reason, and the slip shows the new total instead of charging it; the next tap pays the normal price on purpose.
+- **An applied code shows as a coupon**: a ticket with a tick, the code, "You save ₹… · 15% off · shared by <creator>", and Remove. The moment it goes on, a short burst comes off the tick and the total counts down to the new amount (both off with reduced motion). A wrong code shakes the field and says why in plain words.
+- **Promo codes for creators** (Admin › Courses › Promo codes): a Creators summary at the top (each creator's codes, paid uses and earnings) and a filter for All / Creator codes / Other codes. Payouts stay in Money › Discounts.
 - **Diwali 2026 set up as a real offer** (`supabase/seed/diwali-offer-2026.sql`): 20% off everything till 30 Nov, 11:59 pm IST, plus `DIWALI10` (a further 10%, once per student). The packs had been renamed "Diwali pack" through the pack-name setting, which changed only the name; that is back to "Semester pack", and the offer shows them as "Diwali pack · …" while it runs.
+
+### Peek inside from several files
+- **A unit can preview more than one file**: in a course's Free preview tab, look through any file of the unit and tick pages from as many as 4 files (up to 5 pages a file, 10 a unit). Picks show as numbered chips in the order students see them, each removable; "Use the default" goes back to page 1 of the first file. Peek inside shows every picked page, file by file.
+- Database: `course_units.preview_files` (migration `20261120000100_unit_preview_files`), with existing single-file choices copied over. The old single-file columns keep mirroring the first pick, and the API still accepts the old `{ fileId, pages }` body.
+
+### Faster on phones and laptops
+- **Session Replay no longer runs in the background on every visit.** It was buffering every page change on all visits (to keep a replay of any error), which measured at about 7 ms extra work on every click (10 ms → 3 ms with it off, CPU slowed 4×). Now the recorder loads only on the 1 in 10 laptop visits that are recorded, and never on phones. Errors are still reported from every visit; page-speed tracing samples 1 visit in 5.
+- **Swipes are cheaper to draw**: while a finger drags a page sideways it moves as one GPU layer and the margin doodles and paper plane hold still; doodles also stop drawing whenever their band is off screen; and on touch screens the paper grain is no longer blended into the blue (blending made the whole band redraw).
+
+### Fixed
+- **The end-to-end suite can run again.** The sign-in link budgets (15 per network an hour) also applied to the demo server, which sends no email, so a full run stalled at sign-in after 15 students (37 of 112 tests). The demo server now turns the budgets off (`signinLinkBudgets: false`); the real site and the unit tests keep them.
 
 ### Monitoring (Sentry)
 - **Real-user monitoring now works.** Before, the CDN bundle never had tracing turned on, so Sentry recorded no page loads or Web Vitals at all. Sentry now records every page load and route change, grouped by route ("/c/:slug"), with LCP, INP, CLS, TTFB and FCP, the API calls under them, and "main thread blocked" warnings.
-- **Session Replay:** 10% of visits, and every visit that hits an error. All text and inputs are masked and media (notes pages) blocked.
+- **Session Replay:** 10% of laptop visits (phones never; see "Faster on phones and laptops"). All text and inputs are masked and media (notes pages) blocked.
 - **Each event names the student** (account ID and email, plus a role tag of student, admin or visitor), cleared on sign-out. Events carry the deployed commit as the release and the environment.
 - **Ad blockers no longer hide Sentry.** The SDK is bundled with the site (loaded after start as its own chunk, never on the first page) and reports through `/api/monitoring`, a tunnel on our own API. The tunnel forwards only to our Sentry project, keeps replay bytes intact, caps size and rate-limits each network.
 - The security headers drop Sentry's CDN and ingest hosts, and allow `worker-src blob:` for replay compression.

@@ -98,7 +98,21 @@ const toCourse = (r: Row): Course => ({
  * file's unit, and a unit's chosen preview file), so the embed names the file → unit link.
  */
 const FILE_SELECT =
-  '*, course_units!course_files_unit_id_course_id_fkey!inner(key, title, kind, sort, is_hidden, preview_file_id, preview_pages)';
+  '*, course_units!course_files_unit_id_course_id_fkey!inner(key, title, kind, sort, is_hidden, preview_file_id, preview_pages, preview_files)';
+
+/** The unit's preview picks: the list when set, else the older single-file columns, else none. */
+function unitPreviewsOf(u: Row): { fileId: string; pages: number[] }[] {
+  const list = Array.isArray(u.preview_files) ? (u.preview_files as Row[]) : [];
+  const picks = list
+    .filter((p) => typeof p?.fileId === 'string' && Array.isArray(p.pages))
+    .map((p) => ({
+      fileId: p.fileId as string,
+      pages: (p.pages as unknown[]).filter(Number.isInteger) as number[],
+    }));
+  if (picks.length) return picks;
+  const one = (u.preview_file_id as string | null) ?? null;
+  return one ? [{ fileId: one, pages: (u.preview_pages as number[] | null) ?? [1] }] : [];
+}
 
 const toFile = (r: Row): CourseFile => {
   const u = (r.course_units ?? {}) as Row;
@@ -110,8 +124,7 @@ const toFile = (r: Row): CourseFile => {
     unitKind: (u.kind as CourseFile['unitKind']) ?? 'other',
     unitSort: (u.sort as number) ?? 0,
     unitHidden: u.is_hidden === true,
-    unitPreviewFileId: (u.preview_file_id as string | null) ?? null,
-    unitPreviewPages: (u.preview_pages as number[] | null) ?? [1],
+    unitPreviews: unitPreviewsOf(u),
     hidden: r.is_hidden === true,
     name: r.name as string,
     format: r.format as CourseFile['format'],
@@ -454,12 +467,18 @@ export class SupabaseCatalogue implements CatalogueReader, CatalogueWriter {
     return file && !file.hidden && !file.unitHidden ? file : null;
   }
 
-  async setUnitPreview(courseId: string, unitKey: string, fileId: string | null, pages: number[]) {
-    if (!isUuid(courseId) || !isSlug(unitKey) || (fileId && !isUuid(fileId))) return false;
+  async setUnitPreview(courseId: string, unitKey: string, previews: { fileId: string; pages: number[] }[]) {
+    if (!isUuid(courseId) || !isSlug(unitKey) || previews.some((p) => !isUuid(p.fileId))) return false;
+    const first = previews[0];
     const rows = must(
       await this.db
         .from('course_units')
-        .update({ preview_file_id: fileId, preview_pages: pages })
+        // The single-file columns mirror the first pick, for anything that still reads them.
+        .update({
+          preview_files: previews,
+          preview_file_id: first?.fileId ?? null,
+          preview_pages: first?.pages ?? [1],
+        })
         .eq('course_id', courseId)
         .eq('key', unitKey)
         .select('id'),

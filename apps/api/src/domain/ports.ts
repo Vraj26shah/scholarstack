@@ -76,8 +76,12 @@ export interface CatalogueWriter {
   ): Promise<{ file: CourseFile; change: 'added' | 'changed' | 'same' }>;
   /** Retires a source removed from R2 without deleting student reading history. */
   markFileSourceMissing(fileId: string): Promise<boolean>;
-  /** The unit's free preview: a file of the unit and its pages; null file = the default. */
-  setUnitPreview(courseId: string, unitKey: string, fileId: string | null, pages: number[]): Promise<boolean>;
+  /** The unit's free previews: files of the unit and their pages, in order; empty = the default. */
+  setUnitPreview(
+    courseId: string,
+    unitKey: string,
+    previews: { fileId: string; pages: number[] }[],
+  ): Promise<boolean>;
   setUnitHidden(courseId: string, unitKey: string, hidden: boolean): Promise<boolean>;
   setFileHidden(fileId: string, hidden: boolean): Promise<boolean>;
   /** Pauses (true) or resumes (false) one file's conversion, without touching its progress. */

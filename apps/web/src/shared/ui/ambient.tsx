@@ -144,19 +144,19 @@ export function Ambient({
   const name = layout ?? (dust ? 'hero' : 'panel');
   const set = LAYOUTS[name];
   const ref = useRef<HTMLDivElement>(null);
-  // Start drawing only when this layer enters view, then leave its marks visible.
+  // Draw only while this layer is on screen: off screen the doodles hold still, so a long page
+  // with several blue bands isn't repainting ones nobody can see.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     if (!('IntersectionObserver' in window)) return void el.setAttribute('data-shown', '');
     const io = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          el.setAttribute('data-shown', '');
-          io.disconnect();
-        }
+        const on = entries.some((entry) => entry.isIntersecting);
+        if (on) el.setAttribute('data-shown', '');
+        else el.removeAttribute('data-shown');
       },
-      { threshold: 0.25 },
+      { threshold: 0 },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -324,7 +324,7 @@ function PaperPlane() {
 
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
-      if (!visible || document.hidden) {
+      if (!visible || document.hidden || 'swiping' in document.documentElement.dataset) {
         if (flight) flight.t0 += 16;
         return;
       }

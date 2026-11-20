@@ -122,13 +122,40 @@ export interface CourseUnitDto {
   previewFileId: string | null;
   /** Which of that file's pages are public (page 1 unless the admin chose others). */
   previewPages?: number[];
+  /** Every free preview in this unit, in order: one or more files, each with its pages. */
+  previews?: PreviewPick[];
 }
 
-/** The admin's free-preview choice for one unit. A null file goes back to the default. */
-export const UnitPreviewBody = z.object({
-  fileId: z.string().min(1).max(64).nullable(),
-  pages: z.array(z.number().int().min(1).max(2000)).min(1).max(5),
-});
+/** One file of a unit shown free in "Peek inside", and which of its pages. */
+export interface PreviewPick {
+  fileId: string;
+  pages: number[];
+}
+
+/** Most files one unit can preview, pages per file, and pages in all. */
+export const PREVIEW_LIMITS = { files: 4, pagesPerFile: 5, pages: 10 } as const;
+
+const PreviewPages = z.array(z.number().int().min(1).max(2000)).min(1).max(5);
+
+/**
+ * The admin's free-preview choice for one unit: `previews` lists one or more files of the unit,
+ * each with up to five pages (an empty list goes back to the default). The older single-file shape
+ * `{ fileId, pages }` (null file = default) is still accepted.
+ */
+export const UnitPreviewBody = z
+  .union([
+    z.object({
+      previews: z
+        .array(z.object({ fileId: z.string().min(1).max(64), pages: PreviewPages }))
+        .max(4, 'Pick at most 4 files to preview.'),
+    }),
+    z.object({ fileId: z.string().min(1).max(64).nullable(), pages: PreviewPages }),
+  ])
+  .transform((b): { previews: PreviewPick[] } =>
+    'previews' in b
+      ? { previews: b.previews }
+      : { previews: b.fileId ? [{ fileId: b.fileId, pages: b.pages }] : [] },
+  );
 export type UnitPreviewInput = z.infer<typeof UnitPreviewBody>;
 
 export interface ReadingItemDto {
@@ -424,8 +451,16 @@ export interface CheckoutQuoteDto {
   fullPaise: number;
   /** A running offer and what it takes off, or null. */
   offer: { title: string; percentOff: number; discountPaise: number } | null;
-  /** The applied code and what it takes off, after the offer, or null. */
-  promo: { code: string; discountPaise: number } | null;
+  /**
+   * The applied code and what it takes off, after the offer, or null. `creatorName` is the
+   * creator who shared it (a campus ambassador, a YouTuber), shown as "Shared by …".
+   */
+  promo: {
+    code: string;
+    discountPaise: number;
+    percentOff: number | null;
+    creatorName: string | null;
+  } | null;
   /** What Razorpay will charge. */
   totalPaise: number;
 }
@@ -556,7 +591,7 @@ export interface AdminUnitDto {
   hidden: boolean;
   files: AdminFileDto[];
   /** What students see free from this unit now; `chosen` = the admin picked it. */
-  preview?: { fileId: string | null; pages: number[]; chosen: boolean };
+  preview?: { fileId: string | null; pages: number[]; chosen: boolean; files?: PreviewPick[] };
 }
 
 export type InventoryObjectStatus =

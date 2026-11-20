@@ -125,45 +125,83 @@ export function toUnits(files: CourseFile[]): CourseUnitDto[] {
     fileCount: list.length,
     pageCount: list.reduce((s, f) => s + f.pageCount, 0),
     files: list.map(toFileDto),
-    previewFileId: previewFileOf(list)?.id ?? null,
-    previewPages: previewPagesOf(list),
+    ...(() => {
+      const picks = previewsOf(list);
+      return {
+        previewFileId: picks[0]?.file.id ?? null,
+        previewPages: picks[0]?.pages ?? [1],
+        previews: picks.map((p) => ({ fileId: p.file.id, pages: p.pages })),
+      };
+    })(),
   }));
 }
 
-/** The admin's chosen preview file for this unit, when it is still in the unit and readable. */
-function chosenPreview(unitFiles: CourseFile[]): CourseFile | undefined {
-  const id = unitFiles[0]?.unitPreviewFileId;
-  return id ? unitFiles.find((f) => f.id === id && isReaderReady(f)) : undefined;
+/** A unit's free preview: one of its files and which of that file's pages. */
+export interface UnitPreviewPick {
+  file: CourseFile;
+  pages: number[];
 }
+
+/** At most this many files per unit, pages per file, and pages in all (as the admin form says). */
+const MAX_FILES = 4;
+const MAX_PAGES_PER_FILE = 5;
+const MAX_PAGES = 10;
 
 /**
- * The one file per unit whose pages are public: the admin's choice, or by default the first
- * ready file that has a page-one preview. A choice that stops being readable falls back.
+ * Every free preview of a unit, in the admin's order: each chosen file that is still in the unit
+ * and readable, with its chosen pages that still exist. Nothing chosen (or nothing left of the
+ * choice): page 1 of the first ready file that has a page-one preview, so "Peek inside" never breaks.
  */
-export function previewFileOf(unitFiles: CourseFile[]): CourseFile | undefined {
-  return chosenPreview(unitFiles) ?? unitFiles.find((f) => isReaderReady(f) && f.previewKey);
+export function previewsOf(unitFiles: CourseFile[]): UnitPreviewPick[] {
+  const chosen = unitFiles[0]?.unitPreviews ?? [];
+  const picks: UnitPreviewPick[] = [];
+  let total = 0;
+  const seen = new Set<string>();
+  for (const c of chosen) {
+    if (picks.length >= MAX_FILES || total >= MAX_PAGES || seen.has(c.fileId)) continue;
+    const file = unitFiles.find((f) => f.id === c.fileId && isReaderReady(f));
+    if (!file) continue;
+    const pages = [...new Set(c.pages)]
+      .filter((n) => Number.isInteger(n) && n >= 1 && n <= file.pageCount)
+      .sort((x, y) => x - y)
+      .slice(0, Math.min(MAX_PAGES_PER_FILE, MAX_PAGES - total));
+    if (!pages.length) continue;
+    seen.add(file.id);
+    total += pages.length;
+    picks.push({ file, pages });
+  }
+  if (picks.length) return picks;
+  const fallback = unitFiles.find((f) => isReaderReady(f) && f.previewKey);
+  return fallback ? [{ file: fallback, pages: [1] }] : [];
 }
 
-/** Which pages of the unit's preview file are public: the admin's choice (within the file), or page 1. */
+/** True when the admin's choice for this unit still holds (at least one pick survives). */
+export function previewChosen(unitFiles: CourseFile[]): boolean {
+  const chosen = unitFiles[0]?.unitPreviews ?? [];
+  return chosen.length > 0 && previewsOf(unitFiles).some((p) => chosen.some((c) => c.fileId === p.file.id));
+}
+
+/** The unit's first free preview file (its cover in the catalogue). */
+export function previewFileOf(unitFiles: CourseFile[]): CourseFile | undefined {
+  return previewsOf(unitFiles)[0]?.file;
+}
+
+/** Which pages of the unit's first preview file are public. */
 export function previewPagesOf(unitFiles: CourseFile[]): number[] {
-  const chosen = chosenPreview(unitFiles);
-  if (!chosen) return [1];
-  const pages = (chosen.unitPreviewPages ?? [1]).filter((n) => n >= 1 && n <= chosen.pageCount);
-  return pages.length ? pages : [1];
+  return previewsOf(unitFiles)[0]?.pages ?? [1];
 }
 
 const unitOf = (file: CourseFile, courseFiles: CourseFile[]) =>
   courseFiles.filter((f) => f.unitKey === file.unitKey).sort(fileOrder);
 
-/** True when this file is its unit's public preview. */
+/** True when this file is one of its unit's public previews. */
 export function isPreviewFile(file: CourseFile, courseFiles: CourseFile[]): boolean {
-  return previewFileOf(unitOf(file, courseFiles))?.id === file.id;
+  return previewsOf(unitOf(file, courseFiles)).some((p) => p.file.id === file.id);
 }
 
 /** True when this page of this file is one the public may see. */
 export function isPreviewPage(file: CourseFile, page: number, courseFiles: CourseFile[]): boolean {
-  const unit = unitOf(file, courseFiles);
-  return previewFileOf(unit)?.id === file.id && previewPagesOf(unit).includes(page);
+  return previewsOf(unitOf(file, courseFiles)).some((p) => p.file.id === file.id && p.pages.includes(page));
 }
 
 export function toBundleCard(
