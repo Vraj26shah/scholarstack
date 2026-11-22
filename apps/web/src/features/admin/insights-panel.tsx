@@ -1,10 +1,11 @@
-import type { AdminInsightsDto, InsightsDayDto } from '@ss/contracts';
+import type { AdminActivityDto, AdminInsightsDto, InsightsDayDto } from '@ss/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { formatMoney } from '../../lib/format';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
+import { StudentActivity, activityHref, activityLabel, ago } from './student-activity';
 import { Figure, Note, Panel, plural } from './ui';
 
 type Days = AdminInsightsDto['days'];
@@ -15,9 +16,12 @@ const PERIODS: [Days, string][] = [
   ['90', 'Last 90 days'],
 ];
 
-type Metric = 'views' | 'signups' | 'checkouts' | 'paid';
+/** A day of the sales report joined with that day's activity. */
+type DayRow = InsightsDayDto & { students: number; studentPages: number; visitorPages: number };
+type Metric = 'students' | 'views' | 'signups' | 'checkouts' | 'paid';
 const METRICS: [Metric, string, string][] = [
-  ['views', 'Page views', 'Course and bundle pages opened'],
+  ['students', 'Active students', 'Signed-in students who opened anything'],
+  ['views', 'Course views', 'Course and bundle pages opened'],
   ['signups', 'New students', 'First sign-ins'],
   ['checkouts', 'Checkouts', 'Payment windows opened'],
   ['paid', 'Paid orders', 'Orders paid'],
@@ -38,8 +42,8 @@ const chip = (on: boolean) =>
   }`;
 
 /** One measure per day as thin bars, with the value on hover or focus, and a table view. */
-function DailyChart({ daily }: { daily: InsightsDayDto[] }) {
-  const [metric, setMetric] = useState<Metric>('views');
+function DailyChart({ daily }: { daily: DayRow[] }) {
+  const [metric, setMetric] = useState<Metric>('students');
   const [asTable, setAsTable] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
   const [, label, blurb] = METRICS.find(([m]) => m === metric)!;
@@ -87,7 +91,9 @@ function DailyChart({ daily }: { daily: InsightsDayDto[] }) {
             <thead className="text-ink2 text-left">
               <tr>
                 <th className="py-1.5 pr-3 font-medium">Day</th>
-                <th className="py-1.5 pr-3 font-medium text-right">Views</th>
+                <th className="py-1.5 pr-3 font-medium text-right">Active students</th>
+                <th className="py-1.5 pr-3 font-medium text-right">Pages: students / visitors</th>
+                <th className="py-1.5 pr-3 font-medium text-right">Course views</th>
                 <th className="py-1.5 pr-3 font-medium text-right">New students</th>
                 <th className="py-1.5 pr-3 font-medium text-right">Checkouts</th>
                 <th className="py-1.5 pr-3 font-medium text-right">Paid</th>
@@ -98,6 +104,10 @@ function DailyChart({ daily }: { daily: InsightsDayDto[] }) {
               {[...daily].reverse().map((d) => (
                 <tr key={d.day} className="border-t border-line">
                   <td className="py-1.5 pr-3">{dayLabel(d.day)}</td>
+                  <td className="py-1.5 pr-3 text-right">{n(d.students)}</td>
+                  <td className="py-1.5 pr-3 text-right">
+                    {n(d.studentPages)} / {n(d.visitorPages)}
+                  </td>
                   <td className="py-1.5 pr-3 text-right">{n(d.views)}</td>
                   <td className="py-1.5 pr-3 text-right">{n(d.signups)}</td>
                   <td className="py-1.5 pr-3 text-right">{n(d.checkouts)}</td>
@@ -153,8 +163,15 @@ function DailyChart({ daily }: { daily: InsightsDayDto[] }) {
   );
 }
 
-function Report({ data }: { data: AdminInsightsDto }) {
+function Report({ data, activity }: { data: AdminInsightsDto; activity: ActivityState }) {
   const s = data.summary;
+  const byDay = new Map(activity.data?.daily.map((d) => [d.day, d]));
+  const daily: DayRow[] = data.daily.map((d) => ({
+    ...d,
+    students: byDay.get(d.day)?.students ?? 0,
+    studentPages: byDay.get(d.day)?.studentPages ?? 0,
+    visitorPages: byDay.get(d.day)?.visitorPages ?? 0,
+  }));
   return (
     <>
       <section
@@ -214,7 +231,11 @@ function Report({ data }: { data: AdminInsightsDto }) {
         </p>
       </section>
 
-      <DailyChart daily={data.daily} />
+      <ActivitySummary activity={activity} />
+
+      <DailyChart daily={daily} />
+
+      <ActivityTables activity={activity} />
 
       <section aria-label="Most viewed" className="rounded-2xl border border-line bg-surface p-4">
         <h3 className="m-0 mb-2 text-[15px] font-semibold">Most viewed courses and bundles</h3>
@@ -297,6 +318,173 @@ function Report({ data }: { data: AdminInsightsDto }) {
   );
 }
 
+type ActivityState = {
+  data?: AdminActivityDto;
+  isLoading: boolean;
+  isError: boolean;
+  error: unknown;
+  refetch: () => unknown;
+};
+
+/** Signed-in students and visitors: who was around, and how much they opened. */
+function ActivitySummary({ activity }: { activity: ActivityState }) {
+  if (activity.isLoading) return <Skeleton className="h-24 rounded-2xl" />;
+  if (activity.isError || !activity.data)
+    return (
+      <ErrorState
+        title="Student activity didn't load."
+        message={friendly(activity.error)}
+        onRetry={() => activity.refetch()}
+      />
+    );
+  const a = activity.data.summary;
+  return (
+    <section
+      aria-label="Students and visitors"
+      className="grid grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-2xl bg-line shadow-[0_0_0_1px_var(--line)]"
+    >
+      <Figure
+        label="Active students"
+        value={n(a.activeStudents)}
+        hint="Signed in and opened something"
+        tone="teal"
+      />
+      <Figure label="Pages by students" value={n(a.studentPages)} hint="Every page they opened" />
+      <Figure label="Pages by visitors" value={n(a.visitorPages)} hint="Not signed in, counted together" />
+      <Figure label="Actions" value={n(a.actions)} hint="Peeks, checkouts, payments, files opened" />
+    </section>
+  );
+}
+
+/** Which pages and tools are used, what students do, and who was active (newest first). */
+function ActivityTables({ activity }: { activity: ActivityState }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  const a = activity.data;
+  if (!a) return null;
+  return (
+    <>
+      <section aria-label="Pages and tools" className="rounded-2xl border border-line bg-surface p-4">
+        <h3 className="m-0 text-[15px] font-semibold">Pages and tools</h3>
+        <p className="m-0 mb-2 text-[12px] text-ink2">
+          Every page, including each tool under /tools (new tools show up here by themselves).
+        </p>
+        {a.pages.length === 0 ? (
+          <p className="m-0 text-sm text-ink2">Nothing opened in this period yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px] tabular-nums">
+              <thead className="text-ink2 text-left">
+                <tr>
+                  <th className="py-1.5 pr-3 font-medium">Page</th>
+                  <th className="py-1.5 pr-3 font-medium text-right">Opened</th>
+                  <th className="py-1.5 pr-3 font-medium text-right">By students</th>
+                  <th className="py-1.5 pr-3 font-medium text-right">By visitors</th>
+                  <th className="py-1.5 font-medium text-right">Different students</th>
+                </tr>
+              </thead>
+              <tbody>
+                {a.pages.map((p) => {
+                  const href = activityHref(p.target);
+                  return (
+                    <tr key={p.target} className="border-t border-line">
+                      <td className="py-1.5 pr-3 min-w-[200px]">
+                        {href ? (
+                          <Link to={href} className="text-ink hover:underline">
+                            {activityLabel(p.target)}
+                          </Link>
+                        ) : (
+                          activityLabel(p.target)
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-3 text-right">{n(p.hits)}</td>
+                      <td className="py-1.5 pr-3 text-right">{n(p.studentHits)}</td>
+                      <td className="py-1.5 pr-3 text-right">{n(p.visitorHits)}</td>
+                      <td className="py-1.5 text-right">{n(p.students)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section aria-label="What students do" className="rounded-2xl border border-line bg-surface p-4">
+        <h3 className="m-0 mb-2 text-[15px] font-semibold">What students do</h3>
+        {a.actions.length === 0 ? (
+          <p className="m-0 text-sm text-ink2">No peeks, checkouts or files opened in this period.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px] tabular-nums">
+              <thead className="text-ink2 text-left">
+                <tr>
+                  <th className="py-1.5 pr-3 font-medium">Action</th>
+                  <th className="py-1.5 pr-3 font-medium text-right">Times</th>
+                  <th className="py-1.5 pr-3 font-medium text-right">By visitors</th>
+                  <th className="py-1.5 font-medium text-right">Different students</th>
+                </tr>
+              </thead>
+              <tbody>
+                {a.actions.map((x) => (
+                  <tr key={x.target} className="border-t border-line">
+                    <td className="py-1.5 pr-3 min-w-[200px]">{activityLabel(x.target)}</td>
+                    <td className="py-1.5 pr-3 text-right">{n(x.hits)}</td>
+                    <td className="py-1.5 pr-3 text-right">{n(x.visitorHits)}</td>
+                    <td className="py-1.5 text-right">{n(x.students)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section aria-label="Active students" className="rounded-2xl border border-line bg-surface p-4">
+        <h3 className="m-0 text-[15px] font-semibold">Active students</h3>
+        <p className="m-0 mb-2 text-[12px] text-ink2">
+          Most recently active first. Open one to see what they opened, day by day.
+        </p>
+        {a.students.length === 0 ? (
+          <p className="m-0 text-sm text-ink2">No signed-in student opened anything in this period.</p>
+        ) : (
+          <ul className="m-0 p-0 list-none divide-y divide-line">
+            {a.students.map((s) => (
+              <li key={s.userId}>
+                <button
+                  type="button"
+                  aria-expanded={openId === s.userId}
+                  onClick={() => setOpenId(openId === s.userId ? null : s.userId)}
+                  className="w-full flex flex-wrap items-center gap-x-4 gap-y-1 py-2 text-left bg-transparent border-0 cursor-pointer"
+                >
+                  <span className="flex-[1_1_220px] min-w-0">
+                    <span className="block font-semibold text-ink truncate">
+                      {s.fullName ?? s.email.split('@')[0]}
+                    </span>
+                    <span className="block font-mono text-[12px] text-ink2 truncate">{s.email}</span>
+                  </span>
+                  <span className="text-[13px] text-ink2 tabular-nums">
+                    {ago(s.lastAt)} · {plural(s.days, 'day')} · {n(s.hits)} opened
+                  </span>
+                  {s.topPage && (
+                    <span className="text-[13px] text-ink2 truncate max-w-[260px]">
+                      mostly {activityLabel(s.topPage)}
+                    </span>
+                  )}
+                </button>
+                {openId === s.userId && (
+                  <div className="rounded-xl border border-line mb-2 pt-2">
+                    <StudentActivity userId={s.userId} />
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
+  );
+}
+
 const SENTRY = 'https://scholars-stack.sentry.io';
 const SENTRY_PROJECT = '4512431443476480';
 
@@ -353,6 +541,10 @@ function DeeperLinks() {
 export function InsightsPanel() {
   const [days, setDays] = useState<Days>('30');
   const q = useQuery({ queryKey: ['admin-insights', days], queryFn: () => api.adminInsights(days) });
+  const activity = useQuery({
+    queryKey: ['admin-activity', days],
+    queryFn: () => api.adminActivity(days),
+  });
   return (
     <Panel
       title="Insights"
@@ -378,7 +570,7 @@ export function InsightsPanel() {
       ) : q.isError && !q.data ? (
         <ErrorState title="Insights didn't load." message={friendly(q.error)} onRetry={() => q.refetch()} />
       ) : q.data ? (
-        <Report data={q.data} />
+        <Report data={q.data} activity={activity} />
       ) : null}
     </Panel>
   );

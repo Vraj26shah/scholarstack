@@ -10,6 +10,7 @@ import { api, friendly } from '../../lib/api';
 import { Button } from '../../shared/ui/button';
 import { ErrorState, Sheet, Skeleton } from '../../shared/ui/feedback';
 import { GiveAccessCard } from './grant-access';
+import { StudentActivity, ago } from './student-activity';
 import { Field, Panel, input, plural } from './ui';
 
 type Course = AdminStudentDto['courses'][number];
@@ -43,6 +44,8 @@ function people(
         fullName: name,
         batchYear: placed?.batchYear ?? null,
         branchCode: placed?.branchCode ?? null,
+        joinedAt: null,
+        lastSeenAt: null,
         courses: [],
         uploads: [],
         questions: [],
@@ -252,6 +255,12 @@ function StudentRow({
         <span className="font-mono text-[12px] text-ink2" title={branchName ?? undefined}>
           {s.batchYear ?? '—'} · {s.branchCode ?? '—'}
         </span>
+        <span
+          className="text-[12px] text-ink2"
+          title={s.joinedAt ? `Joined ${new Date(s.joinedAt).toLocaleDateString('en-IN')}` : undefined}
+        >
+          {s.lastSeenAt ? `seen ${ago(s.lastSeenAt)}` : 'not seen yet'}
+        </span>
         {s.uploads.length > 0 && (
           <span className="h-6 px-2 rounded-md text-[12px] font-semibold inline-flex items-center bg-marigold-soft text-marigold-text">
             {plural(s.uploads.length, 'upload')}
@@ -406,6 +415,10 @@ function StudentRow({
               </button>
             )}
           </section>
+          <section className="bg-card min-w-0 lg:col-span-3" aria-label="Activity">
+            <h4 className="m-0 px-4 pt-3 pb-1 text-[13px] font-semibold text-ink2">Activity</h4>
+            <StudentActivity userId={s.userId} />
+          </section>
         </div>
       )}
       {act && (
@@ -478,6 +491,7 @@ export function StudentsPanel({ go }: { go: (section: string) => void }) {
   ].sort((a, b) => a[1].localeCompare(b[1]));
   const courseTitle = courses.find(([id]) => id === course)?.[1] ?? '';
   const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const list = all.filter(
     (s) =>
       words.every((w) => `${s.email} ${s.fullName ?? ''}`.toLowerCase().includes(w)) &&
@@ -488,7 +502,9 @@ export function StudentsPanel({ go }: { go: (section: string) => void }) {
       (!kind ||
         (kind === 'buyers' && s.courses.length > 0) ||
         (kind === 'contributors' && s.uploads.length > 0) ||
-        (kind === 'askers' && s.questions.length > 0)),
+        (kind === 'askers' && s.questions.length > 0) ||
+        (kind === 'active' && !!s.lastSeenAt && Date.parse(s.lastSeenAt) > weekAgo) ||
+        (kind === 'browsing' && s.courses.length === 0)),
   );
   const select = 'h-10 w-full min-w-0 px-3 rounded-xl bg-surface border-[1.5px] border-line text-[14px]';
 
@@ -504,7 +520,8 @@ export function StudentsPanel({ go }: { go: (section: string) => void }) {
       }
     >
       <p className="m-0 text-sm text-ink2 max-w-[760px]">
-        Everyone who bought, shared notes or asked a question. Open a person to see and change everything.
+        Everyone who has signed up: buyers, people who shared notes or asked, and those still just looking.
+        Open a person to see what they opened, and to change their courses.
       </p>
       <dl className="m-0 grid grid-cols-2 lg:grid-cols-4 gap-3">
         {tiles.map(([label, n]) => (
@@ -531,6 +548,8 @@ export function StudentsPanel({ go }: { go: (section: string) => void }) {
           <option value="buyers">Has a course</option>
           <option value="contributors">Shared notes</option>
           <option value="askers">Asked a question</option>
+          <option value="active">Seen this week</option>
+          <option value="browsing">Signed up, no course yet</option>
         </select>
         <select
           aria-label="Batch"
@@ -646,7 +665,7 @@ export function StudentsPanel({ go }: { go: (section: string) => void }) {
           />
         ))}
         {list.length === 0 && (
-          <li className="text-ink2">{all.length ? 'No student matches.' : 'Nobody has a course yet.'}</li>
+          <li className="text-ink2">{all.length ? 'No student matches.' : 'Nobody has signed up yet.'}</li>
         )}
       </ul>
     </Panel>

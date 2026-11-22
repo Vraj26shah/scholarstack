@@ -3,6 +3,7 @@ import {
   ClientProblemBody,
   SearchQuery,
   TILE_SEED_HEADER,
+  TrackHitBody,
   TrackViewBody,
   UnsubscribeBody,
 } from '@ss/contracts';
@@ -99,6 +100,23 @@ catalogueRoutes.post('/insights/view', async (c) => {
   const who = `${await networkKey(c)}:${(await sha256Hex(ua)).slice(0, 12)}`;
   if (!(await k.limiter.allow(`view:${who}`))) return c.body(null, 204);
   await k.insights.recordView(parsed.data);
+  return c.body(null, 204);
+});
+
+/**
+ * A page opened or an action (Admin › Insights and each student's Activity). A signed-in student
+ * is known from their token, never from what the page says; visitors are counted together.
+ * Always 204, so it can never break or slow a page.
+ */
+catalogueRoutes.post('/insights/hit', async (c) => {
+  const parsed = TrackHitBody.safeParse(await c.req.json().catch(() => null));
+  const ua = c.req.header('user-agent') ?? '';
+  if (!parsed.success || !ua || ROBOT.test(ua)) return c.body(null, 204);
+  const k = c.get('container');
+  const who = `${await networkKey(c)}:${(await sha256Hex(ua)).slice(0, 12)}`;
+  if (!(await k.limiter.allow(`hit:${who}`))) return c.body(null, 204);
+  const { userId, isAdmin } = await optionalViewer(c);
+  await k.insights.recordHit(userId ? { userId, isAdmin } : null, parsed.data);
   return c.body(null, 204);
 });
 

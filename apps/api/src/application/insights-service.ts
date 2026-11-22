@@ -1,5 +1,12 @@
-import type { AdminInsightsDto, TrackViewBody } from '@ss/contracts';
+import type {
+  AdminActivityDto,
+  AdminInsightsDto,
+  StudentActivityDto,
+  TrackHitBody,
+  TrackViewBody,
+} from '@ss/contracts';
 import type { InsightsRepository } from '../domain/ports';
+import { activityTarget } from './activity';
 
 const DAY = 24 * 60 * 60 * 1000;
 const IST = 5.5 * 60 * 60 * 1000;
@@ -35,6 +42,41 @@ export class InsightsService {
         }),
       );
     }
+  }
+
+  /**
+   * A page opened or an action, by a signed-in student (their own row) or a visitor (counted with
+   * all visitors, never told apart). Admins are not counted. Never fails the page.
+   */
+  async recordHit(viewer: { userId: string; isAdmin: boolean } | null, body: TrackHitBody): Promise<void> {
+    if (viewer?.isAdmin) return;
+    const hit = activityTarget(body);
+    if (!hit) return;
+    try {
+      await this.repo.recordActivity(viewer?.userId ?? null, hit.kind, hit.target);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          level: 'warn',
+          event: 'insights.hit',
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  }
+
+  async activity(days: AdminActivityDto['days']): Promise<AdminActivityDto> {
+    const now = this.now();
+    const data = await this.repo.activity(periodStart(Number(days), now), 30);
+    return { days, checkedAt: now.toISOString(), ...data };
+  }
+
+  people() {
+    return this.repo.people();
+  }
+
+  studentActivity(userId: string, days: number): Promise<StudentActivityDto> {
+    return this.repo.studentActivity(userId, periodStart(days, this.now()));
   }
 
   async report(days: AdminInsightsDto['days']): Promise<AdminInsightsDto> {

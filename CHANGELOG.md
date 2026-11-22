@@ -4,6 +4,13 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Student activity for the admin
+- **Admin › Students lists everyone who has signed up**, not only buyers, with "seen 2 h ago" (or "not seen yet") on each row and two new filters: *Seen this week* and *Signed up, no course yet*. Admin accounts aren't listed.
+- **Each student's Activity** (open their row): last seen, days active, and every page and tool they opened and what they did (peeked inside, started checkout, applied a promo code, paid, opened a file, signed in), day by day, for 7, 30 or 90 days.
+- **Admin › Students › Insights** adds active students per day, pages by students and by visitors, a *Pages and tools* table (every page; each tool under /tools appears by itself, including new ones), *What students do*, and *Active students* (most recent first, each opening into their Activity).
+- **Privacy**: signed-in students are recorded against their account (known from their sign-in token, never from what the page sends); visitors are counted together with nothing that identifies them; admins aren't counted; file and order ids are never stored (only "reader" and "checkout"); robots are ignored; each network and browser is rate-limited. Everything is deleted after 180 days by the nightly clean-up. The privacy page says so.
+- Migration `20261122000300_student_activity`: `activity_daily` (row level security on, no student access), `record_activity()`, `admin_activity()`, `admin_student_activity()`, `admin_people()` (server only), and `prune_history()` now also drops activity older than 180 days.
+
 ### Fixes from the Sentry review (22 Nov)
 - **The account page (or any screen) no longer crashes on a tab opened before a deploy** (Sentry SCHOLARSTACK-WEB-4, "Cannot read properties of undefined (reading 'AccountPage')"). On a missing code file the site called `preventDefault()` on Vite's preload error, which made the import resolve to nothing; the screen then crashed while the reload was on its way. The import now fails normally and waits for the reload.
 - **Applying pack changes can't run past the Worker's limit any more** (the 500s on `/api/admin/bundles/packs`, 16 Nov). One Apply saved every pack in one request, about 5 database calls for each new pack, past Cloudflare's 50. Each request now spends at most 25 calls on saving and says how many are left; the admin screen sends the next round itself, so it is still one click. The hourly run uses the same budget (it counted packs, not calls).

@@ -3,7 +3,13 @@
  * Each is small and single-purpose (interface segregation). Infrastructure adapters
  * implement them; use cases receive them through their constructors (dependency inversion).
  */
-import type { AdminInsightsDto, ConversionProgressReport, ConversionReport } from '@ss/contracts';
+import type {
+  AdminActivityDto,
+  AdminInsightsDto,
+  ConversionProgressReport,
+  ConversionReport,
+  StudentActivityDto,
+} from '@ss/contracts';
 import type {
   AccessChange,
   AccessRecord,
@@ -157,6 +163,22 @@ export interface InsightsRepository {
   recordView(item: { courseId: string } | { bundleId: string }, signedIn: boolean): Promise<void>;
   /** The report since a moment: totals, one row per IST day, and the top lists. */
   report(since: Date, limit: number): Promise<Omit<AdminInsightsDto, 'days' | 'checkedAt'>>;
+  /** One page or action today: a signed-in student's own row, or visitors' shared row (null). */
+  recordActivity(userId: string | null, kind: 'page' | 'action', target: string): Promise<void>;
+  /** Pages, actions, active students per day and the most recently active students. */
+  activity(since: Date, limit: number): Promise<Omit<AdminActivityDto, 'days' | 'checkedAt'>>;
+  /** Everyone who has signed up, newest first, with when they were last seen. */
+  people(): Promise<
+    {
+      userId: string;
+      email: string;
+      fullName: string | null;
+      joinedAt: string | null;
+      lastSeenAt: string | null;
+    }[]
+  >;
+  /** One student's pages and actions since a moment, newest first. */
+  studentActivity(userId: string, since: Date): Promise<StudentActivityDto>;
 }
 
 /** Which discounts paid orders got, and creator payouts. */

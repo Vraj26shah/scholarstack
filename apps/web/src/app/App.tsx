@@ -19,6 +19,7 @@ import { ApiError } from '../lib/api';
 import { authGateway } from '../lib/auth';
 import { STUDENT_HOME, decidesLanding, isPhone, jumpTo, landing } from '../lib/landing';
 import { recordVisit } from '../lib/nav-history';
+import { usePageActivity } from '../lib/page-views';
 import { persistQueries, restoreQueries } from '../lib/persist-queries';
 import { loadScreen, releaseWaiting } from '../lib/release-sync';
 import { useSession } from '../lib/session';
@@ -320,6 +321,7 @@ function MonitoringIdentity() {
 /** One page_view per route change; the Google tag does not see SPA navigations by itself. */
 function PageViews() {
   const { pathname, search } = useLocation();
+  usePageActivity();
   useEffect(() => {
     trackPageView(`${pathname}${search}`);
   }, [pathname, search]);

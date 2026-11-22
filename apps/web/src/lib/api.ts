@@ -2,6 +2,7 @@ import type {
   AcademicDto,
   AccessChangeInput,
   AccessGrantInput,
+  AdminActivityDto,
   AdminBundleDto,
   AdminContributionDto,
   AdminCourseAccessDto,
@@ -81,6 +82,7 @@ import type {
   StorageMovePlanDto,
   StorageTreeDto,
   StorageUnusedDto,
+  StudentActivityDto,
   SupportCreateInput,
   SupportQueryDto,
   SyncResultDto,
@@ -113,6 +115,28 @@ export class ApiClient {
   private claiming: Promise<void> | null = null;
 
   constructor(private readonly base: string) {}
+
+  /**
+   * Fire and forget (page activity): sent with the sign-in token when there is one, so the server
+   * knows who it is; any failure is ignored and nothing is retried or shown.
+   */
+  async beacon(path: string, body: unknown): Promise<void> {
+    try {
+      const token = await this.tokenSource();
+      await fetch(`${this.base}${path}`, {
+        method: 'POST',
+        credentials: 'omit',
+        keepalive: true,
+        headers: {
+          'content-type': 'application/json',
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      // offline, blocked, or the tab is closing: activity is best effort
+    }
+  }
 
   useTokens(source: TokenSource) {
     this.tokenSource = source;
@@ -568,6 +592,13 @@ export class ApiClient {
     this.request<DiscountOrderDto[]>('GET', `/admin/offers/${encodeURIComponent(id)}/orders`);
   adminDiscounts = (days: '7' | '30' | '90' | 'all') =>
     this.request<DiscountReportDto>('GET', `/admin/discounts?days=${days}`);
+  adminActivity = (days: '1' | '7' | '30' | '90') =>
+    this.request<AdminActivityDto>('GET', `/admin/activity?days=${days}`);
+  adminStudentActivity = (userId: string, days: '7' | '30' | '90') =>
+    this.request<StudentActivityDto>(
+      'GET',
+      `/admin/students/${encodeURIComponent(userId)}/activity?days=${days}`,
+    );
   adminInsights = (days: '1' | '7' | '30' | '90') =>
     this.request<AdminInsightsDto>('GET', `/admin/insights?days=${days}`);
   adminAddPromoPayout = (b: PromoPayoutBody) =>

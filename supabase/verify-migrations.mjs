@@ -1151,6 +1151,63 @@ check('RLS: students cannot run the earnings report', await denied('select * fro
       Array.isArray(report.topReading),
     JSON.stringify(report.summary),
   );
+  // Student activity: per student, visitors together, one row per day and target.
+  await db.query(`select public.record_activity($1, 'page', '/c/dbms')`, [uid]);
+  await db.query(`select public.record_activity($1, 'page', '/c/dbms')`, [uid]);
+  await db.query(`select public.record_activity($1, 'action', 'peek_open:dbms')`, [uid]);
+  await db.query(`select public.record_activity(null, 'page', '/c/dbms')`);
+  await db.query(`select public.record_activity(null, 'page', '/c/dbms')`);
+  const act = await all(
+    'select user_id, kind, target, hits from public.activity_daily order by user_id nulls last, kind',
+  );
+  check(
+    'activity adds up per student and per day, visitors counted together without an id',
+    act.length === 3 &&
+      act.find((r) => r.user_id === uid && r.kind === 'page')?.hits === 2 &&
+      act.find((r) => r.user_id === null)?.hits === 2,
+    JSON.stringify(act),
+  );
+  check(
+    'activity refuses made-up kinds and odd targets',
+    (await throws(`select public.record_activity(null, 'click', '/c/dbms')`)) &&
+      (await throws(`select public.record_activity(null, 'page', '<script>')`)),
+  );
+  const activity = (await one(`select public.admin_activity(now() - interval '7 days', 10) as r`)).r;
+  check(
+    'admin_activity reports pages, actions, active students and who was active',
+    activity.summary.activeStudents === 1 &&
+      activity.pages[0]?.target === '/c/dbms' &&
+      activity.pages[0]?.hits === 4 &&
+      activity.pages[0]?.visitorHits === 2 &&
+      activity.actions[0]?.target === 'peek_open:dbms' &&
+      activity.students[0]?.userId === uid &&
+      activity.students[0]?.topPage === '/c/dbms' &&
+      activity.daily.length === 8,
+    JSON.stringify(activity.summary),
+  );
+  const mine = (await one(`select public.admin_student_activity($1, now() - interval '30 days') as r`, [uid]))
+    .r;
+  check(
+    'admin_student_activity lists one student’s pages and actions, newest first',
+    mine.items.length === 2 && mine.hits === 3 && mine.days === 1 && mine.lastSeenAt !== null,
+  );
+  check(
+    'RLS: students cannot read anyone’s activity',
+    (await denied('select * from public.activity_daily')) &&
+      (await denied(`select public.record_activity(null, 'page', '/')`)) &&
+      (await denied('select public.admin_activity(now(), 10)')) &&
+      (await denied(`select public.admin_student_activity('${uid}', now())`)),
+  );
+  const people = (await one('select public.admin_people() as r')).r;
+  const me = people.find((p) => p.userId === uid);
+  check(
+    'admin_people lists everyone who signed up, with when they were last seen',
+    people.length >= 2 && me?.lastSeenAt != null && people.some((p) => p.lastSeenAt === null),
+  );
+  check('RLS: students cannot list everyone', await denied('select public.admin_people()'));
+  const pruned = (await one('select public.prune_history() as r')).r;
+  check('nightly housekeeping also prunes old activity', typeof pruned.activity === 'number');
+
   check(
     'RLS: students and visitors cannot read or write page views',
     (await denied('select * from public.item_views_daily')) &&

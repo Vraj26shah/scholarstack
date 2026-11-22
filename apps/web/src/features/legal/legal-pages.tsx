@@ -133,7 +133,7 @@ export function TermsPage() {
 
 export function PrivacyPage() {
   return (
-    <Legal title="Privacy" updated="26 OCT 2026">
+    <Legal title="Privacy" updated="22 NOV 2026">
       <p>We keep only what's needed to run your account and stop it being shared.</p>
       <h2>What we store</h2>
       <ul>
@@ -147,6 +147,12 @@ export function PrivacyPage() {
         <li>
           Reading activity: which page you're on and how many pages you've viewed, to resume where you left
           off and limit scraping.
+        </li>
+        <li>
+          Which pages and tools you open on the site, and a few actions (signing in, peeking inside a course,
+          starting a checkout, paying, opening a file), counted per day. When you're signed in this is kept
+          with your account so we can see what is useful and improve it; when you're not, you're counted
+          together with every other visitor and nothing identifies you. It's deleted after 180 days.
         </li>
         <li>Your IP address and browser when you open files, used only for security.</li>
         <li>

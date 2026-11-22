@@ -391,6 +391,8 @@ export class AdminService {
           fullName: r.fullName,
           batchYear: m ? 2000 + Number(m[1]) : null,
           branchCode: m ? m[2]!.toUpperCase() : null,
+          joinedAt: null,
+          lastSeenAt: null,
           courses: [],
         };
         byUser.set(r.userId, s);

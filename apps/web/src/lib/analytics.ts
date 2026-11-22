@@ -93,8 +93,19 @@ export function initAnalytics(): void {
 }
 
 /** An event for GA4. No-op when analytics is off, so call sites never need to check. */
+/** Also told about each event (the site's own activity log; set once from App). */
+let actionSink: ((name: string) => void) | null = null;
+export function setActionSink(sink: (name: string) => void): void {
+  actionSink = sink;
+}
+
 export function track(name: string, params: Params = {}): void {
   if (gaReady) window.gtag?.('event', name, params);
+  try {
+    actionSink?.(name);
+  } catch {
+    // never let reporting break the page
+  }
 }
 
 /** One page_view per route the student actually lands on (the app is a SPA). */

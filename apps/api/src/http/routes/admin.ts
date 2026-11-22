@@ -631,7 +631,42 @@ adminRoutes.post('/admin/import', async (c) => {
 /** Every student with a course, their courses, dates, states and the last reason given. */
 adminRoutes.get('/admin/students', async (c) => {
   await requireAdmin(c);
-  return c.json(await c.get('container').admin.students());
+  const k = c.get('container');
+  const [withCourses, people] = await Promise.all([
+    k.admin.students(),
+    // Extra: if it can't be read, the list still shows everyone with a course.
+    k.insights
+      .people()
+      .catch((error) => {
+        console.error(
+          JSON.stringify({ level: 'warn', event: 'admin.people', error: (error as Error).message }),
+        );
+        return [];
+      }),
+  ]);
+  const byId = new Map(withCourses.map((s) => [s.userId, s]));
+  for (const p of people) {
+    const s = byId.get(p.userId);
+    if (s) {
+      s.joinedAt = p.joinedAt;
+      s.lastSeenAt = p.lastSeenAt;
+      continue;
+    }
+    // Admin accounts aren't students (unless they hold a course, above).
+    if (await k.admins.isAdmin(p.email).catch(() => false)) continue;
+    const m = /\.(\d{2})([a-z]{3,4})\d+@/i.exec(p.email);
+    byId.set(p.userId, {
+      userId: p.userId,
+      email: p.email,
+      fullName: p.fullName,
+      batchYear: m ? 2000 + Number(m[1]) : null,
+      branchCode: m ? m[2]!.toUpperCase() : null,
+      joinedAt: p.joinedAt,
+      lastSeenAt: p.lastSeenAt,
+      courses: [],
+    });
+  }
+  return c.json([...byId.values()].sort((a, b) => a.email.localeCompare(b.email)));
 });
 
 adminRoutes.post('/admin/access/change', async (c) => {
@@ -747,6 +782,22 @@ adminRoutes.get('/admin/discounts', async (c) => {
   await requireAdmin(c);
   const { days } = DiscountReportQuery.parse({ days: c.req.query('days') ?? undefined });
   return c.json(await c.get('container').discounts.report(days));
+});
+
+/** Admin › Students › Insights: pages and tools opened, actions, and who was active. */
+adminRoutes.get('/admin/activity', async (c) => {
+  await requireAdmin(c);
+  c.header('Cache-Control', 'no-store');
+  const { days } = InsightsQuery.parse({ days: c.req.query('days') ?? undefined });
+  return c.json(await c.get('container').insights.activity(days));
+});
+
+/** One student's pages and actions (Admin › Students, opened row). */
+adminRoutes.get('/admin/students/:id/activity', async (c) => {
+  await requireAdmin(c);
+  c.header('Cache-Control', 'no-store');
+  const { days } = InsightsQuery.parse({ days: c.req.query('days') ?? undefined });
+  return c.json(await c.get('container').insights.studentActivity(c.req.param('id'), Number(days)));
 });
 
 /** Admin › Students › Insights: views, sign-ups, checkouts and reading for a period. */

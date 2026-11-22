@@ -291,6 +291,10 @@ export interface AdminStudentDto {
   /** From a college email like name.23bce10001@…: the intake year and branch code, when it has them. */
   batchYear: number | null;
   branchCode: string | null;
+  /** When they first signed in (null if unknown). */
+  joinedAt: string | null;
+  /** Last page or action on the site (null: nothing recorded yet). */
+  lastSeenAt: string | null;
   courses: Array<{
     courseId: string;
     title: string;
@@ -2617,4 +2621,83 @@ export interface AdminInsightsDto {
   daily: InsightsDayDto[];
   topItems: InsightsItemDto[];
   topReading: InsightsReadingDto[];
+}
+
+// ───────────────────────── Student activity ─────────────────────────
+
+/** Actions worth knowing about, besides which pages are opened. Anything else is not recorded. */
+export const ACTIVITY_ACTIONS = [
+  'login',
+  'peek_open',
+  'begin_checkout',
+  'apply_promo_code',
+  'purchase',
+  'read_open',
+] as const;
+export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
+
+/** A page opened, or an action on the page at `path`. The server decides what it is recorded as. */
+export const TrackHitBody = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('page'), path: z.string().max(300) }).strict(),
+  z.object({ kind: z.literal('action'), name: z.enum(ACTIVITY_ACTIONS), path: z.string().max(300) }).strict(),
+]);
+export type TrackHitBody = z.infer<typeof TrackHitBody>;
+
+export interface ActivityPageDto {
+  /** "/c/dbms-2025-cse-core", "/tools/cgpa", "/shelf", "/read" … */
+  target: string;
+  hits: number;
+  studentHits: number;
+  visitorHits: number;
+  /** Different signed-in students who opened it. */
+  students: number;
+}
+
+export interface ActivityActionDto {
+  /** "peek_open:/c/dbms-2025-cse-core", "read_open", "login" … */
+  target: string;
+  hits: number;
+  visitorHits: number;
+  students: number;
+}
+
+export interface ActiveStudentDto {
+  userId: string;
+  email: string;
+  fullName: string | null;
+  /** Days with any activity in the period. */
+  days: number;
+  hits: number;
+  lastAt: string;
+  topPage: string | null;
+}
+
+export interface AdminActivityDto {
+  days: '1' | '7' | '30' | '90';
+  checkedAt: string;
+  summary: { activeStudents: number; studentPages: number; visitorPages: number; actions: number };
+  daily: { day: string; students: number; studentPages: number; visitorPages: number }[];
+  pages: ActivityPageDto[];
+  actions: ActivityActionDto[];
+  /** Most recently active first. */
+  students: ActiveStudentDto[];
+}
+
+export interface StudentActivityItemDto {
+  day: string;
+  kind: 'page' | 'action';
+  target: string;
+  hits: number;
+  firstAt: string;
+  lastAt: string;
+}
+
+export interface StudentActivityDto {
+  /** Last time this student opened anything (any time, not only in the period). */
+  lastSeenAt: string | null;
+  /** Days active in the period. */
+  days: number;
+  hits: number;
+  /** Newest first, at most 300. */
+  items: StudentActivityItemDto[];
 }

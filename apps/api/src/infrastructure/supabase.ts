@@ -1630,6 +1630,81 @@ export class SupabaseInsights implements InsightsRepository {
       }),
     );
   }
+  async recordActivity(userId: string | null, kind: 'page' | 'action', target: string) {
+    if (userId !== null && !isUuid(userId)) return;
+    must(await this.db.rpc('record_activity', { p_user: userId, p_kind: kind, p_target: target }));
+  }
+  async activity(since: Date, limit: number) {
+    const r = (must(await this.db.rpc('admin_activity', { p_since: since.toISOString(), p_limit: limit })) ??
+      {}) as Row;
+    const s = (r.summary ?? {}) as Row;
+    const rows = (v: unknown) => (Array.isArray(v) ? (v as Row[]) : []);
+    return {
+      summary: {
+        activeStudents: num(s.activeStudents),
+        studentPages: num(s.studentPages),
+        visitorPages: num(s.visitorPages),
+        actions: num(s.actions),
+      },
+      daily: rows(r.daily).map((d) => ({
+        day: String(d.day),
+        students: num(d.students),
+        studentPages: num(d.studentPages),
+        visitorPages: num(d.visitorPages),
+      })),
+      pages: rows(r.pages).map((p) => ({
+        target: String(p.target),
+        hits: num(p.hits),
+        studentHits: num(p.studentHits),
+        visitorHits: num(p.visitorHits),
+        students: num(p.students),
+      })),
+      actions: rows(r.actions).map((a) => ({
+        target: String(a.target),
+        hits: num(a.hits),
+        visitorHits: num(a.visitorHits),
+        students: num(a.students),
+      })),
+      students: rows(r.students).map((u) => ({
+        userId: String(u.userId),
+        email: String(u.email ?? ''),
+        fullName: (u.fullName as string | null) ?? null,
+        days: num(u.days),
+        hits: num(u.hits),
+        lastAt: iso(u.lastAt),
+        topPage: (u.topPage as string | null) ?? null,
+      })),
+    };
+  }
+  async people() {
+    const rows = (must(await this.db.rpc('admin_people')) ?? []) as Row[];
+    return (Array.isArray(rows) ? rows : []).map((r) => ({
+      userId: String(r.userId),
+      email: String(r.email ?? ''),
+      fullName: (r.fullName as string | null) ?? null,
+      joinedAt: r.joinedAt ? iso(r.joinedAt) : null,
+      lastSeenAt: r.lastSeenAt ? iso(r.lastSeenAt) : null,
+    }));
+  }
+  async studentActivity(userId: string, since: Date) {
+    if (!isUuid(userId)) return { lastSeenAt: null, days: 0, hits: 0, items: [] };
+    const r = (must(
+      await this.db.rpc('admin_student_activity', { p_user: userId, p_since: since.toISOString() }),
+    ) ?? {}) as Row;
+    return {
+      lastSeenAt: r.lastSeenAt ? iso(r.lastSeenAt) : null,
+      days: num(r.days),
+      hits: num(r.hits),
+      items: (Array.isArray(r.items) ? (r.items as Row[]) : []).map((i) => ({
+        day: String(i.day),
+        kind: i.kind === 'action' ? ('action' as const) : ('page' as const),
+        target: String(i.target),
+        hits: num(i.hits),
+        firstAt: iso(i.firstAt),
+        lastAt: iso(i.lastAt),
+      })),
+    };
+  }
   async report(since: Date, limit: number) {
     const r = (must(await this.db.rpc('admin_insights', { p_since: since.toISOString(), p_limit: limit })) ??
       {}) as Row;
@@ -1678,6 +1753,8 @@ export class SupabaseInsights implements InsightsRepository {
     };
   }
 }
+
+const iso = (v: unknown) => (v ? new Date(String(v)).toISOString() : '');
 
 export class SupabaseDiscounts implements DiscountLedger {
   constructor(private readonly db: SupabaseClient) {}

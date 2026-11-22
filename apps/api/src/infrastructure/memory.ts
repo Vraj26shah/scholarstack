@@ -171,6 +171,8 @@ export class MemoryDb {
   createdAt = new Map<string, Date>();
   /** Page views, key: day|course|id or day|bundle|id (IST day). */
   itemViews = new Map<string, { views: number; signedInViews: number }>();
+  /** Activity, key: day|userId (empty for visitors)|kind|target (IST day). */
+  activity = new Map<string, { hits: number; firstAt: Date; lastAt: Date }>();
   features = new Map<string, Feature>();
   announcements = new Map<string, Announcement>();
   quota = new Map<string, number>(); // key: day
@@ -1114,6 +1116,8 @@ export class MemoryPromoCodes implements PromoCodeRepository {
 }
 
 const IST_MS = 5.5 * 60 * 60 * 1000;
+/** Same order as the database's `collate "C"`. */
+const byteOrder = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const istDay = (d: Date) => new Date(d.getTime() + IST_MS).toISOString().slice(0, 10);
 
 /** Same report as the database's admin_insights(), worked out over the in-memory tables. */
@@ -1129,6 +1133,134 @@ export class MemoryInsights implements InsightsRepository {
     const key = `${istDay(this.db.clock.now())}|${kind}|${id}`;
     const v = this.db.itemViews.get(key) ?? { views: 0, signedInViews: 0 };
     this.db.itemViews.set(key, { views: v.views + 1, signedInViews: v.signedInViews + (signedIn ? 1 : 0) });
+  }
+
+  async recordActivity(userId: string | null, kind: 'page' | 'action', target: string) {
+    const now = this.db.clock.now();
+    const key = `${istDay(now)}|${userId ?? ''}|${kind}|${target}`;
+    const row = this.db.activity.get(key);
+    this.db.activity.set(
+      key,
+      row ? { ...row, hits: row.hits + 1, lastAt: now } : { hits: 1, firstAt: now, lastAt: now },
+    );
+  }
+
+  private activityRows(since: Date) {
+    const sinceDay = istDay(since);
+    return [...this.db.activity].flatMap(([key, v]) => {
+      const [day, user, kind, ...rest] = key.split('|') as [string, string, 'page' | 'action', ...string[]];
+      return day >= sinceDay ? [{ day, userId: user || null, kind, target: rest.join('|'), ...v }] : [];
+    });
+  }
+
+  async activity(since: Date, limit: number) {
+    const rows = this.activityRows(since);
+    const sum = (list: typeof rows) => list.reduce((s, r) => s + r.hits, 0);
+    const today = istDay(this.db.clock.now());
+    const daily = [];
+    for (let t = Date.parse(`${istDay(since)}T00:00:00Z`); ; t += 86_400_000) {
+      const day = new Date(t).toISOString().slice(0, 10);
+      if (day > today) break;
+      const on = rows.filter((r) => r.day === day);
+      daily.push({
+        day,
+        students: new Set(on.filter((r) => r.userId).map((r) => r.userId)).size,
+        studentPages: sum(on.filter((r) => r.kind === 'page' && r.userId)),
+        visitorPages: sum(on.filter((r) => r.kind === 'page' && !r.userId)),
+      });
+    }
+    const group = (kind: 'page' | 'action') => {
+      const by = new Map<string, typeof rows>();
+      for (const r of rows.filter((x) => x.kind === kind)) by.set(r.target, [...(by.get(r.target) ?? []), r]);
+      return [...by]
+        .map(([target, list]) => ({
+          target,
+          hits: sum(list),
+          studentHits: sum(list.filter((r) => r.userId)),
+          visitorHits: sum(list.filter((r) => !r.userId)),
+          students: new Set(list.filter((r) => r.userId).map((r) => r.userId)).size,
+        }))
+        .sort((a, b) => b.hits - a.hits || byteOrder(a.target, b.target))
+        .slice(0, limit);
+    };
+    const byStudent = new Map<string, typeof rows>();
+    for (const r of rows) if (r.userId) byStudent.set(r.userId, [...(byStudent.get(r.userId) ?? []), r]);
+    const students = [...byStudent]
+      .flatMap(([userId, list]) => {
+        const p = this.db.profiles.get(userId);
+        if (!p) return [];
+        const pages = new Map<string, number>();
+        for (const r of list.filter((x) => x.kind === 'page'))
+          pages.set(r.target, (pages.get(r.target) ?? 0) + r.hits);
+        const topPage = [...pages].sort((a, b) => b[1] - a[1] || byteOrder(a[0], b[0]))[0]?.[0] ?? null;
+        const lastAt = new Date(Math.max(...list.map((r) => r.lastAt.getTime())));
+        return [
+          {
+            userId,
+            email: p.email,
+            fullName: p.fullName,
+            days: new Set(list.map((r) => r.day)).size,
+            hits: sum(list),
+            lastAt: lastAt.toISOString(),
+            topPage,
+          },
+        ];
+      })
+      .sort((a, b) => b.lastAt.localeCompare(a.lastAt))
+      .slice(0, limit);
+    return {
+      summary: {
+        activeStudents: byStudent.size,
+        studentPages: sum(rows.filter((r) => r.kind === 'page' && r.userId)),
+        visitorPages: sum(rows.filter((r) => r.kind === 'page' && !r.userId)),
+        actions: sum(rows.filter((r) => r.kind === 'action')),
+      },
+      daily,
+      pages: group('page'),
+      actions: group('action').map(({ studentHits: _s, ...a }) => a),
+      students,
+    };
+  }
+
+  async people() {
+    const last = new Map<string, number>();
+    for (const r of this.activityRows(new Date(0)))
+      if (r.userId) last.set(r.userId, Math.max(last.get(r.userId) ?? 0, r.lastAt.getTime()));
+    return [...this.db.profiles.values()]
+      .map((p) => {
+        const joined = this.db.createdAt.get(p.id);
+        const seen = last.get(p.id);
+        return {
+          userId: p.id,
+          email: p.email,
+          fullName: p.fullName,
+          joinedAt: joined ? joined.toISOString() : null,
+          lastSeenAt: seen ? new Date(seen).toISOString() : null,
+        };
+      })
+      .sort((a, b) => (b.joinedAt ?? '').localeCompare(a.joinedAt ?? ''));
+  }
+
+  async studentActivity(userId: string, since: Date) {
+    const all = this.activityRows(new Date(0)).filter((r) => r.userId === userId);
+    const rows = this.activityRows(since).filter((r) => r.userId === userId);
+    const last = all.length ? new Date(Math.max(...all.map((r) => r.lastAt.getTime()))) : null;
+    return {
+      lastSeenAt: last ? last.toISOString() : null,
+      days: new Set(rows.map((r) => r.day)).size,
+      hits: rows.reduce((s, r) => s + r.hits, 0),
+      items: rows
+        .sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime() || byteOrder(a.target, b.target))
+        .slice(0, 300)
+        .map((r) => ({
+          day: r.day,
+          kind: r.kind,
+          target: r.target,
+          hits: r.hits,
+          firstAt: r.firstAt.toISOString(),
+          lastAt: r.lastAt.toISOString(),
+        })),
+    };
   }
 
   async report(since: Date, limit: number) {
