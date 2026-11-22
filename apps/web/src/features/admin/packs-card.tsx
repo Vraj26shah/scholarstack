@@ -40,6 +40,24 @@ const sameLadder = (a: PackLadder, b: PackLadder) => PACK_SIZES.every((n) => a[S
  * size, each total rounded down to end in 9 (whole rupees under ₹20) and nudged so every bigger
  * pack still costs more in total and less per course.
  */
+
+/**
+ * One Apply, as many rounds as it takes: the server saves only so many packs per request (the
+ * Worker's database-call limit) and says how many are left. The counts add up across rounds.
+ */
+async function applyAllRounds(send: () => Promise<PackRunDto>): Promise<PackRunDto> {
+  let r = await send();
+  const done = { create: 0, update: 0, retire: 0 };
+  for (let round = 0; ; round++) {
+    done.create += r.totals.create;
+    done.update += r.totals.update;
+    done.retire += r.totals.retire;
+    if (!r.remaining || round >= 20) break;
+    r = await send();
+  }
+  return { ...r, totals: { ...r.totals, ...done } };
+}
+
 export function ladderFromRule(first: number, drop: number): PackLadder {
   const out: PackLadder = {};
   let prev: { n: number; r: number } | null = null;
@@ -271,16 +289,24 @@ export function PacksCard() {
 
   const build = useMutation({
     mutationFn: (rename?: string) =>
-      rename
-        ? // One click: rename every pack, keeping every other saved setting.
-          api.adminRunPacks({
-            dryRun: false,
-            status: s?.status ?? status,
-            titlePrefix: rename,
-            keepInSync: s?.keepInSync ?? sync,
-            ...(s ? { ladder: s.ladder } : {}),
-          })
-        : api.adminRunPacks({ dryRun: false, status, titlePrefix: name, keepInSync: sync, ladder: ladder! }),
+      applyAllRounds(() =>
+        rename
+          ? // One click: rename every pack, keeping every other saved setting.
+            api.adminRunPacks({
+              dryRun: false,
+              status: s?.status ?? status,
+              titlePrefix: rename,
+              keepInSync: s?.keepInSync ?? sync,
+              ...(s ? { ladder: s.ladder } : {}),
+            })
+          : api.adminRunPacks({
+              dryRun: false,
+              status,
+              titlePrefix: name,
+              keepInSync: sync,
+              ladder: ladder!,
+            }),
+      ),
     onSuccess: (r, rename) => {
       setBuilt(r);
       // What was just built is now the saved state: the form compares against it from here.

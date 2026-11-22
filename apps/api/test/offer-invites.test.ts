@@ -164,7 +164,14 @@ describe('what the site shows during an offer', () => {
 
   it('the admin bundle list shows what students pay now and the name they see', async () => {
     const { admin, offer } = await world();
-    await admin.call('POST', '/admin/bundles/packs', { dryRun: false, titlePrefix: 'Semester pack' });
+    // Apply in rounds, as the admin screen does (each round saves only so many packs).
+    for (let i = 0; i < 20; i++) {
+      const r = await admin.call('POST', '/admin/bundles/packs', {
+        dryRun: false,
+        titlePrefix: 'Semester pack',
+      });
+      if (!r.json.remaining) break;
+    }
     const before = (await admin.call('GET', '/admin/bundles')).json as AdminBundleDto[];
     expect(before.every((b) => b.today === null)).toBe(true);
     await offer({ everything: true });

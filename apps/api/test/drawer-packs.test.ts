@@ -9,8 +9,20 @@ async function world() {
   await admin.signIn('admin@vitbhopal.ac.in');
   const student = new Browser(app);
   await student.signIn('buyer@vitbhopal.ac.in');
-  const run = (body: Record<string, unknown> = {}) =>
-    admin.call('POST', '/admin/bundles/packs', { dryRun: false, titlePrefix: 'Diwali pack', ...body });
+  /** Apply, as the admin screen does: send the next round until no pack is left to save. */
+  const run = async (body: Record<string, unknown> = {}) => {
+    const send = () =>
+      admin.call('POST', '/admin/bundles/packs', { dryRun: false, titlePrefix: 'Diwali pack', ...body });
+    let res = await send();
+    if (res.status !== 200) return res;
+    const done = { create: 0, update: 0, retire: 0 };
+    for (let round = 0; ; round++) {
+      for (const k of ['create', 'update', 'retire'] as const) done[k] += res.json.totals[k];
+      if (!res.json.remaining || round >= 20) break;
+      res = await send();
+    }
+    return { ...res, json: { ...res.json, totals: { ...res.json.totals, ...done } } };
+  };
   return { env, app, clock, admin, student, run };
 }
 
@@ -65,6 +77,25 @@ describe('pack prices', () => {
 });
 
 describe('drawer packs', () => {
+  it('one Apply never goes past the Worker’s database-call limit; the rest comes in further rounds', async () => {
+    const { env, admin } = await world();
+    const first = (
+      await admin.call('POST', '/admin/bundles/packs', { dryRun: false, titlePrefix: 'Semester pack' })
+    ).json;
+    // Building packs from nothing costs ~5 calls each: at most 5 in one round, the rest told apart.
+    expect(first.totals.create).toBeGreaterThan(0);
+    expect(first.totals.create).toBeLessThanOrEqual(5);
+    expect(first.remaining).toBeGreaterThan(0);
+    let last = first;
+    for (let i = 0; i < 20 && last.remaining > 0; i++)
+      last = (
+        await admin.call('POST', '/admin/bundles/packs', { dryRun: false, titlePrefix: 'Semester pack' })
+      ).json;
+    expect(last.remaining).toBe(0);
+    const built = [...env.db.bundles.values()].filter((b) => b.autoDrawer && b.status === 'live');
+    expect(built.length).toBeGreaterThan(5);
+  });
+
   it('a new price list reaches every pack, a capped run at a time, with one write per pack', async () => {
     const { env, run } = await world();
     await run({ titlePrefix: 'Semester pack' });

@@ -1021,6 +1021,8 @@ export interface PackRunDto {
   /** Live courses bought one by one (null when none are live), to show what a pack saves. */
   coursePrices: { minPaise: number; maxPaise: number; averagePaise: number } | null;
   applied: boolean;
+  /** Packs still to save after this run (a run saves only so many); 0 when it is all done. */
+  remaining: number;
 }
 
 export const SaveBundleBody = z.object({

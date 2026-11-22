@@ -55,6 +55,7 @@ import {
 import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 import { openProblems, todaySummary } from '../../application/admin-today';
+import { reportServerError } from '../../application/error-reporter';
 import { fail } from '../../application/errors';
 import { safeEqual } from '../../infrastructure/crypto';
 import { type AppEnv, requireLive } from '../helpers';
@@ -539,34 +540,47 @@ adminRoutes.get('/admin/today', async (c) => {
     return overview;
   };
   return c.json(
-    await todaySummary({
-      questions: async () => (await k.supportDesk.list('open')).counts.open,
-      uploads: async () => {
-        const [pending, accepted] = await Promise.all([
-          k.contributionReview.list('pending'),
-          k.contributionReview.list('approved'),
-        ]);
-        // New ones, plus accepted ones waiting for the admin's next step (not for pages).
-        const waiting = accepted.items.filter((x) => ['file', 'reward', 'finish'].includes(x.pipeline.step));
-        return pending.items.length + waiting.length;
+    await todaySummary(
+      {
+        questions: async () => (await k.supportDesk.list('open')).counts.open,
+        uploads: async () => {
+          const [pending, accepted] = await Promise.all([
+            k.contributionReview.list('pending'),
+            k.contributionReview.list('approved'),
+          ]);
+          // New ones, plus accepted ones waiting for the admin's next step (not for pages).
+          const waiting = accepted.items.filter((x) =>
+            ['file', 'reward', 'finish'].includes(x.pipeline.step),
+          );
+          return pending.items.length + waiting.length;
+        },
+        publish: async () => (await view()).courses.readyToPublish,
+        files: async () => {
+          const f = (await view()).files;
+          return f.failed + f.waiting;
+        },
+        rewards: async () => {
+          const e = await k.earnings.overview();
+          return {
+            count:
+              e.cashRewards.filter((r) => !r.paidAt).length +
+              e.courses.filter((x) => (x.royalty?.owedPaise ?? 0) > 0).length,
+            amountPaise: e.totals.cashOwedPaise + e.totals.royaltyOwedPaise,
+          };
+        },
+        emails: async () => (await k.announcements.list()).filter((a) => a.status === 'sending').length,
+        problems: async () => openProblems(await k.problems.list()),
       },
-      publish: async () => (await view()).courses.readyToPublish,
-      files: async () => {
-        const f = (await view()).files;
-        return f.failed + f.waiting;
+      new Date(),
+      {
+        // One Sentry issue per slow part (the message stays the same, so repeats group together).
+        onTimeout: (key) =>
+          reportServerError(new Error(`Admin Today: "${key}" took too long and was skipped`), {
+            where: 'GET /api/admin/today',
+            requestId: c.get('requestId'),
+          }),
       },
-      rewards: async () => {
-        const e = await k.earnings.overview();
-        return {
-          count:
-            e.cashRewards.filter((r) => !r.paidAt).length +
-            e.courses.filter((x) => (x.royalty?.owedPaise ?? 0) > 0).length,
-          amountPaise: e.totals.cashOwedPaise + e.totals.royaltyOwedPaise,
-        };
-      },
-      emails: async () => (await k.announcements.list()).filter((a) => a.status === 'sending').length,
-      problems: async () => openProblems(await k.problems.list()),
-    }),
+    ),
   );
 });
 

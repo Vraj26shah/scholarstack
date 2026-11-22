@@ -42,6 +42,29 @@ describe('admin today', () => {
     expect(t.items.find((i) => i.key === 'questions')!.count).toBe(2);
   });
 
+  it('a part that takes too long shows as unknown, is reported, and never holds up the rest', async () => {
+    const ok = async () => 1;
+    const timedOut: string[] = [];
+    const t0 = Date.now();
+    const t = await todaySummary(
+      {
+        questions: ok,
+        uploads: ok,
+        publish: ok,
+        files: ok,
+        rewards: () => new Promise(() => {}), // never answers
+        emails: ok,
+        problems: ok,
+      },
+      new Date(),
+      { timeoutMs: 50, onTimeout: (key) => timedOut.push(key) },
+    );
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    expect(t.items.find((i) => i.key === 'rewards')!.count).toBeNull();
+    expect(t.items.find((i) => i.key === 'questions')!.count).toBe(1);
+    expect(timedOut).toEqual(['rewards']);
+  });
+
   it('counts problems until they are cleared, however old', () => {
     expect(openProblems([{ lastAt: '2026-10-26T01:00:00Z' }, { lastAt: '2026-10-01T01:00:00Z' }])).toBe(2);
     expect(openProblems([])).toBe(0);

@@ -14,6 +14,7 @@ const run = (titlePrefix: string, ladder = PACK_LADDER_RUPEES): PackRunDto => ({
   settings: { status: 'live', titlePrefix, keepInSync: true, ladder },
   plans: [],
   totals: { create: 0, update: 0, same: 49, retire: 0, skip: 0 },
+  remaining: 0,
   coursePrices: { minPaise: 7900, maxPaise: 9900, averagePaise: 9300 },
   applied: false,
 });

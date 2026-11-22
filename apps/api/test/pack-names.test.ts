@@ -35,7 +35,14 @@ describe('pack names follow the offers', () => {
     await admin.signIn('admin@vitbhopal.ac.in');
     const student = new Browser(app);
     await student.signIn('buyer@vitbhopal.ac.in');
-    await admin.call('POST', '/admin/bundles/packs', { dryRun: false, titlePrefix: 'Semester pack' });
+    // Apply in rounds, as the admin screen does (each round saves only so many packs).
+    for (let i = 0; i < 20; i++) {
+      const r = await admin.call('POST', '/admin/bundles/packs', {
+        dryRun: false,
+        titlePrefix: 'Semester pack',
+      });
+      if (!r.json.remaining) break;
+    }
 
     const packsIn = async () =>
       (

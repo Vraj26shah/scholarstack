@@ -123,7 +123,9 @@ export function AdminPage() {
   const overview = useQuery({
     queryKey: ['admin-overview'],
     queryFn: api.adminOverview,
-    refetchInterval: 10_000,
+    // Every 30 s (and after any admin change): it reads every file row, and polling it every
+    // 10 s from several admin tabs helped push the Worker past its limits (503s, 20 Nov).
+    refetchInterval: 30_000,
     enabled: !!me?.isAdmin,
   });
   const o = overview.data;

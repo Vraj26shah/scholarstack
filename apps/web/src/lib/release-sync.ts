@@ -12,15 +12,19 @@ declare const __BUILD_ID__: string;
 
 const RELOADED = 'ss_reloaded_for_release';
 let newReleaseReady = false;
+/** A reload is already on its way: anything else that fails now just waits for it. */
+let reloading = false;
 
 /** Reload once per release for a missing code file; a second failure shows the error screen. */
 export function reloadForNewRelease(): boolean {
+  if (reloading) return true;
   try {
     if (sessionStorage.getItem(RELOADED) === location.pathname) return false;
     sessionStorage.setItem(RELOADED, location.pathname);
   } catch {
     // no storage: still reload once (this page view)
   }
+  reloading = true;
   location.reload();
   return true;
 }
@@ -60,9 +64,12 @@ async function checkRelease() {
 export const releaseWaiting = () => newReleaseReady;
 
 export function installReleaseSync() {
-  // Vite reports a failed preload of a code file here.
-  window.addEventListener('vite:preloadError', (event) => {
-    event.preventDefault();
+  // Vite reports a failed preload of a code file here. Start the reload, but don't call
+  // preventDefault(): that makes Vite resolve the import with `undefined`, and the screen then
+  // crashed reading it ("Cannot read properties of undefined (reading 'AccountPage')", Sentry
+  // SCHOLARSTACK-WEB-4) while the reload was still on its way. Left alone, the import fails as
+  // it should and loadScreen waits for the reload.
+  window.addEventListener('vite:preloadError', () => {
     reloadForNewRelease();
   });
   document.addEventListener('visibilitychange', () => {

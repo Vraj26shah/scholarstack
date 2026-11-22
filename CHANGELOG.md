@@ -4,6 +4,11 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixes from the Sentry review (22 Nov)
+- **The account page (or any screen) no longer crashes on a tab opened before a deploy** (Sentry SCHOLARSTACK-WEB-4, "Cannot read properties of undefined (reading 'AccountPage')"). On a missing code file the site called `preventDefault()` on Vite's preload error, which made the import resolve to nothing; the screen then crashed while the reload was on its way. The import now fails normally and waits for the reload.
+- **Applying pack changes can't run past the Worker's limit any more** (the 500s on `/api/admin/bundles/packs`, 16 Nov). One Apply saved every pack in one request, about 5 database calls for each new pack, past Cloudflare's 50. Each request now spends at most 25 calls on saving and says how many are left; the admin screen sends the next round itself, so it is still one click. The hourly run uses the same budget (it counted packs, not calls).
+- **Admin › Today can't hang** (it took up to 43 s, and returned 503s for a minute on 20 Nov). Each count has 6 s; a slow one shows as "couldn't check", is logged with its time, and is reported to Sentry by name. The admin overview refreshes every 30 s instead of every 10 s (any admin change still refreshes it at once).
+
 ### Insights for the admin
 - **Admin › Students › Insights**: new students, course and bundle page views, checkouts started and paid, revenue, and readers, for today or the last 7, 30 or 90 days. A per-day chart (views, new students, checkouts, paid) with a table view, "From looking to buying" with the drop-off at each step, the most viewed courses and bundles (with each one's views → paid rate), and the most read courses after buying.
 - **Links to the rest**: Sentry (errors, page speed / Web Vitals, replays) and Google Analytics (traffic sources, events), with what to look for in each.
