@@ -14,6 +14,7 @@ import type { ContributorStatsService } from '../application/contributions/contr
 import type { ContributionFilingService } from '../application/contributions/filing';
 import type { DiscountReportService } from '../application/discount-report';
 import type { EarningsService } from '../application/earnings/earnings-service';
+import type { InsightsService } from '../application/insights-service';
 import type { OfferService } from '../application/offer-service';
 import type { PackService } from '../application/packs';
 import type { PreviewService } from '../application/preview-service';
@@ -53,6 +54,8 @@ export interface Container {
   promoCodes: PromoCodeService;
   /** Who used which offer or code, and what promo creators are owed. */
   discounts: DiscountReportService;
+  /** Page views and the admin's Insights report. */
+  insights: InsightsService;
   /** Today's prices: running offers applied to courses and bundles. */
   prices: PriceBook;
   /** One bundle per drawer, kept in step with it. */

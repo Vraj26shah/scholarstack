@@ -4,6 +4,12 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Insights for the admin
+- **Admin › Students › Insights**: new students, course and bundle page views, checkouts started and paid, revenue, and readers, for today or the last 7, 30 or 90 days. A per-day chart (views, new students, checkouts, paid) with a table view, "From looking to buying" with the drop-off at each step, the most viewed courses and bundles (with each one's views → paid rate), and the most read courses after buying.
+- **Links to the rest**: Sentry (errors, page speed / Web Vitals, replays) and Google Analytics (traffic sources, events), with what to look for in each.
+- **Privacy**: a page view is a count per course per day. No student, e-mail, IP or device is stored with it. Admins aren't counted, robots and link-preview crawlers are ignored, a refresh in the same tab isn't another view, and each network and browser is limited to 40 a minute. The counter never slows or breaks a page.
+- Migration `20261122000200_insights`: `item_views_daily` (row level security on, no student access), `record_item_view()` and `admin_insights()` (server only), so the whole report is one database call.
+
 ### Welcome promo codes
 - **A promo code can be for new students only** (Admin › Courses › Promo codes › "New students only (first purchase)"). Combined with "Each student can use it once" and "Everything", a code like `NEW10` takes 10% off whatever a student buys first, course or bundle, once. A student who has already paid for something is told "The code NEW10 is only for your first purchase."; one who used it is told they already did.
 - Migration `20261122000100_promo_new_students_only`: adds `promo_codes.new_students_only` (default off, so existing codes are unchanged) and an index for the "has this student paid before?" check.

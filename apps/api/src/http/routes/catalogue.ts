@@ -3,11 +3,13 @@ import {
   ClientProblemBody,
   SearchQuery,
   TILE_SEED_HEADER,
+  TrackViewBody,
   UnsubscribeBody,
 } from '@ss/contracts';
 import { type Context, Hono } from 'hono';
 import { z } from 'zod';
-import { type AppEnv, bearer, requestMeta, throttle } from '../helpers';
+import { sha256Hex } from '../../infrastructure/crypto';
+import { type AppEnv, bearer, networkKey, requestMeta, throttle } from '../helpers';
 
 export const catalogueRoutes = new Hono<AppEnv>();
 
@@ -77,6 +79,27 @@ catalogueRoutes.get('/bundles', async (c) => {
 catalogueRoutes.get('/bundles/:idOrSlug', async (c) => {
   const { userId, isAdmin } = await optionalViewer(c);
   return c.json(await c.get('container').catalogue.bundle(c.req.param('idOrSlug'), userId, isAdmin));
+});
+
+/** Link-preview crawlers and other robots: never counted as a student looking. */
+const ROBOT = /bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|headless|lighthouse/i;
+
+/**
+ * A course or bundle page was opened (Admin › Insights). Counts only: nothing about who opened
+ * it is stored. Always answers 204, even when the view is not counted (a robot, too many from one
+ * network, a hiccup), so it can never break or slow a page.
+ */
+catalogueRoutes.post('/insights/view', async (c) => {
+  const parsed = TrackViewBody.safeParse(await c.req.json().catch(() => null));
+  const ua = c.req.header('user-agent') ?? '';
+  if (!parsed.success || !ua || ROBOT.test(ua)) return c.body(null, 204);
+  const k = c.get('container');
+  // Per network and browser: a whole campus behind one address still counts, one script can't
+  // pump the numbers (each tab also sends a page once).
+  const who = `${await networkKey(c)}:${(await sha256Hex(ua)).slice(0, 12)}`;
+  if (!(await k.limiter.allow(`view:${who}`))) return c.body(null, 204);
+  await k.insights.recordView(parsed.data);
+  return c.body(null, 204);
 });
 
 /** First page of a unit, watermarked "PREVIEW". Public and cacheable. */

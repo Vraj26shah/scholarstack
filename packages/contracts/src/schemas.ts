@@ -2544,3 +2544,75 @@ export interface AdminListDto {
   /** Where the list is read from: the database, or the Worker secret when the database is empty. */
   readFrom: 'database' | 'worker-secret';
 }
+
+// ───────────────────────── Insights ─────────────────────────
+
+/** A course or bundle page opened (counted per day, never with who opened it). */
+export const TrackViewBody = z.union([
+  z.object({ courseId: z.string().min(1).max(64), signedIn: z.boolean().default(false) }).strict(),
+  z.object({ bundleId: z.string().min(1).max(64), signedIn: z.boolean().default(false) }).strict(),
+]);
+export type TrackViewBody = z.infer<typeof TrackViewBody>;
+
+export const InsightsQuery = z.object({
+  days: z.enum(['1', '7', '30', '90']).default('30'),
+});
+
+export interface InsightsSummaryDto {
+  /** Students who signed in for the first time in the period. */
+  signups: number;
+  /** Of those, how many have paid for something since. */
+  signupsWhoBought: number;
+  /** Students whose first ever paid order was in the period. */
+  firstPurchases: number;
+  buyers: number;
+  /** Orders started (the payment window opened), paid or not. */
+  checkouts: number;
+  paidOrders: number;
+  revenuePaise: number;
+  /** Course and bundle page views. */
+  views: number;
+  signedInViews: number;
+  /** Students who read a bought file, and the pages they read (last 30 days at most). */
+  readers: number;
+  pagesRead: number;
+}
+
+export interface InsightsDayDto {
+  /** YYYY-MM-DD, IST. */
+  day: string;
+  signups: number;
+  views: number;
+  checkouts: number;
+  paid: number;
+  revenuePaise: number;
+}
+
+export interface InsightsItemDto {
+  kind: 'course' | 'bundle';
+  id: string;
+  title: string;
+  slug: string;
+  views: number;
+  signedInViews: number;
+  checkouts: number;
+  paid: number;
+  revenuePaise: number;
+}
+
+export interface InsightsReadingDto {
+  courseId: string;
+  title: string;
+  slug: string;
+  readers: number;
+  pages: number;
+}
+
+export interface AdminInsightsDto {
+  days: '1' | '7' | '30' | '90';
+  checkedAt: string;
+  summary: InsightsSummaryDto;
+  daily: InsightsDayDto[];
+  topItems: InsightsItemDto[];
+  topReading: InsightsReadingDto[];
+}

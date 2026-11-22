@@ -8,6 +8,7 @@ import type {
   AdminCourseBooksDto,
   AdminCourseDto,
   AdminGrantResultDto,
+  AdminInsightsDto,
   AdminOfferDto,
   AdminOverviewDto,
   AdminPromoCodeDto,
@@ -567,6 +568,8 @@ export class ApiClient {
     this.request<DiscountOrderDto[]>('GET', `/admin/offers/${encodeURIComponent(id)}/orders`);
   adminDiscounts = (days: '7' | '30' | '90' | 'all') =>
     this.request<DiscountReportDto>('GET', `/admin/discounts?days=${days}`);
+  adminInsights = (days: '1' | '7' | '30' | '90') =>
+    this.request<AdminInsightsDto>('GET', `/admin/insights?days=${days}`);
   adminAddPromoPayout = (b: PromoPayoutBody) =>
     this.request<PromoPayoutDto>('POST', '/admin/discounts/payouts', b);
   adminSavePromoCode = (p: SavePromoCodeBody) =>

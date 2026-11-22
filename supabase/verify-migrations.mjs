@@ -1124,6 +1124,40 @@ check(
     (await denied('select * from public.support_messages')),
 );
 check('RLS: students cannot run the earnings report', await denied('select * from public.course_earnings()'));
+
+// ── Insights ──
+{
+  const draft = await addCourse('insights-draft', 9900, 'draft');
+  await db.query('select public.record_item_view($1, null, true)', [course.id]);
+  await db.query('select public.record_item_view($1, null, false)', [course.id]);
+  await db.query('select public.record_item_view($1, null, true)', [draft.id]);
+  await db.query(`select public.record_item_view('00000000-0000-0000-0000-000000000000', null, true)`);
+  await db.query('select public.record_item_view(null, null, true)');
+  const views = await all('select course_id, views, signed_in_views from public.item_views_daily');
+  check(
+    'a page view adds to today’s count for a live course only (drafts and made-up ids are ignored)',
+    views.length === 1 &&
+      views[0].course_id === course.id &&
+      views[0].views === 2 &&
+      views[0].signed_in_views === 1,
+  );
+  const report = (await one(`select public.admin_insights(now() - interval '7 days', 10) as r`)).r;
+  check(
+    'admin_insights reports the period in one call',
+    report.summary.views === 2 &&
+      report.daily.length === 8 &&
+      report.topItems[0]?.id === course.id &&
+      report.topItems[0]?.views === 2 &&
+      Array.isArray(report.topReading),
+    JSON.stringify(report.summary),
+  );
+  check(
+    'RLS: students and visitors cannot read or write page views',
+    (await denied('select * from public.item_views_daily')) &&
+      (await denied(`select public.record_item_view('${course.id}', null, true)`)) &&
+      (await denied(`select public.admin_insights(now() - interval '7 days', 10)`)),
+  );
+}
 check(
   'RLS: students cannot read who got which email',
   (await denied('select * from public.announcement_deliveries')) &&

@@ -56,6 +56,7 @@ import type {
   EntitlementRepository,
   FeatureRepository,
   IdGenerator,
+  InsightsRepository,
   LeaseRepository,
   Mailer,
   ObjectStore,
@@ -166,6 +167,10 @@ export class MemoryDb {
     { offerId: string | null; title: string; percentOff: number; fullPaise: number; discountPaise: number }
   >();
   promoPayouts: PromoPayout[] = [];
+  /** When a profile or an order was created (by id); seeded rows have none and count as old. */
+  createdAt = new Map<string, Date>();
+  /** Page views, key: day|course|id or day|bundle|id (IST day). */
+  itemViews = new Map<string, { views: number; signedInViews: number }>();
   features = new Map<string, Feature>();
   announcements = new Map<string, Announcement>();
   quota = new Map<string, number>(); // key: day
@@ -582,6 +587,7 @@ export class MemoryProfiles implements ProfileRepository {
     if (existing) return existing;
     const profile: Profile = { id: p.userId, email: p.email, fullName: null, emailOptIn: true };
     this.db.profiles.set(p.userId, profile);
+    this.db.createdAt.set(p.userId, this.db.clock.now());
     // Same as the database trigger: courses an admin gave this email before they signed up.
     for (const [key, g] of this.db.pendingGrants) {
       if (g.email !== p.email.toLowerCase()) continue;
@@ -688,6 +694,7 @@ export class MemoryOrders implements OrderRepository, EntitlementRepository {
   async create(o: Omit<Order, 'id' | 'status' | 'gatewayPaymentId'>) {
     const order: Order = { ...o, id: this.db.ids.next(), status: 'created', gatewayPaymentId: null };
     this.db.orders.set(order.id, order);
+    this.db.createdAt.set(order.id, this.db.clock.now());
     return order;
   }
   async findById(id: string) {
@@ -1103,6 +1110,156 @@ export class MemoryPromoCodes implements PromoCodeRepository {
   }) {
     const { orderId, ...rest } = r;
     this.db.promoRedemptions.set(orderId, rest);
+  }
+}
+
+const IST_MS = 5.5 * 60 * 60 * 1000;
+const istDay = (d: Date) => new Date(d.getTime() + IST_MS).toISOString().slice(0, 10);
+
+/** Same report as the database's admin_insights(), worked out over the in-memory tables. */
+export class MemoryInsights implements InsightsRepository {
+  constructor(private readonly db: MemoryDb) {}
+  async recordView(item: { courseId: string } | { bundleId: string }, signedIn: boolean) {
+    const [kind, id] = 'courseId' in item ? ['course', item.courseId] : ['bundle', item.bundleId];
+    const live =
+      kind === 'course'
+        ? this.db.courses.get(id)?.status === 'live'
+        : this.db.bundles.get(id)?.status === 'live';
+    if (!live) return;
+    const key = `${istDay(this.db.clock.now())}|${kind}|${id}`;
+    const v = this.db.itemViews.get(key) ?? { views: 0, signedInViews: 0 };
+    this.db.itemViews.set(key, { views: v.views + 1, signedInViews: v.signedInViews + (signedIn ? 1 : 0) });
+  }
+
+  async report(since: Date, limit: number) {
+    const db = this.db;
+    const at = (id: string) => db.createdAt.get(id) ?? new Date(0);
+    const sinceDay = istDay(since);
+    const today = istDay(db.clock.now());
+    const sum = <T>(list: T[], f: (x: T) => number) => list.reduce((s, x) => s + f(x), 0);
+
+    const signups = [...db.profiles.keys()].filter((id) => at(id) >= since);
+    const orders = [...db.orders.values()].filter((o) => at(o.id) >= since);
+    const paid = orders.filter((o) => o.status === 'paid');
+    const firstPaid = new Map<string, Date>();
+    for (const o of db.orders.values()) {
+      if (o.status !== 'paid') continue;
+      const prev = firstPaid.get(o.userId);
+      if (!prev || at(o.id) < prev) firstPaid.set(o.userId, at(o.id));
+    }
+    const views = [...db.itemViews]
+      .map(([key, v]) => {
+        const [day, kind, id] = key.split('|') as [string, 'course' | 'bundle', string];
+        return { day, kind, id, ...v };
+      })
+      .filter((v) => v.day >= sinceDay);
+    const reading: { courseId: string; userId: string; pages: number }[] = [];
+    for (const [key, pages] of db.access) {
+      const [userId, fileId, day] = key.split('|') as [string, string, string];
+      const courseId = db.files.get(fileId)?.courseId;
+      if (courseId && day >= sinceDay) reading.push({ courseId, userId, pages });
+    }
+
+    const daily = [];
+    for (let t = Date.parse(`${sinceDay}T00:00:00Z`); ; t += 86_400_000) {
+      const day = new Date(t).toISOString().slice(0, 10);
+      if (day > today) break;
+      const onDay = (id: string) => istDay(at(id)) === day;
+      const dayPaid = paid.filter((o) => onDay(o.id));
+      daily.push({
+        day,
+        signups: signups.filter(onDay).length,
+        views: sum(
+          views.filter((v) => v.day === day),
+          (v) => v.views,
+        ),
+        checkouts: orders.filter((o) => onDay(o.id)).length,
+        paid: dayPaid.length,
+        revenuePaise: sum(dayPaid, (o) => o.amountPaise),
+      });
+    }
+
+    type Kind = 'course' | 'bundle';
+    const items = new Map<
+      string,
+      {
+        kind: Kind;
+        id: string;
+        views: number;
+        signedInViews: number;
+        checkouts: number;
+        paid: number;
+        revenuePaise: number;
+      }
+    >();
+    const itemOf = (kind: Kind, id: string) => {
+      const key = `${kind}|${id}`;
+      const found = items.get(key);
+      if (found) return found;
+      const it = { kind, id, views: 0, signedInViews: 0, checkouts: 0, paid: 0, revenuePaise: 0 };
+      items.set(key, it);
+      return it;
+    };
+    for (const v of views) {
+      const it = itemOf(v.kind, v.id);
+      it.views += v.views;
+      it.signedInViews += v.signedInViews;
+    }
+    for (const o of orders) {
+      const it = o.bundleId ? itemOf('bundle', o.bundleId) : o.courseId ? itemOf('course', o.courseId) : null;
+      if (!it) continue;
+      it.checkouts += 1;
+      if (o.status === 'paid') {
+        it.paid += 1;
+        it.revenuePaise += o.amountPaise;
+      }
+    }
+    const topItems = [...items.values()]
+      .flatMap((it) => {
+        const n = it.kind === 'course' ? db.courses.get(it.id) : db.bundles.get(it.id);
+        return n ? [{ ...it, title: n.title, slug: n.slug }] : [];
+      })
+      .sort(
+        (a, b) =>
+          b.views - a.views || b.paid - a.paid || b.checkouts - a.checkouts || a.title.localeCompare(b.title),
+      )
+      .slice(0, limit);
+
+    const byCourse = new Map<string, { readers: Set<string>; pages: number }>();
+    for (const r of reading) {
+      const c = byCourse.get(r.courseId) ?? { readers: new Set<string>(), pages: 0 };
+      c.readers.add(r.userId);
+      c.pages += r.pages;
+      byCourse.set(r.courseId, c);
+    }
+    const topReading = [...byCourse]
+      .flatMap(([courseId, c]) => {
+        const course = db.courses.get(courseId);
+        return course
+          ? [{ courseId, title: course.title, slug: course.slug, readers: c.readers.size, pages: c.pages }]
+          : [];
+      })
+      .sort((a, b) => b.readers - a.readers || b.pages - a.pages || a.title.localeCompare(b.title))
+      .slice(0, limit);
+
+    return {
+      summary: {
+        signups: signups.length,
+        signupsWhoBought: signups.filter((id) => paid.some((o) => o.userId === id)).length,
+        firstPurchases: [...firstPaid.values()].filter((d) => d >= since).length,
+        buyers: new Set(paid.map((o) => o.userId)).size,
+        checkouts: orders.length,
+        paidOrders: paid.length,
+        revenuePaise: sum(paid, (o) => o.amountPaise),
+        views: sum(views, (v) => v.views),
+        signedInViews: sum(views, (v) => v.signedInViews),
+        readers: new Set(reading.map((r) => r.userId)).size,
+        pagesRead: sum(reading, (r) => r.pages),
+      },
+      daily,
+      topItems,
+      topReading,
+    };
   }
 }
 

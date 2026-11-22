@@ -16,6 +16,7 @@ import { ContributionFilingService } from '../application/contributions/filing';
 import { FiledCourses } from '../application/contributions/pipeline';
 import { DiscountReportService } from '../application/discount-report';
 import { EarningsService } from '../application/earnings/earnings-service';
+import { InsightsService } from '../application/insights-service';
 import { StudentMailer } from '../application/notify/student-mailer';
 import { OfferService } from '../application/offer-service';
 import { PackService } from '../application/packs';
@@ -53,6 +54,7 @@ import type {
   EntitlementRepository,
   FeatureRepository,
   IdGenerator,
+  InsightsRepository,
   LeaseRepository,
   Mailer,
   ObjectStore,
@@ -83,6 +85,8 @@ export interface Ports {
   offers: OfferRepository;
   promoCodes: PromoCodeRepository;
   discounts: DiscountLedger;
+  /** Page-view counters and the Insights report. */
+  insights: InsightsRepository;
   features: FeatureRepository;
   announcements: AnnouncementRepository;
   recipients: RecipientSource;
@@ -251,6 +255,7 @@ export function buildServices(p: Ports, config: AppConfig) {
     ),
     promoCodes,
     discounts,
+    insights: new InsightsService(p.insights, () => p.clock.now()),
     books: new BookService(p.catalogueReader, p.books),
     housekeeping: p.housekeeping,
     previews: new PreviewService(p.catalogueReader, p.catalogueWriter, p.pages, p.seeder, p.limiter),

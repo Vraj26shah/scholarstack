@@ -7,6 +7,7 @@ import { track } from '../../lib/analytics';
 import { api, friendly } from '../../lib/api';
 import { formatBytes, formatRupees, formatsLabel, offerEnds } from '../../lib/format';
 import { forMyDrawer, useMyDrawer } from '../../lib/my-drawer';
+import { useCountView } from '../../lib/page-views';
 import { prefetchChunk } from '../../lib/prefetch';
 import { useSession } from '../../lib/session';
 
@@ -423,6 +424,7 @@ export function CoursePage() {
   useEffect(() => {
     if (q.data?.owned) prefetchChunk('reader');
   }, [q.data?.owned]);
+  useCountView(q.data ? { courseId: q.data.id } : null);
   const itemSlug = q.data?.slug;
   const itemTitle = q.data?.title;
   const itemPrice = q.data?.pricePaise;

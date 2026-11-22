@@ -51,6 +51,7 @@ import type {
   EmailQuota,
   EntitlementRepository,
   FeatureRepository,
+  InsightsRepository,
   LeaseRepository,
   OfferRepository,
   OrderRepository,
@@ -1610,6 +1611,73 @@ const toPayoutRow = (r: Row): PromoPayout => ({
   recordedBy: (r.recorded_by as string | null) ?? '',
   paidAt: new Date(r.paid_at as string),
 });
+
+/** Numbers come back from jsonb as numbers; this keeps a missing one at 0, never NaN. */
+const num = (v: unknown) => (typeof v === 'number' ? v : Number(v ?? 0)) || 0;
+
+export class SupabaseInsights implements InsightsRepository {
+  constructor(private readonly db: SupabaseClient) {}
+  async recordView(item: { courseId: string } | { bundleId: string }, signedIn: boolean) {
+    const courseId = 'courseId' in item ? item.courseId : null;
+    const bundleId = 'bundleId' in item ? item.bundleId : null;
+    // A made-up id never reaches the database.
+    if (!isUuid(courseId ?? bundleId ?? '')) return;
+    must(
+      await this.db.rpc('record_item_view', {
+        p_course: courseId,
+        p_bundle: bundleId,
+        p_signed_in: signedIn,
+      }),
+    );
+  }
+  async report(since: Date, limit: number) {
+    const r = (must(await this.db.rpc('admin_insights', { p_since: since.toISOString(), p_limit: limit })) ??
+      {}) as Row;
+    const s = (r.summary ?? {}) as Row;
+    const rows = (v: unknown) => (Array.isArray(v) ? (v as Row[]) : []);
+    return {
+      summary: {
+        signups: num(s.signups),
+        signupsWhoBought: num(s.signupsWhoBought),
+        firstPurchases: num(s.firstPurchases),
+        buyers: num(s.buyers),
+        checkouts: num(s.checkouts),
+        paidOrders: num(s.paidOrders),
+        revenuePaise: num(s.revenuePaise),
+        views: num(s.views),
+        signedInViews: num(s.signedInViews),
+        readers: num(s.readers),
+        pagesRead: num(s.pagesRead),
+      },
+      daily: rows(r.daily).map((d) => ({
+        day: String(d.day),
+        signups: num(d.signups),
+        views: num(d.views),
+        checkouts: num(d.checkouts),
+        paid: num(d.paid),
+        revenuePaise: num(d.revenuePaise),
+      })),
+      topItems: rows(r.topItems).map((i) => ({
+        kind: i.kind === 'bundle' ? ('bundle' as const) : ('course' as const),
+        id: String(i.id),
+        title: String(i.title ?? ''),
+        slug: String(i.slug ?? ''),
+        views: num(i.views),
+        signedInViews: num(i.signedInViews),
+        checkouts: num(i.checkouts),
+        paid: num(i.paid),
+        revenuePaise: num(i.revenuePaise),
+      })),
+      topReading: rows(r.topReading).map((t) => ({
+        courseId: String(t.courseId),
+        title: String(t.title ?? ''),
+        slug: String(t.slug ?? ''),
+        readers: num(t.readers),
+        pages: num(t.pages),
+      })),
+    };
+  }
+}
 
 export class SupabaseDiscounts implements DiscountLedger {
   constructor(private readonly db: SupabaseClient) {}

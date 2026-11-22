@@ -8,6 +8,7 @@ import { CoursesPanel } from './courses-panel';
 import { DiscountsPanel } from './discounts-panel';
 import { EarningsPanel } from './earnings-panel';
 import { FolderExplorer } from './folder-explorer';
+import { InsightsPanel } from './insights-panel';
 import { MailPanel } from './mail-panel';
 import { OffersPanel } from './offers-panel';
 import { PageJobsPanel } from './page-jobs-panel';
@@ -141,6 +142,16 @@ export const GROUPS: Group[] = [
         label: 'Students',
         note: <>View accounts, courses, uploads and questions.</>,
         render: (go) => <StudentsPanel go={go} />,
+      },
+      {
+        key: 'insights',
+        label: 'Insights',
+        note: (
+          <>
+            What students look at, sign up and buy, and <U>where to find errors and page speed</U>.
+          </>
+        ),
+        render: () => <InsightsPanel />,
       },
     ],
   },

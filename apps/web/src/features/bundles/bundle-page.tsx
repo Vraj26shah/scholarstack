@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { formatRupees, offerEnds } from '../../lib/format';
+import { useCountView } from '../../lib/page-views';
 import { useSession } from '../../lib/session';
 import { Ambient } from '../../shared/ui/ambient';
 import { Stamp } from '../../shared/ui/brand';
@@ -21,6 +22,7 @@ export function BundlePage() {
   const { status } = useSession();
   const q = useQuery({ queryKey: ['bundle', slug, status], queryFn: () => api.bundle(slug) });
   const buyState = useBuy({ bundleId: q.data?.id ?? slug }, `/b/${slug}`);
+  useCountView(q.data ? { bundleId: q.data.id } : null);
 
   if (q.isLoading) return <BundlePageSkeleton />;
   if (q.isError || !q.data)

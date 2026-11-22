@@ -24,6 +24,7 @@ import {
   DiscountReportQuery,
   FileContributionBody,
   ImportBody,
+  InsightsQuery,
   MoveCourseFolderBody,
   MoveYearBody,
   OfferInviteBody,
@@ -732,6 +733,14 @@ adminRoutes.get('/admin/discounts', async (c) => {
   await requireAdmin(c);
   const { days } = DiscountReportQuery.parse({ days: c.req.query('days') ?? undefined });
   return c.json(await c.get('container').discounts.report(days));
+});
+
+/** Admin › Students › Insights: views, sign-ups, checkouts and reading for a period. */
+adminRoutes.get('/admin/insights', async (c) => {
+  await requireAdmin(c);
+  c.header('Cache-Control', 'no-store');
+  const { days } = InsightsQuery.parse({ days: c.req.query('days') ?? undefined });
+  return c.json(await c.get('container').insights.report(days));
 });
 
 adminRoutes.post('/admin/discounts/payouts', async (c) => {
