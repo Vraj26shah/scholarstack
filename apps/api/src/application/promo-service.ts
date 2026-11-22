@@ -85,6 +85,7 @@ export class PromoCodeService {
       status: p.status,
       maxUses: p.maxUses,
       oncePerStudent: p.oncePerStudent,
+      newStudentsOnly: p.newStudentsOnly,
       running: isOpen(p, now) && (p.maxUses === null || uses.length < p.maxUses),
       uses: uses.length,
       discountGivenPaise: uses.reduce((s, u) => s + u.discountPaise, 0),
@@ -125,6 +126,7 @@ export class PromoCodeService {
       status: input.status,
       maxUses: input.maxUses,
       oncePerStudent: input.oncePerStudent,
+      newStudentsOnly: input.newStudentsOnly,
       creatorName,
       creatorContact,
       commissionKind: creatorName ? input.commissionKind : null,
@@ -167,6 +169,9 @@ export class PromoCodeService {
       if (promo.maxUses !== null && uses.length >= promo.maxUses)
         throw fail.badRequest(`The code ${code} has been fully used.`);
     }
+    // A welcome code: only before the student's first paid order, of anything.
+    if (promo.newStudentsOnly && (await this.codes.hasPaidOrder(userId)))
+      throw fail.badRequest(`The code ${code} is only for your first purchase.`);
     const next = promoPricePaise(pricePaise, promo);
     if (next >= pricePaise) throw fail.badRequest(`The code ${code} can't lower this price any further.`);
     return { promo, fullPaise: pricePaise, pricePaise: next, discountPaise: pricePaise - next };

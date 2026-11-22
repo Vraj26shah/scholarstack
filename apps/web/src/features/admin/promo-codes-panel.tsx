@@ -23,6 +23,7 @@ interface Form {
   noEnd: boolean;
   maxUses: string;
   oncePerStudent: boolean;
+  newStudentsOnly: boolean;
   creatorName: string;
   creatorContact: string;
   /** '' = no commission. */
@@ -77,6 +78,7 @@ function newCode(): Form {
     noEnd: false,
     maxUses: '',
     oncePerStudent: true,
+    newStudentsOnly: false,
     creatorName: '',
     creatorContact: '',
     commissionKind: '',
@@ -97,6 +99,7 @@ const toForm = (p: AdminPromoCodeDto): Form => ({
   noEnd: p.endsAt === null,
   maxUses: p.maxUses === null ? '' : String(p.maxUses),
   oncePerStudent: p.oncePerStudent,
+  newStudentsOnly: p.newStudentsOnly,
   creatorName: p.creatorName ?? '',
   creatorContact: p.creatorContact ?? '',
   commissionKind: p.commissionKind ?? '',
@@ -182,6 +185,7 @@ function CodeForm({
         status,
         maxUses: f.maxUses === '' ? null : Number(f.maxUses),
         oncePerStudent: f.oncePerStudent,
+        newStudentsOnly: f.newStudentsOnly,
         creatorName: creator || null,
         creatorContact: creator ? f.creatorContact.trim() || null : null,
         commissionKind: creator && f.commissionKind ? f.commissionKind : null,
@@ -291,6 +295,15 @@ function CodeForm({
             className="w-5 h-5 accent-[var(--teal)]"
           />
           Each student can use it once
+        </label>
+        <label className="inline-flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={f.newStudentsOnly}
+            onChange={(e) => setF({ ...f, newStudentsOnly: e.target.checked })}
+            className="w-5 h-5 accent-[var(--teal)]"
+          />
+          New students only (first purchase)
         </label>
       </div>
       {example && amountOk && (
@@ -445,6 +458,7 @@ function CodeRow({ p, onEdit }: { p: AdminPromoCodeDto; onEdit: () => void }) {
         status: p.status,
         maxUses: p.maxUses,
         oncePerStudent: p.oncePerStudent,
+        newStudentsOnly: p.newStudentsOnly,
         creatorName: p.creatorName,
         creatorContact: p.creatorContact,
         commissionKind: p.commissionKind,
@@ -488,6 +502,7 @@ function CodeRow({ p, onEdit }: { p: AdminPromoCodeDto; onEdit: () => void }) {
             {p.maxUses !== null ? ` of ${p.maxUses}` : ''} used
             {p.uses > 0 ? ` · ${formatRupees(p.discountGivenPaise)} off given` : ''}
             {p.oncePerStudent ? ' · once per student' : ''}
+            {p.newStudentsOnly ? ' · first purchase only' : ''}
           </div>
           {p.creatorName && (
             <div className="text-[13px] text-ink2">

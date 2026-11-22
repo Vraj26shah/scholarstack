@@ -1074,6 +1074,9 @@ export class MemoryPromoCodes implements PromoCodeRepository {
       if (r.promoCodeId === id) this.db.promoRedemptions.set(orderId, { ...r, promoCodeId: null });
     return true;
   }
+  async hasPaidOrder(userId: string) {
+    return [...this.db.orders.values()].some((o) => o.userId === userId && o.status === 'paid');
+  }
   async paidUses(promoCodeId?: string): Promise<PromoUse[]> {
     const out: PromoUse[] = [];
     for (const [orderId, r] of this.db.promoRedemptions) {

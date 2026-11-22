@@ -1133,6 +1133,8 @@ export interface AdminPromoCodeDto {
   /** Null: no limit. */
   maxUses: number | null;
   oncePerStudent: boolean;
+  /** Only for students who have never paid for anything (a welcome code like NEW10). */
+  newStudentsOnly: boolean;
   /** Live, started, not ended and not used up. */
   running: boolean;
   /** Paid orders that used it. */
@@ -1172,6 +1174,7 @@ export const SavePromoCodeBody = z
     status: z.enum(['draft', 'live']),
     maxUses: z.number().int().min(1).max(1_000_000).nullable().default(null),
     oncePerStudent: z.boolean().default(true),
+    newStudentsOnly: z.boolean().default(false),
     creatorName: z
       .string()
       .trim()

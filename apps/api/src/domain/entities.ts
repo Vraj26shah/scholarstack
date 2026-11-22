@@ -208,6 +208,8 @@ export interface PromoCode {
   status: 'draft' | 'live';
   maxUses: number | null;
   oncePerStudent: boolean;
+  /** Only for a student who has never paid for anything (a welcome code like NEW10). */
+  newStudentsOnly: boolean;
   creatorName: string | null;
   creatorContact: string | null;
   commissionKind: 'percent' | 'flat' | null;

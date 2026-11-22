@@ -4,6 +4,10 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Welcome promo codes
+- **A promo code can be for new students only** (Admin › Courses › Promo codes › "New students only (first purchase)"). Combined with "Each student can use it once" and "Everything", a code like `NEW10` takes 10% off whatever a student buys first, course or bundle, once. A student who has already paid for something is told "The code NEW10 is only for your first purchase."; one who used it is told they already did.
+- Migration `20261122000100_promo_new_students_only`: adds `promo_codes.new_students_only` (default off, so existing codes are unchanged) and an index for the "has this student paid before?" check.
+
 ### Gentler pack prices
 - **Drawer packs take a little more off each course as they grow**, instead of a steep cut: against ₹99 courses, 2 for ₹179 (10% off), 3 for ₹249, 5 for ₹389 (21%), 10 for ₹709 (28%). Was ₹149 / ₹199 / ₹299 / ₹549 (up to 45% off). Live packs re-price on the next hourly run.
 - **Fixed: the hourly pack update stopped after a handful of packs**, silently. A Worker run may make only 50 database calls on Cloudflare's free plan; each pack saved its courses again (4–5 calls) and shared the run with five other hourly jobs, so a new price list reached 9 of 49 packs. A price or name change now writes the pack row only (one call), packs update in their own run at :45 past the hour, and each run changes at most 25 packs (the rest the next hour) so it always finishes.

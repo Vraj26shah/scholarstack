@@ -136,6 +136,8 @@ export interface PromoCodeRepository {
   remove(id: string): Promise<boolean>;
   /** Uses on paid orders: of one code, or of every code. */
   paidUses(promoCodeId?: string): Promise<PromoUse[]>;
+  /** Whether this student has any paid order (any course or bundle, with or without a code). */
+  hasPaidOrder(userId: string): Promise<boolean>;
   /** Which code an order used (written right after the order is created). */
   recordRedemption(r: {
     orderId: string;

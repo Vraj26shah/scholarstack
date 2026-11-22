@@ -1498,6 +1498,7 @@ const toPromoCode = (r: Row): PromoCode => ({
   status: r.status as PromoCode['status'],
   maxUses: (r.max_uses as number | null) ?? null,
   oncePerStudent: r.once_per_student !== false,
+  newStudentsOnly: r.new_students_only === true,
   creatorName: (r.creator_name as string | null) ?? null,
   creatorContact: (r.creator_contact as string | null) ?? null,
   commissionKind: (r.commission_kind as PromoCode['commissionKind']) ?? null,
@@ -1532,6 +1533,7 @@ export class SupabasePromoCodes implements PromoCodeRepository {
       status: p.status,
       max_uses: p.maxUses,
       once_per_student: p.oncePerStudent,
+      new_students_only: p.newStudentsOnly,
       creator_name: p.creatorName,
       creator_contact: p.creatorContact,
       commission_kind: p.commissionKind,
@@ -1547,6 +1549,13 @@ export class SupabasePromoCodes implements PromoCodeRepository {
   async remove(id: string) {
     if (!isUuid(id)) return false;
     const rows = must(await this.db.from('promo_codes').delete().eq('id', id).select('id')) as Row[];
+    return rows.length > 0;
+  }
+  async hasPaidOrder(userId: string) {
+    if (!isUuid(userId)) return false;
+    const rows = must(
+      await this.db.from('orders').select('id').eq('user_id', userId).eq('status', 'paid').limit(1),
+    ) as Row[];
     return rows.length > 0;
   }
   async paidUses(promoCodeId?: string): Promise<PromoUse[]> {

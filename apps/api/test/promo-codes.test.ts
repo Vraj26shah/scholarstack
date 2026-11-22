@@ -161,6 +161,37 @@ describe('promo codes', () => {
     expect((await admin.call('GET', '/admin/promo-codes')).json[0].running).toBe(false);
   });
 
+  it('a welcome code (NEW10) works on anything, once, and only before the first paid order', async () => {
+    const { app, admin, student, course, promo, pay } = await world();
+    const saved = await promo({ code: 'new10', percentOff: 10, endsAt: null, newStudentsOnly: true });
+    expect(saved.status).toBe(200);
+    expect(saved.json).toMatchObject({ code: 'NEW10', newStudentsOnly: true, appliesTo: 'everything' });
+    const dsa = course('dsa-2025-cse-core');
+    const dbms = course('dbms-2025-cse-core');
+
+    // A new student: it works on a course and on a bundle alike.
+    const pack = (await student.call('GET', '/bundles/cse-sem-3-pack')).json;
+    expect((await student.call('POST', '/promo/check', { courseId: dsa.id, code: 'NEW10' })).status).toBe(
+      200,
+    );
+    expect((await student.call('POST', '/promo/check', { bundleId: pack.id, code: 'NEW10' })).status).toBe(
+      200,
+    );
+
+    await pay(student, { courseId: dsa.id, promoCode: 'NEW10' });
+    const again = await student.call('POST', '/promo/check', { courseId: dbms.id, code: 'NEW10' });
+    expect(again.status).toBe(400);
+    expect(again.json.error.message).toContain('already used');
+
+    // Someone who already bought something without the code isn't new any more.
+    const regular = new Browser(app);
+    await regular.signIn('regular@vitbhopal.ac.in');
+    await pay(regular, { courseId: dsa.id });
+    const late = await regular.call('POST', '/promo/check', { courseId: dbms.id, code: 'NEW10' });
+    expect(late.json.error.message).toBe('The code NEW10 is only for your first purchase.');
+    expect((await admin.call('GET', '/admin/promo-codes')).json[0]).toMatchObject({ uses: 1, running: true });
+  });
+
   it('only admins manage codes; names are unique; a code can be deleted', async () => {
     const { admin, student, promo } = await world();
     expect((await student.call('GET', '/admin/promo-codes')).status).toBe(403);
@@ -192,6 +223,7 @@ describe('"Have a promo code?" reaches students quickly', () => {
     status: 'live',
     maxUses: null,
     oncePerStudent: true,
+    newStudentsOnly: false,
     creatorName: null,
     creatorContact: null,
     commissionKind: null,
