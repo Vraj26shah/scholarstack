@@ -26,8 +26,8 @@ export function Labelled({
 export function ToolHeader({ title, lead, aside }: { title: string; lead: string; aside?: ReactNode }) {
   const { pathname } = useLocation();
   return (
-    <header className="flex flex-col pt-4 sm:pt-6 pb-8 sm:pb-10">
-      <BackLink fallback="/#toolbox" className="mb-6 sm:mb-8 print:hidden" />
+    <header className="flex flex-col pt-4 pb-10">
+      <BackLink fallback="/#toolbox" className="mb-5 print:hidden" />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-3 max-w-[720px]">
           <PageTitle>{title}</PageTitle>

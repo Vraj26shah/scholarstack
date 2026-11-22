@@ -7,7 +7,7 @@ import { useSession } from '../../lib/session';
 import { Button } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
 import { Devices } from '../../shared/ui/icons';
-import { PageHeader } from '../../shared/ui/page-title';
+import { Eyebrow, PageTitle } from '../../shared/ui/page-title';
 
 function DeviceRow({
   d,
@@ -113,8 +113,12 @@ export function AccountPage() {
 
   return (
     <Page>
-      <PageHeader eyebrow="Borrower card" title="Account" flush />
-      <div className="pt-8 sm:pt-10 flex flex-col gap-10 max-w-[720px]">
+      <div className="pt-4 flex flex-col gap-10 max-w-[720px]">
+        <div>
+          <Eyebrow>Borrower card</Eyebrow>
+          <PageTitle>Account</PageTitle>
+        </div>
+
         <section
           aria-labelledby="profile-h"
           className="rounded-[22px] bg-card border border-line p-6 flex flex-col gap-4"
@@ -177,7 +181,7 @@ export function AccountPage() {
             <span className="flex flex-col gap-0.5">
               <span className="font-semibold">Tell me about new courses and free tools</span>
               <span className="text-sm text-ink2">
-                A few emails a semester at most. Sign-in codes are separate and always arrive.
+                A few emails a semester at most. Sign-in links are separate and always arrive.
               </span>
             </span>
           </label>

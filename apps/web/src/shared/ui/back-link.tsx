@@ -19,28 +19,27 @@ export function useBack(fallback: string, skip?: (path: string) => boolean) {
 
 type BackSize = 'md' | 'lg';
 
-const SIZES: Record<BackSize, { pill: string; disc: string; icon: number }> = {
-  md: { pill: 'h-10 pl-1.5 pr-4 text-[14px]', disc: 'h-7 w-7', icon: 16 },
-  lg: { pill: 'h-11 pl-1.5 pr-5 text-[15px]', disc: 'h-8 w-8', icon: 17 },
+/**
+ * The one "Back to …" look. md: a plain text link at the top of a page (muted; the chevron nudges
+ * left on hover). lg: the outline button, for when going back sits beside a screen's other buttons.
+ */
+const LOOKS: Record<BackSize, string> = {
+  md: '-ml-1 h-8 gap-0.5 rounded-md pr-1.5 text-[14px] font-medium text-ink2 hover:text-ink',
+  lg: 'h-11 gap-1.5 rounded-full border-[1.5px] border-line pl-3.5 pr-5 text-[15px] font-semibold text-ink hover:border-ink2 press',
 };
 
-/**
- * The one "Back to …" look: a quiet pill with a chevron disc that fills navy and nudges left on
- * hover. Every back button and "Back to catalogue" link uses it, so they read as the same control.
- */
 export function backClass(size: BackSize = 'md', extra = '') {
-  return `group inline-flex items-center gap-2 self-start rounded-full border border-line bg-surface font-semibold text-ink no-underline whitespace-nowrap cursor-pointer select-none shadow-[0_8px_18px_-14px_var(--shadow)] transition-[border-color,box-shadow] duration-200 hover:border-ink2 hover:shadow-[0_10px_22px_-14px_var(--shadow)] focus-visible:outline press ${SIZES[size].pill} ${extra}`;
+  return `group inline-flex items-center self-start whitespace-nowrap no-underline cursor-pointer select-none bg-transparent transition-colors duration-150 focus-visible:outline ${LOOKS[size]} ${extra}`;
 }
 
 export function BackInner({ size = 'md', children }: { size?: BackSize; children: ReactNode }) {
   return (
     <>
-      <span
-        aria-hidden="true"
-        className={`flex-none grid place-items-center rounded-full bg-sunk text-ink transition-[transform,background-color,color] duration-200 group-hover:-translate-x-0.5 group-hover:bg-brand group-hover:text-white ${SIZES[size].disc}`}
-      >
-        <ChevronLeft size={SIZES[size].icon} strokeWidth={2.4} />
-      </span>
+      <ChevronLeft
+        size={size === 'lg' ? 18 : 16}
+        strokeWidth={2.2}
+        className="flex-none transition-transform duration-150 group-hover:-translate-x-0.5"
+      />
       <span>{children}</span>
     </>
   );

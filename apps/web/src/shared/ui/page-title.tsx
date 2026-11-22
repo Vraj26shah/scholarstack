@@ -75,9 +75,9 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <header className={`flex flex-col pt-4 sm:pt-6 ${flush ? '' : 'pb-8 sm:pb-10'} ${className}`}>
-      {back && <div className="mb-6 sm:mb-8 print:hidden">{back}</div>}
-      <div className="flex flex-col gap-3">
+    <header className={`flex flex-col pt-4 ${flush ? '' : 'pb-10'} ${className}`}>
+      {back && <div className="mb-5 print:hidden">{back}</div>}
+      <div>
         {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
         <PageTitle>{title}</PageTitle>
       </div>

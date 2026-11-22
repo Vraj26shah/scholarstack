@@ -19,8 +19,8 @@ export function UnsubscribePage() {
         </PageTitle>
         <p className="m-0 text-lg leading-relaxed text-ink2">
           {stop.isSuccess
-            ? "You won't get announcements about new courses or tools. Sign-in codes still arrive as usual. You can switch them back on in Account."
-            : 'We only email when there are new courses or free tools. Sign-in codes are separate and keep working.'}
+            ? "You won't get announcements about new courses or tools. Sign-in links still arrive as usual. You can switch them back on in Account."
+            : 'We only email when there are new courses or free tools. Sign-in links are separate and keep working.'}
         </p>
         {!stop.isSuccess &&
           (token ? (

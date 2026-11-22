@@ -4,22 +4,36 @@ import { Link } from 'react-router-dom';
 import { env } from '../../lib/env';
 import { PROMISE } from '../../shared/copy';
 import { BackLink } from '../../shared/ui/back-link';
+import { Hl } from '../../shared/ui/brand';
 import { Page } from '../../shared/ui/chrome';
-import { PageHeader } from '../../shared/ui/page-title';
+import { Eyebrow, PageTitle } from '../../shared/ui/page-title';
 
 /** Contact email for support and notes contributions. */
 const CONTACT_EMAIL = 'vitbsmashers@gmail.com';
 
-function Legal({
-  title,
-  updated,
-  lead,
-  children,
-}: { title: string; updated: string; lead: ReactNode; children: ReactNode }) {
+/**
+ * Reading rhythm: body text in the quieter ink so the highlighted lines stand out, a clear gap
+ * before each heading and a short one after it, and list items spaced like short paragraphs
+ * (numbered with a soft disc: see .steps in index.css).
+ */
+const prose = [
+  'pt-4 max-w-[720px] flex flex-col text-[16px] leading-[1.75] text-ink2 [&_h1]:text-ink',
+  '[&_p]:m-0 [&_p+p]:mt-4 [&>div+p]:mt-5 [&>div+p]:text-[18px] [&>div+p]:leading-relaxed',
+  '[&_h2]:m-0 [&_h2]:mt-12 [&_h2]:font-display [&_h2]:font-extrabold [&_h2]:text-[22px] [&_h2]:tracking-[-0.03em] [&_h2]:text-ink',
+  '[&_h2+p]:mt-3 [&_h2+ul]:mt-3 [&_p+ul]:mt-4',
+  '[&_ul]:m-0 [&_ul]:p-0',
+  '[&_strong]:font-semibold [&_strong]:text-ink',
+].join(' ');
+
+function Legal({ title, updated, children }: { title: string; updated: string; children: ReactNode }) {
   return (
     <Page>
-      <PageHeader back={<BackLink fallback="/" />} eyebrow={`Updated ${updated}`} title={title} lead={lead} />
-      <article className="max-w-[760px] rounded-[18px] bg-card p-6 sm:p-9 shadow-[0_18px_34px_-26px_var(--shadow),0_0_0_1px_var(--line)] flex flex-col gap-4 text-[16px] leading-relaxed text-ink [&_h2]:font-display [&_h2]:text-[22px] [&_h2]:leading-tight [&_h2]:mt-5 [&_h2]:mb-0 [&_h2:first-child]:mt-0 [&_p]:m-0 [&_p]:text-ink2 [&_ul]:m-0 [&_ul]:pl-5 [&_ul]:flex [&_ul]:flex-col [&_ul]:gap-2 [&_ul]:text-ink2 [&_li]:pl-1 [&_strong]:text-ink">
+      <article className={prose}>
+        <BackLink fallback="/" className="mb-5" />
+        <div>
+          <Eyebrow>Updated {updated}</Eyebrow>
+          <PageTitle>{title}</PageTitle>
+        </div>
         {children}
       </article>
     </Page>
@@ -28,26 +42,26 @@ function Legal({
 
 export function TermsPage() {
   return (
-    <Legal
-      title="Terms"
-      updated="06 NOV 2026"
-      lead={`${env.appName} sells access to handwritten study notes for students of VIT Bhopal University. By signing in or buying, you agree to these terms.`}
-    >
+    <Legal title="Terms" updated="06 NOV 2026">
+      <p>
+        {env.appName} sells access to handwritten study notes for students of VIT Bhopal University. By
+        signing in or buying, you agree to these terms.
+      </p>
       <h2>Who can use it</h2>
       <p>
-        Only people with an active @{env.domain} email address. Your account is personal: one person, up to
-        two devices, one open session at a time.
+        Only people with an active @{env.domain} email address. Your account is personal:{' '}
+        <Hl>one person, up to two devices</Hl>, one open session at a time.
       </p>
       <h2>What you're buying</h2>
       <p>
         A purchase gives you personal, read-only access to the course's notes inside {env.appName}. It does
-        not give you a copy of the files. You can't download, print, record, share or resell them.
+        not give you a copy of the files. <Hl>You can't download, print, record, share or resell them.</Hl>
       </p>
       <h2>How long access lasts</h2>
       <p>
-        Every purchase gives you {ACCESS_MONTHS} months of access, counted from the day you buy. The course
-        page shows how many days you have left. When the {ACCESS_MONTHS} months are over we email you that
-        your access has ended. Buying the course again gives you another {ACCESS_MONTHS} months, and your
+        Every purchase gives you <Hl>{ACCESS_MONTHS} months of access</Hl>, counted from the day you buy. The
+        course page shows how many days you have left. When the {ACCESS_MONTHS} months are over we email you
+        that your access has ended. Buying the course again gives you another {ACCESS_MONTHS} months, and your
         reading progress is kept. A course an admin gives you lasts until the date they set, or{' '}
         {ACCESS_MONTHS} months if they don't set one.
       </p>
@@ -58,30 +72,30 @@ export function TermsPage() {
         Notes are written for the syllabus that applied when they were made. VIT Bhopal University can revise
         a course's syllabus, modules or topics at any time, so some units may not match the syllabus you are
         studying now.{' '}
-        <strong>
+        <Hl>
           Before you buy, compare the units and the page-one previews with your current official syllabus.
-        </strong>{' '}
+        </Hl>{' '}
         We are not responsible for differences caused by syllabus changes, and a syllabus change is not a
         reason for a refund.
       </p>
       <h2>All sales are final</h2>
       <p>
-        You can see every unit, file name and page count before you buy, so all sales are final and there are
-        no refunds. If a payment goes through but the course doesn't appear on your shelf, write to us and
-        we'll fix it.
+        You can see every unit, file name and page count before you buy, so{' '}
+        <Hl>all sales are final and there are no refunds</Hl>. If a payment goes through but the course
+        doesn't appear on your shelf, write to us and we'll fix it.
       </p>
       <h2>Watermarks and misuse</h2>
       <p>
         Every reader page displays your registered name and college email, the note contributor's name, and a
         reminder that sharing is prohibited. If we find that notes have been shared, resold, or copied to get
-        around these limits, we may revoke access without a refund, suspend the account, and restrict future
-        purchases. Disputed or reversed payments remove access to that course.
+        around these limits, <Hl>we may revoke access without a refund</Hl>, suspend the account, and restrict
+        future purchases. Disputed or reversed payments remove access to that course.
       </p>
       <h2 id="contributors" className="scroll-mt-24">
         Sharing your notes (contributors)
       </h2>
       <p>When you upload notes, papers or other material on the Contribute page:</p>
-      <ul>
+      <ul className="steps">
         <li>
           You confirm it is your own work, or that you have the author's permission to share it, and that it
           isn't copied from a textbook, paid material or leaked exam papers, and contains no one's personal
@@ -95,10 +109,10 @@ export function TermsPage() {
         <li>
           Rewards are decided after review and shown on your Contribute page and in our email: a one-off
           payment for what we use, a free course, or, when your notes for a whole subject are sold as a
-          course, a <strong>royalty of 30%</strong> (or the share we agree with you and show on your
-          Contribute page) of what students paid for that course, after the payment provider's fee. A bundle
-          counts the course's share of the bundle price. The royalty starts on the date shown and leaves out
-          payments that are reversed or disputed. {PROMISE.royaltyLasts}
+          course, a <Hl>royalty of 30%</Hl> (or the share we agree with you and show on your Contribute page)
+          of what students paid for that course, after the payment provider's fee. A bundle counts the
+          course's share of the bundle price. The royalty starts on the date shown and leaves out payments
+          that are reversed or disputed. {PROMISE.royaltyLasts}
         </li>
         <li>
           {PROMISE.yearlyBonus} The year is the last 12 months before the bonus is awarded, and only royalties
@@ -121,7 +135,7 @@ export function TermsPage() {
       <h2>Questions and problem reports</h2>
       <p>
         Questions sent from the Help page, with any screenshots, are kept with your account so we can answer
-        them. Don't include passwords or payment card details.
+        them. <Hl>Don't include passwords or payment card details.</Hl>
       </p>
       <h2>Not official</h2>
       <p>
@@ -136,19 +150,17 @@ export function TermsPage() {
 
 export function PrivacyPage() {
   return (
-    <Legal
-      title="Privacy"
-      updated="22 NOV 2026"
-      lead="We keep only what's needed to run your account and stop it being shared."
-    >
+    <Legal title="Privacy" updated="22 NOV 2026">
+      <p>We keep only what's needed to run your account and stop it being shared.</p>
       <h2>What we store</h2>
-      <ul>
+      <ul className="steps">
         <li>Your college email and the name you give us.</li>
         <li>
           Your devices: a label (like "Chrome on Windows"), a random device ID and when each was last used.
         </li>
         <li>
-          Your purchases and the Razorpay order and payment IDs. We never see or store card or UPI details.
+          Your purchases and the Razorpay order and payment IDs.{' '}
+          <Hl>We never see or store card or UPI details.</Hl>
         </li>
         <li>
           Reading activity: which page you're on and how many pages you've viewed, to resume where you left
@@ -158,7 +170,7 @@ export function PrivacyPage() {
           Which pages and tools you open on the site, and a few actions (signing in, peeking inside a course,
           starting a checkout, paying, opening a file), counted per day. When you're signed in this is kept
           with your account so we can see what is useful and improve it; when you're not, you're counted
-          together with every other visitor and nothing identifies you. It's deleted after 180 days.
+          together with every other visitor and nothing identifies you. <Hl>It's deleted after 180 days.</Hl>
         </li>
         <li>Your IP address and browser when you open files, used only for security.</li>
         <li>
@@ -177,7 +189,9 @@ export function PrivacyPage() {
         and Google (if you sign in with Google).
       </p>
       <h2>Cookies</h2>
-      <p>One signed device cookie and your sign-in session. No advertising or tracking cookies.</p>
+      <p>
+        One signed device cookie and your sign-in session. <Hl>No advertising or tracking cookies.</Hl>
+      </p>
       <h2>Your choices</h2>
       <p>
         Ask us at {CONTACT_EMAIL} to see or delete your data. Deleting your account removes access to your
@@ -189,12 +203,7 @@ export function PrivacyPage() {
 
 export function ContactPage() {
   return (
-    <Legal
-      title="Contact"
-      updated="24 OCT 2026"
-      lead="Payment trouble, a file that won't open, or a mistake in the notes: here's how to reach us."
-    >
-      <h2>Get help</h2>
+    <Legal title="Contact" updated="24 OCT 2026">
       <p>
         Payment went through but the course isn't on your shelf? A file won't open? Found a mistake in the
         notes? The quickest way is the{' '}
@@ -205,7 +214,8 @@ export function ContactPage() {
       </p>
       <p>
         Not a student, or can't sign in? Write to <strong className="font-mono">{CONTACT_EMAIL}</strong>.
-        Include the order ID from your Razorpay receipt for payment questions. We usually reply within a day.
+        Include the order ID from your Razorpay receipt for payment questions.{' '}
+        <Hl>We usually reply within a day.</Hl>
       </p>
 
       <h2>Earn from your notes</h2>

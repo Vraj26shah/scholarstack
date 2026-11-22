@@ -1145,3 +1145,35 @@ html[data-swiping] .stack-word {
     opacity: 0.05;
   }
 }
+
+/* Numbered points (Terms, Privacy): a soft mist disc with the number, the text hanging beside it,
+   so each point reads as its own step. Margins and padding of the list stay with the page. */
+.steps {
+  list-style: none;
+  counter-reset: step;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.steps > li {
+  position: relative;
+  padding-left: 44px;
+  counter-increment: step;
+}
+.steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, #a1d6e2 42%, transparent);
+  color: var(--teal-text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
