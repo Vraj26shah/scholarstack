@@ -140,7 +140,7 @@ export function CheckoutPage() {
             <BackLink
               fallback="/"
               skip={(p) => p.startsWith('/checkout') || p.startsWith('/sign-in') || p.startsWith('/auth/')}
-              className="inline-flex items-center justify-center h-14 px-6 rounded-full border-[1.5px] border-line bg-transparent text-ink text-base font-semibold cursor-pointer self-start"
+              size="lg"
             />
           </>
         )}

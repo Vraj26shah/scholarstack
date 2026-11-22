@@ -11,11 +11,15 @@ export function PageTitle({
   className = '',
 }: {
   children: ReactNode;
-  /** page: most screens. state: short status screens (checkout, errors) with longer lines. */
-  size?: 'page' | 'state';
+  /**
+   * hero: the big landing headings (home, contribute, sign-in). page: most screens.
+   * state: short status screens (checkout, errors, 404) with longer lines.
+   */
+  size?: 'hero' | 'page' | 'state';
   className?: string;
 }) {
   const sizes = {
+    hero: 'text-[clamp(48px,8.5vw,96px)] leading-[0.92]',
     page: 'text-[clamp(40px,7vw,68px)] leading-[0.95]',
     state: 'text-[clamp(34px,6vw,56px)] leading-[0.98]',
   } as const;
@@ -44,4 +48,41 @@ export function PageTitle({
 export function Eyebrow({ children }: { children: ReactNode }) {
   // Same as the home page's section labels ("The catalogue", "The toolbox").
   return <p className="m-0 font-mono text-[13px] tracking-[0.14em] text-teal-text">{children}</p>;
+}
+
+/**
+ * The top of every ordinary page, so the gap above the title, eyebrow-to-title spacing and the
+ * lead line are identical on Terms, Privacy, Account, Shelf, Help and the tools.
+ */
+export function PageHeader({
+  eyebrow,
+  title,
+  lead,
+  back,
+  children,
+  flush = false,
+  className = '',
+}: {
+  eyebrow?: ReactNode;
+  title: ReactNode;
+  lead?: ReactNode;
+  /** Usually a <BackLink />; sits above the eyebrow. */
+  back?: ReactNode;
+  /** Extra lines under the lead (a note, a link). */
+  children?: ReactNode;
+  /** No space below: the page's own layout spaces what follows. */
+  flush?: boolean;
+  className?: string;
+}) {
+  return (
+    <header className={`flex flex-col pt-4 sm:pt-6 ${flush ? '' : 'pb-8 sm:pb-10'} ${className}`}>
+      {back && <div className="mb-6 sm:mb-8 print:hidden">{back}</div>}
+      <div className="flex flex-col gap-3">
+        {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
+        <PageTitle>{title}</PageTitle>
+      </div>
+      {lead && <p className="mt-4 mb-0 max-w-[640px] text-[17px] leading-relaxed text-ink2">{lead}</p>}
+      {children}
+    </header>
+  );
 }

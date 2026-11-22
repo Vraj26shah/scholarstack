@@ -174,7 +174,7 @@ export function SignInPage() {
           <ChevronLeft size={16} />
           {back.label}
         </button>
-        <h1 className="mt-10 md:mt-auto mb-0 font-display font-extrabold text-[clamp(56px,9vw,96px)] leading-[0.9] tracking-[-0.055em]">
+        <h1 className="mt-10 md:mt-auto mb-0 font-display font-extrabold text-[clamp(48px,8.5vw,96px)] leading-[0.92] tracking-[-0.055em]">
           {isAdmin ? (
             <>
               Admin,

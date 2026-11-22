@@ -1,7 +1,8 @@
 import { useMutation } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
-import { Button, LinkButton } from '../../shared/ui/button';
+import { CatalogueLink } from '../../shared/ui/back-link';
+import { Button } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
 import { PageTitle } from '../../shared/ui/page-title';
 
@@ -12,7 +13,7 @@ export function UnsubscribePage() {
   const stop = useMutation({ mutationFn: () => api.unsubscribe(token) });
   return (
     <Page>
-      <div className="pt-6 max-w-[560px] flex flex-col items-start gap-5">
+      <div className="pt-10 sm:pt-16 max-w-[640px] flex flex-col items-start gap-5">
         <PageTitle size="state">
           {stop.isSuccess ? 'Done. No more emails.' : 'Stop feature emails?'}
         </PageTitle>
@@ -32,9 +33,7 @@ export function UnsubscribePage() {
             </p>
           ))}
         {stop.isError && <p className="m-0 text-sm text-blush-text">{friendly(stop.error)}</p>}
-        <LinkButton to="/" variant="ghost">
-          Back to the catalogue
-        </LinkButton>
+        <CatalogueLink />
       </div>
     </Page>
   );

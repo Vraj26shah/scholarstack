@@ -7,7 +7,7 @@ import { useSession } from '../../lib/session';
 import { Button } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
 import { Devices } from '../../shared/ui/icons';
-import { Eyebrow, PageTitle } from '../../shared/ui/page-title';
+import { PageHeader } from '../../shared/ui/page-title';
 
 function DeviceRow({
   d,
@@ -113,12 +113,8 @@ export function AccountPage() {
 
   return (
     <Page>
-      <div className="pt-4 flex flex-col gap-10 max-w-[720px]">
-        <div>
-          <Eyebrow>Borrower card</Eyebrow>
-          <PageTitle>Account</PageTitle>
-        </div>
-
+      <PageHeader eyebrow="Borrower card" title="Account" flush />
+      <div className="pt-8 sm:pt-10 flex flex-col gap-10 max-w-[720px]">
         <section
           aria-labelledby="profile-h"
           className="rounded-[22px] bg-card border border-line p-6 flex flex-col gap-4"

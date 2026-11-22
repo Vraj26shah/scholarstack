@@ -24,7 +24,7 @@ import { persistQueries, restoreQueries } from '../lib/persist-queries';
 import { loadScreen, releaseWaiting } from '../lib/release-sync';
 import { useSession } from '../lib/session';
 import { useTheme } from '../lib/theme';
-import { LinkButton } from '../shared/ui/button';
+import { CatalogueLink } from '../shared/ui/back-link';
 import { Page, TabBar } from '../shared/ui/chrome';
 import { ErrorBoundary } from '../shared/ui/error-boundary';
 import { OfflineBanner, Spinner } from '../shared/ui/feedback';
@@ -331,10 +331,13 @@ function PageViews() {
 function NotFound() {
   return (
     <Page>
-      <div className="py-20 flex flex-col items-start gap-5">
+      <div className="pt-10 sm:pt-16 max-w-[640px] flex flex-col items-start gap-5">
         <Eyebrow>404 · Not in the catalogue</Eyebrow>
-        <PageTitle>This card’s misfiled.</PageTitle>
-        <LinkButton to="/">Back to the catalogue</LinkButton>
+        <PageTitle size="state">This card’s misfiled.</PageTitle>
+        <p className="m-0 text-lg leading-relaxed text-ink2">
+          The page you followed doesn’t exist any more, or the link was mistyped.
+        </p>
+        <CatalogueLink size="lg" />
       </div>
     </Page>
   );

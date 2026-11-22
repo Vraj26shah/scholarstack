@@ -54,7 +54,7 @@ export function ToolPage() {
 
   return (
     <Page>
-      <div className="pt-6 max-w-[640px] flex flex-col items-start gap-6">
+      <div className="pt-10 sm:pt-16 max-w-[640px] flex flex-col items-start gap-5">
         <span className="w-16 h-16 rounded-2xl bg-sunk text-ink2 inline-flex items-center justify-center">
           <ToolIcon toolKey={key} size={30} />
         </span>
@@ -65,7 +65,7 @@ export function ToolPage() {
         </p>
         <div className="flex flex-wrap items-center gap-3">
           {feature && <NotifyMe feature={feature} />}
-          <BackLink fallback="/#toolbox" className="h-11 px-4" />
+          <BackLink fallback="/#toolbox" size="lg" />
         </div>
       </div>
     </Page>

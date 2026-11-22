@@ -65,7 +65,7 @@ export function ContributeHero() {
         </div>
         <div className="relative z-10 mx-auto max-w-[1280px] px-5 sm:px-9 pt-4 sm:pt-8 pb-12 sm:pb-16 flex flex-wrap items-center justify-between gap-10">
           <div className="flex-[1_1_560px] min-w-0 flex flex-col gap-6">
-            <h1 className="m-0 font-display font-extrabold text-[clamp(44px,7.5vw,92px)] leading-[0.94] tracking-[-0.055em]">
+            <h1 className="m-0 font-display font-extrabold text-[clamp(48px,8.5vw,96px)] leading-[0.92] tracking-[-0.055em]">
               Your notes got you through.
               <br />
               <StackWord onDark animate className="mt-2 text-mist">

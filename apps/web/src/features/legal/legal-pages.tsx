@@ -3,20 +3,23 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { env } from '../../lib/env';
 import { PROMISE } from '../../shared/copy';
+import { BackLink } from '../../shared/ui/back-link';
 import { Page } from '../../shared/ui/chrome';
-import { Eyebrow, PageTitle } from '../../shared/ui/page-title';
+import { PageHeader } from '../../shared/ui/page-title';
 
 /** Contact email for support and notes contributions. */
 const CONTACT_EMAIL = 'vitbsmashers@gmail.com';
 
-function Legal({ title, updated, children }: { title: string; updated: string; children: ReactNode }) {
+function Legal({
+  title,
+  updated,
+  lead,
+  children,
+}: { title: string; updated: string; lead: ReactNode; children: ReactNode }) {
   return (
     <Page>
-      <article className="pt-4 max-w-[720px] flex flex-col gap-5 text-[16px] leading-relaxed [&_h2]:font-display [&_h2]:font-extrabold [&_h2]:text-[22px] [&_h2]:tracking-[-0.03em] [&_h2]:mt-6 [&_h2]:mb-0 [&_p]:m-0 [&_ul]:m-0 [&_ul]:pl-5">
-        <div>
-          <Eyebrow>Updated {updated}</Eyebrow>
-          <PageTitle>{title}</PageTitle>
-        </div>
+      <PageHeader back={<BackLink fallback="/" />} eyebrow={`Updated ${updated}`} title={title} lead={lead} />
+      <article className="max-w-[760px] rounded-[18px] bg-card p-6 sm:p-9 shadow-[0_18px_34px_-26px_var(--shadow),0_0_0_1px_var(--line)] flex flex-col gap-4 text-[16px] leading-relaxed text-ink [&_h2]:font-display [&_h2]:text-[22px] [&_h2]:leading-tight [&_h2]:mt-5 [&_h2]:mb-0 [&_h2:first-child]:mt-0 [&_p]:m-0 [&_p]:text-ink2 [&_ul]:m-0 [&_ul]:pl-5 [&_ul]:flex [&_ul]:flex-col [&_ul]:gap-2 [&_ul]:text-ink2 [&_li]:pl-1 [&_strong]:text-ink">
         {children}
       </article>
     </Page>
@@ -25,11 +28,11 @@ function Legal({ title, updated, children }: { title: string; updated: string; c
 
 export function TermsPage() {
   return (
-    <Legal title="Terms" updated="06 NOV 2026">
-      <p>
-        {env.appName} sells access to handwritten study notes for students of VIT Bhopal University. By
-        signing in or buying, you agree to these terms.
-      </p>
+    <Legal
+      title="Terms"
+      updated="06 NOV 2026"
+      lead={`${env.appName} sells access to handwritten study notes for students of VIT Bhopal University. By signing in or buying, you agree to these terms.`}
+    >
       <h2>Who can use it</h2>
       <p>
         Only people with an active @{env.domain} email address. Your account is personal: one person, up to
@@ -133,8 +136,11 @@ export function TermsPage() {
 
 export function PrivacyPage() {
   return (
-    <Legal title="Privacy" updated="22 NOV 2026">
-      <p>We keep only what's needed to run your account and stop it being shared.</p>
+    <Legal
+      title="Privacy"
+      updated="22 NOV 2026"
+      lead="We keep only what's needed to run your account and stop it being shared."
+    >
       <h2>What we store</h2>
       <ul>
         <li>Your college email and the name you give us.</li>
@@ -183,7 +189,12 @@ export function PrivacyPage() {
 
 export function ContactPage() {
   return (
-    <Legal title="Contact" updated="24 OCT 2026">
+    <Legal
+      title="Contact"
+      updated="24 OCT 2026"
+      lead="Payment trouble, a file that won't open, or a mistake in the notes: here's how to reach us."
+    >
+      <h2>Get help</h2>
       <p>
         Payment went through but the course isn't on your shelf? A file won't open? Found a mistake in the
         notes? The quickest way is the{' '}

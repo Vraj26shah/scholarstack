@@ -9,7 +9,7 @@ import { LinkButton } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { ArrowRight, Play } from '../../shared/ui/icons';
-import { Eyebrow, PageTitle } from '../../shared/ui/page-title';
+import { PageHeader } from '../../shared/ui/page-title';
 
 const day = (iso: string) =>
   new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -57,14 +57,12 @@ export function ShelfPage() {
 
   return (
     <Page>
-      <div className="pt-4 flex flex-col gap-8">
-        <div>
-          <Eyebrow>{first ? `Hi ${first[0]!.toUpperCase()}${first.slice(1)},` : 'Hi,'}</Eyebrow>
-          <PageTitle>
-            Your shelf<span className="text-teal-text">.</span>
-          </PageTitle>
-        </div>
-
+      <PageHeader
+        eyebrow={first ? `Hi ${first[0]!.toUpperCase()}${first.slice(1)},` : 'Hi,'}
+        title="Your shelf"
+        flush
+      />
+      <div className="pt-8 sm:pt-10 flex flex-col gap-8">
         {shelf.isLoading ? (
           <>
             <Skeleton className="h-40" />

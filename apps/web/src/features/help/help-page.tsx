@@ -7,7 +7,7 @@ import { LinkButton } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
 import { Skeleton } from '../../shared/ui/feedback';
 import { U } from '../../shared/ui/note';
-import { Eyebrow, PageTitle } from '../../shared/ui/page-title';
+import { PageHeader } from '../../shared/ui/page-title';
 import { AskForm } from './ask-form';
 import { MyQuestions } from './my-questions';
 import { useMySupport } from './use-support';
@@ -24,14 +24,16 @@ export function HelpPage() {
   const next = `/help${params.toString() ? `?${params}` : ''}`;
   return (
     <Page wide>
-      <header className="flex flex-col gap-4 pt-2 pb-10">
-        <BackLink fallback="/" className="self-start h-9 px-3 -ml-1" />
-        <Eyebrow>Help & suggestions</Eyebrow>
-        <PageTitle className="max-w-[880px]">Ask us anything.</PageTitle>
-        <p className="m-0 max-w-[640px] text-[17px] leading-relaxed text-ink2">
-          Questions, problems or ideas? <U>We reply by email.</U>
-        </p>
-      </header>
+      <PageHeader
+        back={<BackLink fallback="/" />}
+        eyebrow="Help & suggestions"
+        title="Ask us anything."
+        lead={
+          <>
+            Questions, problems or ideas? <U>We reply by email.</U>
+          </>
+        }
+      />
 
       <div className="max-w-[820px]">
         <section className="rounded-[18px] bg-card p-5 sm:p-7 shadow-[0_18px_34px_-26px_var(--shadow),0_0_0_1px_var(--line)] flex flex-col gap-5 min-w-0">

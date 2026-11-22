@@ -5,7 +5,7 @@ import { Link, useParams } from 'react-router-dom';
 import { track } from '../../lib/analytics';
 import { api } from '../../lib/api';
 import { useTheme } from '../../lib/theme';
-import { useBack } from '../../shared/ui/back-link';
+import { BackInner, backClass, useBack } from '../../shared/ui/back-link';
 import { Button } from '../../shared/ui/button';
 import { Spinner } from '../../shared/ui/feedback';
 import { Sheet } from '../../shared/ui/feedback';
@@ -459,12 +459,8 @@ function ReaderView({ fileId }: { fileId: string }) {
           <Button variant="outline" onClick={() => void r.reopen()}>
             Try again
           </Button>
-          <button
-            type="button"
-            onClick={back.go}
-            className="text-teal-text self-center bg-transparent border-0 cursor-pointer p-0 text-base"
-          >
-            {back.label}
+          <button type="button" onClick={back.go} className={backClass('lg')}>
+            <BackInner size="lg">{back.label}</BackInner>
           </button>
         </div>
       </div>

@@ -26,12 +26,12 @@ export function Labelled({
 export function ToolHeader({ title, lead, aside }: { title: string; lead: string; aside?: ReactNode }) {
   const { pathname } = useLocation();
   return (
-    <header className="flex flex-col gap-4 pt-2 pb-8">
-      <BackLink fallback="/#toolbox" className="self-start h-9 px-3 -ml-1 print:hidden" />
+    <header className="flex flex-col pt-4 sm:pt-6 pb-8 sm:pb-10">
+      <BackLink fallback="/#toolbox" className="mb-6 sm:mb-8 print:hidden" />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-3 max-w-[720px]">
           <PageTitle>{title}</PageTitle>
-          <p className="m-0 text-[17px] leading-relaxed text-ink2">{lead}</p>
+          <p className="mt-1 mb-0 text-[17px] leading-relaxed text-ink2">{lead}</p>
           <p className="m-0 text-[14px] text-ink2">
             <span className="font-semibold text-teal-text">Free</span>, no sign-in needed. Everything you
             enter stays on this device.
@@ -41,7 +41,7 @@ export function ToolHeader({ title, lead, aside }: { title: string; lead: string
       </div>
       <Link
         to={`/help?topic=feature&page=${encodeURIComponent(pathname)}`}
-        className="self-start text-[13px] font-semibold text-ink2 hover:text-ink print:hidden"
+        className="mt-4 self-start text-[13px] font-semibold text-ink2 hover:text-ink print:hidden"
       >
         Something not working? Tell us
       </Link>

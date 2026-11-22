@@ -1,7 +1,8 @@
 import { Component, type ReactNode } from 'react';
 import { captureException } from '../../lib/analytics';
 import { reportProblem } from '../../lib/problems';
-import { PageTitle } from './page-title';
+import { BackInner, backClass } from './back-link';
+import { Eyebrow, PageTitle } from './page-title';
 
 /** A new version went live while this tab was open: its old page files are gone. */
 const isStaleBuild = (e: Error) =>
@@ -51,32 +52,30 @@ export class ErrorBoundary extends Component<
     if (!this.state.error) return this.props.children;
     const stale = isStaleBuild(this.state.error);
     return (
-      <main id="main" className="mx-auto max-w-[720px] px-5 py-24 flex flex-col items-start gap-5">
-        <p className="m-0 font-mono text-xs tracking-[0.14em] text-ink2">
-          {stale ? 'A NEW VERSION IS OUT' : 'This page tripped'}
-        </p>
-        <PageTitle size="state">
-          {stale ? 'Refresh to get the latest.' : 'Something went wrong on this page.'}
-        </PageTitle>
-        <p className="m-0 text-lg leading-relaxed text-ink2">
-          {stale
-            ? 'The site was updated while this tab was open.'
-            : 'Nothing is lost: your shelf and reading progress are safe. We have been told about it.'}
-        </p>
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="h-12 px-6 rounded-full bg-brand text-white font-semibold"
-          >
-            Refresh the page
-          </button>
-          <a
-            href="/"
-            className="h-12 px-6 rounded-full border border-line inline-flex items-center font-semibold text-ink no-underline"
-          >
-            Back to the catalogue
-          </a>
+      <main id="main" className="mx-auto max-w-[1100px] px-5 sm:px-9 pt-16 sm:pt-24 pb-16">
+        <div className="max-w-[640px] flex flex-col items-start gap-5">
+          <Eyebrow>{stale ? 'A new version is out' : 'This page tripped'}</Eyebrow>
+          <PageTitle size="state">
+            {stale ? 'Refresh to get the latest.' : 'Something went wrong on this page.'}
+          </PageTitle>
+          <p className="m-0 text-lg leading-relaxed text-ink2">
+            {stale
+              ? 'The site was updated while this tab was open.'
+              : 'Nothing is lost: your shelf and reading progress are safe. We have been told about it.'}
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="h-11 px-5 rounded-full bg-brand text-white text-[15px] font-semibold cursor-pointer press hover:brightness-110"
+            >
+              Refresh the page
+            </button>
+            {/* A full load, not a router link: the router may be what broke. */}
+            <a href="/" className={backClass('lg')}>
+              <BackInner size="lg">Back to catalogue</BackInner>
+            </a>
+          </div>
         </div>
       </main>
     );
