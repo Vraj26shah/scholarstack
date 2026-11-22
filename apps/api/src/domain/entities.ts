@@ -70,6 +70,11 @@ export interface CourseBook {
   author: string;
   url: string;
   sort: number;
+  /** Digits only (ISBN-10 or -13). */
+  isbn?: string | null;
+  /** A free, legal copy, and whether it is read online or a PDF. */
+  freeUrl?: string | null;
+  freeKind?: 'read' | 'pdf' | null;
 }
 
 /** One student's access to one course, with its whole history state. */

@@ -203,7 +203,9 @@ export function bookTitle(fileName: string): string {
     .split('/')
     .pop()!
     .replace(/\.[a-z0-9]{2,5}$/i, '')
-    .replace(/\((z-?lib(\.org)?|libgen[^)]*|ebook[^)]*)\)/gi, '')
+    .replace(/\((z-?lib(\.org)?|libgen[^)]*|ebook[^)]*|bookfi[^)]*)\)/gi, '')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\b(?=(?:[A-Z]*\d){2})(?=[A-Z0-9]*[A-Z])[A-Z0-9]{5,}\b/g, ' ')
     .replace(/[_]+/g, ' ')
     .replace(/(?<=[a-z])-(?=[a-z])/gi, ' ')
     .replace(/\s*\d+$/, '')

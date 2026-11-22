@@ -62,6 +62,7 @@ function loadSentry(): void {
         replaysSessionSampleRate: 0.1,
       });
       applyUser(sentry);
+      for (const [k, v] of tags) sentry.setTag(k, v ?? undefined);
       for (const e of early.splice(0)) sentry.captureException(e);
     })
     .catch(() => {
@@ -128,4 +129,17 @@ export function captureException(e: unknown): void {
 export function setMonitoringUser(next: MonitoringUser | null): void {
   user = next;
   if (sentry) applyUser(sentry);
+}
+
+/** Tags kept until Sentry has loaded (a tool page can open before it does). */
+const tags = new Map<string, string | null>();
+
+/**
+ * A tag on everything Sentry records from now on (errors, slow pages, replays): "tool" =
+ * "attendance" while a tool is open, so each tool's problems and speed can be filtered on its own.
+ * Null removes it.
+ */
+export function setMonitoringTag(key: string, value: string | null): void {
+  tags.set(key, value);
+  if (sentry) sentry.setTag(key, value ?? undefined);
 }

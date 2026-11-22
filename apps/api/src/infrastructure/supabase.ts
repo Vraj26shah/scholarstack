@@ -2346,6 +2346,9 @@ const toBook = (r: Row): CourseBook => ({
   author: (r.author as string | null) ?? '',
   url: r.url as string,
   sort: (r.sort as number | null) ?? 0,
+  isbn: (r.isbn as string | null) ?? null,
+  freeUrl: (r.free_url as string | null) ?? null,
+  freeKind: (r.free_kind as CourseBook['freeKind']) ?? null,
 });
 
 export class SupabaseCourseBooks implements CourseBookRepository {
@@ -2374,18 +2377,31 @@ export class SupabaseCourseBooks implements CourseBookRepository {
             author: book.author,
             url: book.url,
             sort: book.sort,
+            isbn: book.isbn ?? null,
+            free_url: book.freeUrl ?? null,
+            free_kind: book.freeUrl ? (book.freeKind ?? 'read') : null,
           })
           .select('*')
           .single(),
       ) as Row,
     );
   }
-  async update(id: string, patch: Pick<CourseBook, 'title' | 'author' | 'url'>) {
+  async update(
+    id: string,
+    patch: Pick<CourseBook, 'title' | 'author' | 'url' | 'isbn' | 'freeUrl' | 'freeKind'>,
+  ) {
     return toBook(
       must(
         await this.db
           .from('course_books')
-          .update({ title: patch.title, author: patch.author, url: patch.url })
+          .update({
+            title: patch.title,
+            author: patch.author,
+            url: patch.url,
+            isbn: patch.isbn ?? null,
+            free_url: patch.freeUrl ?? null,
+            free_kind: patch.freeUrl ? (patch.freeKind ?? 'read') : null,
+          })
           .eq('id', id)
           .select('*')
           .single(),

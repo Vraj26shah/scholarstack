@@ -42,12 +42,19 @@ test('a course page view shows up in Admin › Students › Insights', async ({ 
   await admin.getByRole('tablist', { name: 'Admin sections' }).getByRole('tab', { name: 'Students' }).click();
   await admin.getByRole('tab', { name: 'Insights', exact: true }).click();
   await admin.getByRole('radio', { name: 'Today' }).click();
+  const views = admin.getByRole('tablist', { name: 'Insights views' });
+  // The overview: headline numbers and the plain-language summary.
+  await views.getByRole('tab', { name: 'Overview' }).click();
+  await expect(admin.getByRole('region', { name: 'At a glance' })).toContainText('Most viewed: ');
+  await expect(admin.getByRole('region', { name: 'Totals' })).toContainText('Course views');
+  await views.getByRole('tab', { name: 'Sales' }).click();
   const top = admin.getByRole('region', { name: 'Most viewed' });
   await expect(top.getByRole('link').first()).toBeVisible();
   await expect(top).toContainText(/DBMS|Database/i);
-  await expect(admin.getByRole('region', { name: 'Totals' })).toContainText('Page views');
+  await views.getByRole('tab', { name: 'Overview' }).click();
   await admin.getByRole('button', { name: 'Table' }).click();
   await expect(admin.getByRole('columnheader', { name: 'New students' })).toBeVisible();
+  await views.getByRole('tab', { name: 'Errors & speed' }).click();
   await expect(admin.getByRole('link', { name: /Errors students hit/ })).toHaveAttribute(
     'href',
     /sentry\.io\/issues/,

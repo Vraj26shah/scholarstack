@@ -5,7 +5,25 @@ import { readingBookCandidates } from './catalogue-service';
 import { fail } from './errors';
 
 const MAX_BOOKS = 20;
-const dto = (b: CourseBook): CourseBookDto => ({ id: b.id, title: b.title, author: b.author, url: b.url });
+const dto = (b: CourseBook): CourseBookDto => ({
+  id: b.id,
+  title: b.title,
+  author: b.author,
+  url: b.url,
+  isbn: b.isbn ?? null,
+  freeUrl: b.freeUrl ?? null,
+  freeKind: b.freeUrl ? (b.freeKind ?? 'read') : null,
+});
+
+/** What is saved from the form: the link falls back to the free copy, then the book's Open Library page. */
+const fields = (input: CourseBookInput) => ({
+  title: input.title,
+  author: input.author,
+  url: input.url || input.freeUrl || `https://openlibrary.org/isbn/${input.isbn}`,
+  isbn: input.isbn || null,
+  freeUrl: input.freeUrl || null,
+  freeKind: input.freeUrl ? input.freeKind : null,
+});
 const keyOf = (title: string) => title.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /**
@@ -48,9 +66,7 @@ export class BookService {
       throw fail.badRequest('That book is already on this course.');
     await this.books.add({
       courseId,
-      title: input.title,
-      author: input.author,
-      url: input.url,
+      ...fields(input),
       sort: books.length ? Math.max(...books.map((b) => b.sort)) + 1 : 0,
     });
     return this.list(courseId);
@@ -59,7 +75,7 @@ export class BookService {
   async update(bookId: string, input: CourseBookInput) {
     const book = await this.books.find(bookId);
     if (!book) throw fail.notFound('That book');
-    await this.books.update(bookId, { title: input.title, author: input.author, url: input.url });
+    await this.books.update(bookId, fields(input));
     return this.list(book.courseId);
   }
 

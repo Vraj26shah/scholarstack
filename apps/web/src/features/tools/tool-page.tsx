@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+import { setMonitoringTag, track } from '../../lib/analytics';
 import { api } from '../../lib/api';
 import { useSession } from '../../lib/session';
 import { BackLink } from '../../shared/ui/back-link';
@@ -18,6 +19,14 @@ export function ToolPage() {
   const feature = q.data?.find((f) => f.key === key);
   const Screen = toolModule(key)?.screen;
   const { me } = useSession();
+  const open = !!Screen && (feature?.status === 'live' || !!me?.isAdmin);
+  // Sentry: errors and page speed while a tool is open carry its key ("tool: attendance").
+  useEffect(() => {
+    if (!open) return;
+    setMonitoringTag('tool', key);
+    track('tool_open', { tool: key });
+    return () => setMonitoringTag('tool', null);
+  }, [open, key]);
 
   if (q.isLoading)
     return (

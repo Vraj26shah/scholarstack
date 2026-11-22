@@ -437,9 +437,19 @@ check(
   (await one(`select public.add_email_quota('2026-10-20', 2) as n`)).n === 42,
 );
 check(
-  'toolbox seeded with CGPA calculator, attendance and timetable maker',
+  'toolbox seeded with CGPA calculator, attendance, timetable maker and the mess menu (coming soon)',
   (await all('select key from public.features order by sort')).map((r) => r.key).join() ===
-    'cgpa,attendance,timetable',
+    'cgpa,attendance,timetable,mess-menu',
+);
+check(
+  'attendance is live (and stamped); the mess menu is only announced',
+  (
+    await all(
+      `select key, status, launched_at from public.features where key in ('attendance', 'mess-menu') order by key`,
+    )
+  )
+    .map((r) => `${r.key}:${r.status}:${r.launched_at !== null}`)
+    .join() === 'attendance:live:true,mess-menu:soon:false',
 );
 await db.query(`update public.features set status = 'live' where key = 'cgpa'`);
 check(
@@ -639,7 +649,7 @@ check(
 );
 check(
   'RLS: anyone can read the toolbox',
-  (await asUser('someone@gmail.com', 'select key from public.features')).length === 3,
+  (await asUser('someone@gmail.com', 'select key from public.features')).length === 4,
 );
 check(
   'RLS: outsider sees no courses',
@@ -1205,6 +1215,44 @@ check('RLS: students cannot run the earnings report', await denied('select * fro
     people.length >= 2 && me?.lastSeenAt != null && people.some((p) => p.lastSeenAt === null),
   );
   check('RLS: students cannot list everyone', await denied('select public.admin_people()'));
+  // Reference books: the researched list lands on a matching course with no books, only once,
+  // and never on a course whose list an admin already made.
+  {
+    const os = await addCourse('operating-systems-2023-bai', 9900);
+    const dsa = await addCourse('data-structures-and-algorithms-2023-bcg', 9900);
+    await db.query(
+      `insert into public.course_books (course_id, title, url) values ($1, 'My own pick', 'https://example.com/book')`,
+      [dsa.id],
+    );
+    const seedSql = readFileSync(join(here, 'migrations', '20261122000400_reference_books.sql'), 'utf8');
+    await db.exec(seedSql);
+    await db.exec(seedSql);
+    const osBooks = await all(
+      'select title, isbn, free_url, free_kind, url from public.course_books where course_id = $1 order by sort',
+      [os.id],
+    );
+    const dsaBooks = await all('select title from public.course_books where course_id = $1', [dsa.id]);
+    check(
+      'reference books: a course gets its researched list once, with ISBNs and free legal copies',
+      osBooks.length === 2 &&
+        osBooks[0].isbn === '9781119800361' &&
+        osBooks[0].url === 'https://openlibrary.org/isbn/9781119800361' &&
+        osBooks[1].free_kind === 'pdf' &&
+        osBooks[1].url === osBooks[1].free_url,
+      JSON.stringify(osBooks),
+    );
+    check('reference books: an admin’s own list is never touched', dsaBooks.length === 1);
+    check(
+      'reference books: a bad ISBN or a non-https free link is refused',
+      (await throws(
+        `insert into public.course_books (course_id, title, url, isbn) values ('${os.id}', 'X1', 'https://a.b', '12345')`,
+      )) &&
+        (await throws(
+          `insert into public.course_books (course_id, title, url, free_url, free_kind) values ('${os.id}', 'X2', 'https://a.b', 'http://a.b', 'pdf')`,
+        )),
+    );
+  }
+
   const pruned = (await one('select public.prune_history() as r')).r;
   check('nightly housekeeping also prunes old activity', typeof pruned.activity === 'number');
 

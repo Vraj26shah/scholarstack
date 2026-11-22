@@ -171,6 +171,12 @@ export interface ReadingItemDto {
    * it (Amazon). Never a pirated copy.
    */
   links?: { label: string; url: string }[];
+  /** The author(s), when known. */
+  author?: string;
+  /** Digits only; the cover is at /api/covers/<isbn>. */
+  isbn?: string;
+  /** A free, legal copy: an open textbook, or one its authors publish free. */
+  free?: { url: string; kind: 'read' | 'pdf' };
 }
 
 /** A recommended book an admin added to a course: its name and where to get it. */
@@ -179,7 +185,14 @@ export interface CourseBookDto {
   title: string;
   author: string;
   url: string;
+  isbn: string | null;
+  freeUrl: string | null;
+  freeKind: 'read' | 'pdf' | null;
 }
+
+/** ISBN-10 or ISBN-13 as typed ("978-0-13-...", spaces): digits (and a final X) only. */
+export const normaliseIsbn = (v: string) => v.replace(/[\s-]/g, '').toUpperCase();
+export const ISBN_RE = /^(97[89])?\d{9}[\dX]$/;
 
 /** Books on a course, plus textbook titles spotted in its folder that are not on the list yet. */
 export interface AdminCourseBooksDto {
@@ -187,16 +200,36 @@ export interface AdminCourseBooksDto {
   found: { title: string; unit: string; sourceKeys: string[] }[];
 }
 
-export const CourseBookBody = z.object({
-  title: z.string().trim().min(2, 'Give the book a name').max(200),
-  author: z.string().trim().max(120).default(''),
-  url: z
+const optionalLink = (message: string) =>
+  z
     .string()
     .trim()
     .max(500)
-    .url('Paste the full link, starting with https://')
-    .refine((v) => /^https?:\/\//i.test(v), 'Paste the full link, starting with https://'),
-});
+    .default('')
+    .refine((v) => v === '' || /^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(v), message);
+
+export const CourseBookBody = z
+  .object({
+    title: z.string().trim().min(2, 'Give the book a name').max(200),
+    author: z.string().trim().max(120).default(''),
+    /** Where to get it (a shop, the publisher). Optional when there is an ISBN or a free copy. */
+    url: optionalLink('Paste the full link, starting with https://'),
+    isbn: z
+      .string()
+      .default('')
+      .transform(normaliseIsbn)
+      .refine((v) => v === '' || ISBN_RE.test(v), 'An ISBN has 10 or 13 digits, like 978-0-13-468599-1'),
+    /** A free, legal copy only (an open textbook, or the authors' own free edition). */
+    freeUrl: optionalLink('Paste the free copy’s full link, starting with https://').refine(
+      (v) => v === '' || /^https:\/\//i.test(v),
+      'A free copy must be an https:// link',
+    ),
+    freeKind: z.enum(['read', 'pdf']).default('read'),
+  })
+  .refine((b) => b.url !== '' || b.isbn !== '' || b.freeUrl !== '', {
+    message: 'Add a link, an ISBN or a free copy, so students can find the book.',
+    path: ['url'],
+  });
 export type CourseBookInput = z.infer<typeof CourseBookBody>;
 
 export const CourseBookOrderBody = z.object({ ids: z.array(z.string().min(1).max(64)).max(40) });

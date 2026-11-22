@@ -520,14 +520,33 @@ export function linkHost(url: string) {
   }
 }
 
-/** A book the admin added: its own name, author and link, plus the usual places to find it. */
+/** The exact book by its ISBN: a look inside on Google Books, a loan on Open Library, a copy on Amazon. */
+export function isbnLinks(isbn: string): { label: string; url: string }[] {
+  return [
+    { label: 'Preview', url: `https://books.google.com/books?vid=ISBN${isbn}` },
+    { label: 'Borrow free', url: `https://openlibrary.org/isbn/${isbn}` },
+    { label: 'Buy', url: `https://www.amazon.in/s?k=${isbn}&i=stripbooks` },
+  ];
+}
+
+/**
+ * A book on the course's list. A free legal copy comes first; a book with an ISBN gets exact links
+ * (and a cover); one without gets searches. The admin's own shop link, when it is one, stays too.
+ */
 function bookItem(b: CourseBook): ReadingItemDto {
+  const free = b.freeUrl ? { url: b.freeUrl, kind: b.freeKind ?? ('read' as const) } : undefined;
+  const ownLink =
+    b.url && b.url !== b.freeUrl && !b.url.startsWith('https://openlibrary.org/isbn/') ? b.url : null;
+  const links = b.isbn ? isbnLinks(b.isbn) : free ? [] : bookLinks(`${b.title} ${b.author}`.trim());
   return {
     title: b.title,
     unit: b.author,
-    findUrl: b.url,
-    linkLabel: linkHost(b.url),
-    links: bookLinks(`${b.title} ${b.author}`.trim()),
+    author: b.author || undefined,
+    findUrl: free?.url ?? ownLink ?? links[0]?.url ?? b.url,
+    ...(ownLink ? { linkLabel: linkHost(ownLink) } : {}),
+    links,
+    ...(b.isbn ? { isbn: b.isbn } : {}),
+    ...(free ? { free } : {}),
   };
 }
 
@@ -563,6 +582,15 @@ export function bookLinks(title: string): { label: string; url: string }[] {
   ];
 }
 
+/** A title worth showing: a few real words, not notes, slides or a bare subject name. */
+export function looksLikeBookTitle(title: string): boolean {
+  const words = title.split(/\s+/).filter((w) => /[a-z]{2}/i.test(w));
+  if (words.length < 3) return false;
+  return !/\b(notes?|handwritten|module|unit|slides?|ppts?|lecture|lab|assignment|question|syllabus|reference books?|ref books?|chapter)\b/i.test(
+    title,
+  );
+}
+
 /** Hidden books, by title only: the files themselves are never served. */
 export function readingBookCandidates(
   hidden: CourseFile[],
@@ -571,6 +599,8 @@ export function readingBookCandidates(
   for (const f of [...hidden].sort((a, b) => a.unitSort - b.unitSort || a.sort - b.sort)) {
     if (f.unitKind !== 'reference' && !looksLikeTextbook(f.name)) continue; // hidden for other reasons
     const title = bookTitle(f.name);
+    // "Module 2 Handwritten notes", "Reference book", "DataStructures": not a book anyone can find.
+    if (!looksLikeBookTitle(title)) continue;
     const key = title.toLowerCase().replace(/[^a-z0-9]/g, '');
     const found = byTitle.get(key);
     if (found) found.sourceKeys.push(f.sourceKey);

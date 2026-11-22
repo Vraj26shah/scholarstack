@@ -783,6 +783,11 @@ describe('folder rules on real R2 names', () => {
     expect(bookTitle('ADVANCED ENGINEERING MATHEMATICS BY ERWIN ERESZIG1.pdf')).toBe(
       'Advanced Engineering Mathematics By Erwin Ereszig',
     );
+    // Download-site tags and code-like prefixes come off; the author in brackets goes too.
+    expect(bookTitle('[Alan Jeffrey] Advanced Engineering Mathematics(BookFi).pdf')).toBe(
+      'Advanced Engineering Mathematics',
+    );
+    expect(bookTitle('B5N3Y3 Elementary Linear Algebra.pdf')).toBe('Elementary Linear Algebra');
     expect(looksLikeTextbook('Applecation of DE by Matrix method.pdf')).toBe(false);
     expect(looksLikeTextbook('Unit-3-IoT-solved.pdf')).toBe(false);
   });

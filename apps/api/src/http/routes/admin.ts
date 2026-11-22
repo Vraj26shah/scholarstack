@@ -55,6 +55,7 @@ import {
 import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 import { openProblems, todaySummary } from '../../application/admin-today';
+import { lookupIsbn } from '../../application/book-lookup';
 import { reportServerError } from '../../application/error-reporter';
 import { fail } from '../../application/errors';
 import { safeEqual } from '../../infrastructure/crypto';
@@ -782,6 +783,14 @@ adminRoutes.get('/admin/discounts', async (c) => {
   await requireAdmin(c);
   const { days } = DiscountReportQuery.parse({ days: c.req.query('days') ?? undefined });
   return c.json(await c.get('container').discounts.report(days));
+});
+
+/** Fills in a book's title and author from its ISBN (Open Library). */
+adminRoutes.get('/admin/books/lookup', async (c) => {
+  await requireAdmin(c);
+  const found = await lookupIsbn(c.req.query('isbn') ?? '').catch(() => null);
+  if (!found) throw fail.notFound('A book with that ISBN');
+  return c.json(found);
 });
 
 /** Admin › Students › Insights: pages and tools opened, actions, and who was active. */

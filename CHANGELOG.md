@@ -4,6 +4,22 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Books for every course
+- **Every live course now has a researched reading list** (99 books across 39 courses): the standard textbooks Indian B.Tech courses use, and the best free ones (OpenStax, BCcampus, OSTEP, Open Data Structures, Erickson's *Algorithms*, Think Python, ISLR, VMLS, the CSES handbook, NIST SP 800-86 and more). Every ISBN was checked against Open Library and every free link loaded (22 Nov). Added only to courses with no list of their own (migration `20261122000400_reference_books`).
+- **What was wrong**: 21 courses showed no books; the rest showed titles guessed from file names ("Module 2 Handwritten notes", "Reference book", "B5N3Y3 Elementary Linear Algebra"), DBMS listed two organisational-behaviour books, and every link was a search. Guessed titles that aren't books are now left out, and download-site tags are cleaned off.
+- **Course page**: "Free to read and download" first, with a **Download free PDF** / **Read free online** button; then textbooks with their **real cover**, **Preview** (Google Books), **Borrow free** (Open Library) and **Buy**. Covers come through our own server (`/api/covers/<isbn>`, cached a month), so the site's image rules are unchanged and students' browsers never contact a third party; a drawn spine shows while a cover loads or when there is none. Never a pirated copy.
+- **Admin › course › Recommended books**: ISBN with **Look up** (fills the name and author), a free legal copy (read online or PDF), and the shop link now optional; covers and a FREE badge in the list.
+
+### Admin, easier to read
+- **Insights is split into tabs**: Overview, Pages & tools, Students, Sales, Errors & speed. The overview opens with **At a glance**, a few plain sentences on what happened (who was active, the most opened page, sign-ups that bought, unpaid checkouts and what to check), then six headline numbers, the daily chart (a note instead of an empty chart) and the looking-to-buying funnel.
+- Tables drop secondary columns on phones instead of being cut off; the chart's choices scroll in one row.
+- **Students**: six figures that are also filters (People, Seen this week, With a course, No course yet, Shared notes, Asked a question); tap one to list exactly those people.
+
+### Toolbox
+- **The attendance calculator is live** for every student (migration `20261122000500`); an announcement can be sent from Admin › Emails.
+- **Mess menu is announced as coming soon** in the toolbox (with "Notify me"); not built yet.
+- Sentry tags everything recorded while a tool is open with `tool: <key>`, so each tool's errors and page speed can be filtered on their own; opening a tool is a `tool_open` event in Google Analytics.
+
 ### Student activity for the admin
 - **Admin › Students lists everyone who has signed up**, not only buyers, with "seen 2 h ago" (or "not seen yet") on each row and two new filters: *Seen this week* and *Signed up, no course yet*. Admin accounts aren't listed.
 - **Each student's Activity** (open their row): last seen, days active, and every page and tool they opened and what they did (peeked inside, started checkout, applied a promo code, paid, opened a file, signed in), day by day, for 7, 30 or 90 days.

@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { fetchCover, lookupIsbn } from '../src/application/book-lookup';
+import { looksLikeBookTitle } from '../src/application/catalogue-service';
 import { Browser, setup } from './harness';
 
 type App = ReturnType<typeof setup>['app'];
@@ -106,6 +108,95 @@ describe('recommended books', () => {
     r = (await a.call('DELETE', `/admin/books/${first.id}`)).json;
     expect(r.books).toEqual([]);
     expect((await new Browser(app).call('GET', `/courses/${course.slug}`)).json.readingList).toEqual([]);
+  });
+
+  it('a book can have an ISBN and a free legal copy; students get exact links and the free copy first', async () => {
+    const { app, env } = setup();
+    const course = [...env.db.courses.values()].find((c) => c.slug === 'dbms-2025-cse-core')!;
+    const a = await admin(app);
+    const base = `/admin/courses/${course.id}/books`;
+    // An ISBN alone is enough: typed with dashes, saved as digits, linked to its Open Library page.
+    const one = await a.call('POST', base, {
+      title: 'Database System Concepts',
+      author: 'Silberschatz, Korth & Sudarshan',
+      isbn: '978-0-07-802215-9',
+    });
+    expect(one.status).toBe(200);
+    expect(one.json.books[0]).toMatchObject({
+      isbn: '9780078022159',
+      url: 'https://openlibrary.org/isbn/9780078022159',
+      freeUrl: null,
+      freeKind: null,
+    });
+    // A free copy alone is enough too.
+    await a.call('POST', base, {
+      title: 'Database Design, 2nd Edition',
+      author: 'Adrienne Watt',
+      freeUrl: 'https://opentextbc.ca/dbdesign01/',
+      freeKind: 'read',
+    });
+    // Nothing to find it by, a bad ISBN, or a plain-http free link: refused with a reason.
+    expect((await a.call('POST', base, { title: 'Nowhere Book' })).status).toBe(400);
+    expect((await a.call('POST', base, { title: 'Bad ISBN', isbn: '12345' })).status).toBe(400);
+    expect(
+      (await a.call('POST', base, { title: 'Plain http', freeUrl: 'http://example.com/book.pdf' })).status,
+    ).toBe(400);
+
+    const student = new Browser(app);
+    const list = (await student.call('GET', `/courses/${course.slug}`)).json.readingList;
+    expect(list[0]).toMatchObject({
+      title: 'Database System Concepts',
+      author: 'Silberschatz, Korth & Sudarshan',
+      isbn: '9780078022159',
+      links: [
+        { label: 'Preview', url: 'https://books.google.com/books?vid=ISBN9780078022159' },
+        { label: 'Borrow free', url: 'https://openlibrary.org/isbn/9780078022159' },
+        { label: 'Buy', url: 'https://www.amazon.in/s?k=9780078022159&i=stripbooks' },
+      ],
+    });
+    expect(list[0].free).toBeUndefined();
+    expect(list[0].linkLabel).toBeUndefined(); // the Open Library page isn't shown as "Get it on…"
+    expect(list[1]).toMatchObject({
+      title: 'Database Design, 2nd Edition',
+      free: { url: 'https://opentextbc.ca/dbdesign01/', kind: 'read' },
+      findUrl: 'https://opentextbc.ca/dbdesign01/',
+      links: [],
+    });
+  });
+
+  it('titles guessed from file names that aren’t books are left out', () => {
+    expect(looksLikeBookTitle('Discrete Mathematical Structures Kolman')).toBe(true);
+    expect(looksLikeBookTitle('Module 2 Handwritten notes')).toBe(false);
+    expect(looksLikeBookTitle('Reference book')).toBe(false);
+    expect(looksLikeBookTitle('Probability')).toBe(false);
+    expect(looksLikeBookTitle('DataStructures')).toBe(false);
+  });
+
+  it('covers and ISBN look-ups come from Open Library, and only for real ISBNs', async () => {
+    const fake = vi.fn(async (url: string) => {
+      if (url.includes('covers.openlibrary.org'))
+        return new Response(new Uint8Array(5000), { headers: { 'content-type': 'image/jpeg' } });
+      return Response.json({
+        'ISBN:9780131103627': {
+          title: 'The C Programming Language',
+          authors: [{ name: 'Brian W. Kernighan' }, { name: 'Dennis M. Ritchie' }],
+        },
+      });
+    }) as unknown as typeof fetch;
+    expect((await fetchCover('978-0131103627', fake))?.type).toBe('image/jpeg');
+    expect(await fetchCover('not-an-isbn', fake)).toBeNull();
+    expect(await lookupIsbn('9780131103627', fake)).toEqual({
+      isbn: '9780131103627',
+      title: 'The C Programming Language',
+      author: 'Brian W. Kernighan, Dennis M. Ritchie',
+    });
+    expect(await lookupIsbn('../../etc/passwd', fake)).toBeNull();
+    // Only the two Open Library addresses were ever asked for.
+    for (const [url] of (fake as unknown as { mock: { calls: [string][] } }).mock.calls)
+      expect(url).toMatch(/^https:\/\/(covers\.)?openlibrary\.org\//);
+    // A missing cover (404, or a 1x1 placeholder) is no cover.
+    const none = (async () => new Response('', { status: 404 })) as unknown as typeof fetch;
+    expect(await fetchCover('9780131103627', none)).toBeNull();
   });
 
   it('students cannot manage books', async () => {

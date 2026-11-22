@@ -231,7 +231,10 @@ export interface CourseBookRepository {
   list(courseId: string): Promise<CourseBook[]>;
   find(id: string): Promise<CourseBook | null>;
   add(book: Omit<CourseBook, 'id'>): Promise<CourseBook>;
-  update(id: string, patch: Pick<CourseBook, 'title' | 'author' | 'url'>): Promise<CourseBook>;
+  update(
+    id: string,
+    patch: Pick<CourseBook, 'title' | 'author' | 'url' | 'isbn' | 'freeUrl' | 'freeKind'>,
+  ): Promise<CourseBook>;
   remove(id: string): Promise<void>;
   /** Saves the order of a course's books (ids first to last). */
   reorder(courseId: string, ids: string[]): Promise<void>;

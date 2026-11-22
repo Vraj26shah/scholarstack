@@ -61,7 +61,11 @@ function DailyChart({ daily }: { daily: DayRow[] }) {
           </h3>
           <p className="m-0 text-[12px] text-ink2">{blurb}. Days are IST.</p>
         </div>
-        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="What to chart">
+        <div
+          className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-1 max-w-full sm:flex-wrap"
+          role="radiogroup"
+          aria-label="What to chart"
+        >
           {METRICS.map(([m, text]) => (
             <button
               key={m}
@@ -85,7 +89,11 @@ function DailyChart({ daily }: { daily: DayRow[] }) {
         </div>
       </div>
 
-      {asTable ? (
+      {!asTable && total === 0 ? (
+        <p className="m-0 py-10 text-center text-sm text-ink2">
+          No {label.toLowerCase()} in this period yet. The chart fills in as students use the site.
+        </p>
+      ) : asTable ? (
         <div className="overflow-x-auto max-h-80">
           <table className="w-full text-[13px] tabular-nums">
             <thead className="text-ink2 text-left">
@@ -163,8 +171,89 @@ function DailyChart({ daily }: { daily: DayRow[] }) {
   );
 }
 
-function Report({ data, activity }: { data: AdminInsightsDto; activity: ActivityState }) {
+type View = 'overview' | 'pages' | 'students' | 'sales' | 'health';
+const VIEWS: [View, string][] = [
+  ['overview', 'Overview'],
+  ['pages', 'Pages & tools'],
+  ['students', 'Students'],
+  ['sales', 'Sales'],
+  ['health', 'Errors & speed'],
+];
+const VIEW_KEY = 'ss_insights_view';
+const savedView = (): View => {
+  try {
+    const v = localStorage.getItem(VIEW_KEY);
+    return VIEWS.some(([k]) => k === v) ? (v as View) : 'overview';
+  } catch {
+    return 'overview';
+  }
+};
+
+/** The few sentences an admin would want read out: what happened, and what to look at. */
+function Glance({ data, activity }: { data: AdminInsightsDto; activity?: AdminActivityDto }) {
   const s = data.summary;
+  const a = activity?.summary;
+  const topPage = activity?.pages[0];
+  const topCourse = data.topItems[0];
+  const unpaid = s.checkouts - s.paidOrders;
+  const lines = [
+    a && a.activeStudents > 0
+      ? `${plural(a.activeStudents, 'student')} signed in and used the site${
+          topPage
+            ? `; the most opened page was ${activityLabel(topPage.target)} (${n(topPage.hits)} times)`
+            : ''
+        }.`
+      : null,
+    a && a.visitorPages > 0
+      ? `Visitors who weren't signed in opened ${plural(a.visitorPages, 'page')}.`
+      : null,
+    s.signups > 0
+      ? `${plural(s.signups, 'new student')} joined; ${n(s.signupsWhoBought)} of them bought something (${pct(s.signupsWhoBought, s.signups)}).`
+      : null,
+    topCourse
+      ? `Most viewed: ${topCourse.title} (${plural(topCourse.views, 'view')}, ${n(topCourse.paid)} paid).`
+      : null,
+    s.checkouts > 0
+      ? `${plural(s.checkouts, 'checkout')} started, ${n(s.paidOrders)} paid (${pct(s.paidOrders, s.checkouts)})${
+          unpaid > 0
+            ? `: ${n(unpaid)} didn't finish paying, so look at the price, the payment step or the promo codes`
+            : ''
+        }.`
+      : null,
+    s.revenuePaise > 0
+      ? `${formatMoney(s.revenuePaise)} came in from ${plural(s.buyers, 'buyer')} (${n(s.firstPurchases)} buying for the first time).`
+      : null,
+  ].filter(Boolean) as string[];
+  return (
+    <section aria-label="At a glance" className="rounded-2xl bg-sunk p-4 flex flex-col gap-2">
+      <h3 className="m-0 text-[15px] font-semibold">At a glance</h3>
+      {lines.length === 0 ? (
+        <p className="m-0 text-sm text-ink2">
+          Nothing recorded in this period yet. These numbers fill in as students use the site.
+        </p>
+      ) : (
+        <ul className="m-0 pl-5 flex flex-col gap-1 text-[14px] leading-relaxed">
+          {lines.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function Report({ data, activity }: { data: AdminInsightsDto; activity: ActivityState }) {
+  const [view, setView] = useState<View>(savedView);
+  const choose = (v: View) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      // private window: the tab just isn't remembered
+    }
+  };
+  const s = data.summary;
+  const a = activity.data?.summary;
   const byDay = new Map(activity.data?.daily.map((d) => [d.day, d]));
   const daily: DayRow[] = data.daily.map((d) => ({
     ...d,
@@ -174,146 +263,196 @@ function Report({ data, activity }: { data: AdminInsightsDto; activity: Activity
   }));
   return (
     <>
-      <section
-        aria-label="Totals"
-        className="grid grid-cols-2 lg:grid-cols-5 gap-px overflow-hidden rounded-2xl bg-line shadow-[0_0_0_1px_var(--line)] [&>*:last-child:nth-child(odd)]:col-span-2 lg:[&>*:last-child:nth-child(odd)]:col-span-1"
+      <div
+        role="tablist"
+        aria-label="Insights views"
+        className="flex gap-1 overflow-x-auto -mx-1 px-1 pb-1 border-b border-line"
       >
-        <Figure
-          label="New students"
-          value={n(s.signups)}
-          hint={`${n(s.signupsWhoBought)} of them bought (${pct(s.signupsWhoBought, s.signups)})`}
-        />
-        <Figure
-          label="Page views"
-          value={n(s.views)}
-          hint={`${pct(s.signedInViews, s.views)} by signed-in students`}
-          tone="teal"
-        />
-        <Figure
-          label="Checkouts"
-          value={n(s.checkouts)}
-          hint={`${n(s.paidOrders)} paid (${pct(s.paidOrders, s.checkouts)})`}
-          tone="teal"
-        />
-        <Figure
-          label="Revenue"
-          value={formatMoney(s.revenuePaise)}
-          hint={`${plural(s.buyers, 'buyer')} · ${n(s.firstPurchases)} first-time`}
-          tone="marigold"
-        />
-        <Figure
-          label="Readers"
-          value={n(s.readers)}
-          hint={`${n(s.pagesRead)} pages read (last 30 days at most)`}
-        />
-      </section>
+        {VIEWS.map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            role="tab"
+            aria-selected={view === k}
+            onClick={() => choose(k)}
+            className={`flex-none h-10 px-3.5 text-[14px] font-semibold border-0 border-b-2 -mb-px bg-transparent cursor-pointer whitespace-nowrap ${
+              view === k ? 'border-teal text-ink' : 'border-transparent text-ink2 hover:text-ink'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
-      <section aria-label="From looking to buying" className="rounded-2xl border border-line bg-surface p-4">
-        <h3 className="m-0 mb-2 text-[15px] font-semibold">From looking to buying</h3>
-        <ol className="m-0 p-0 list-none flex flex-wrap gap-x-6 gap-y-2 text-[14px] tabular-nums">
-          <li>
-            <strong>{n(s.views)}</strong> page views
-          </li>
-          <li aria-hidden>→</li>
-          <li>
-            <strong>{n(s.checkouts)}</strong> checkouts{' '}
-            <span className="text-ink2">({pct(s.checkouts, s.views)} of views)</span>
-          </li>
-          <li aria-hidden>→</li>
-          <li>
-            <strong>{n(s.paidOrders)}</strong> paid{' '}
-            <span className="text-ink2">({pct(s.paidOrders, s.checkouts)} of checkouts)</span>
-          </li>
-        </ol>
-        <p className="m-0 mt-2 text-[12px] text-ink2">
-          Many checkouts but few paid: look at price, the payment step or a promo code. Many views but few
-          checkouts: the course page isn't convincing (preview, description, price).
-        </p>
-      </section>
+      {view === 'overview' && (
+        <>
+          <Glance data={data} activity={activity.data} />
+          <section
+            aria-label="Totals"
+            className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-px overflow-hidden rounded-2xl bg-line shadow-[0_0_0_1px_var(--line)]"
+          >
+            <Figure
+              label="Active students"
+              value={a ? n(a.activeStudents) : '…'}
+              hint="Signed in and opened something"
+              tone="teal"
+            />
+            <Figure
+              label="New students"
+              value={n(s.signups)}
+              hint={`${n(s.signupsWhoBought)} bought (${pct(s.signupsWhoBought, s.signups)})`}
+            />
+            <Figure
+              label="Visitor pages"
+              value={a ? n(a.visitorPages) : '…'}
+              hint="Opened without signing in"
+            />
+            <Figure
+              label="Course views"
+              value={n(s.views)}
+              hint={`${pct(s.signedInViews, s.views)} by signed-in students`}
+            />
+            <Figure
+              label="Paid orders"
+              value={n(s.paidOrders)}
+              hint={`of ${plural(s.checkouts, 'checkout')} (${pct(s.paidOrders, s.checkouts)})`}
+              tone="teal"
+            />
+            <Figure
+              label="Revenue"
+              value={formatMoney(s.revenuePaise)}
+              hint={`${plural(s.buyers, 'buyer')} · ${n(s.firstPurchases)} first-time`}
+              tone="marigold"
+            />
+          </section>
+          {activity.isError && (
+            <ErrorState
+              title="Student activity didn't load."
+              message={friendly(activity.error)}
+              onRetry={() => activity.refetch()}
+            />
+          )}
+          <DailyChart daily={daily} />
+          <section
+            aria-label="From looking to buying"
+            className="rounded-2xl border border-line bg-surface p-4"
+          >
+            <h3 className="m-0 mb-2 text-[15px] font-semibold">From looking to buying</h3>
+            <ol className="m-0 p-0 list-none grid grid-cols-3 gap-2 text-center tabular-nums">
+              {[
+                ['Course views', s.views, ''],
+                ['Checkouts', s.checkouts, `${pct(s.checkouts, s.views)} of views`],
+                ['Paid', s.paidOrders, `${pct(s.paidOrders, s.checkouts)} of checkouts`],
+              ].map(([label, value, note]) => (
+                <li key={label as string} className="rounded-xl bg-sunk px-2 py-3 flex flex-col gap-0.5">
+                  <span className="font-display font-extrabold text-[26px] leading-none">
+                    {n(value as number)}
+                  </span>
+                  <span className="text-[13px] font-semibold">{label as string}</span>
+                  <span className="text-[12px] text-ink2 min-h-4">{note as string}</span>
+                </li>
+              ))}
+            </ol>
+            <p className="m-0 mt-3 text-[12px] text-ink2">
+              Many views but few checkouts: the course page isn't convincing yet (preview, description,
+              price). Many checkouts but few paid: look at the price, the payment step or a promo code.
+            </p>
+          </section>
+          <p className="m-0 text-[12px] text-ink2">
+            Readers: {n(s.readers)} students read {plural(s.pagesRead, 'page')} of bought files (last 30 days
+            at most). Days are IST.
+          </p>
+        </>
+      )}
 
-      <ActivitySummary activity={activity} />
+      {view === 'pages' && <ActivityTables activity={activity} part="pages" />}
+      {view === 'students' && <ActivityTables activity={activity} part="students" />}
 
-      <DailyChart daily={daily} />
+      {view === 'sales' && (
+        <>
+          <section aria-label="Most viewed" className="rounded-2xl border border-line bg-surface p-4">
+            <h3 className="m-0 mb-2 text-[15px] font-semibold">Most viewed courses and bundles</h3>
+            {data.topItems.length === 0 ? (
+              <p className="m-0 text-sm text-ink2">No page views in this period yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px] tabular-nums">
+                  <thead className="text-ink2 text-left">
+                    <tr>
+                      <th className="py-1.5 pr-3 font-medium">Course or bundle</th>
+                      <th className="py-1.5 pr-3 font-medium text-right">Views</th>
+                      <th className="py-1.5 pr-3 font-medium text-right hidden sm:table-cell">Signed in</th>
+                      <th className="py-1.5 pr-3 font-medium text-right">Checkouts</th>
+                      <th className="py-1.5 pr-3 font-medium text-right">Paid</th>
+                      <th className="py-1.5 pr-3 font-medium text-right hidden sm:table-cell">Revenue</th>
+                      <th className="py-1.5 font-medium text-right">Views → paid</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.topItems.map((i) => (
+                      <tr key={`${i.kind}:${i.id}`} className="border-t border-line">
+                        <td className="py-1.5 pr-3 min-w-[140px] sm:min-w-[200px]">
+                          <Link
+                            to={i.kind === 'course' ? `/c/${i.slug}` : `/b/${i.slug}`}
+                            className="text-ink hover:underline"
+                          >
+                            {i.title}
+                          </Link>
+                          {i.kind === 'bundle' && (
+                            <span className="ml-1.5 text-[11px] text-ink2">bundle</span>
+                          )}
+                        </td>
+                        <td className="py-1.5 pr-3 text-right">{n(i.views)}</td>
+                        <td className="py-1.5 pr-3 text-right hidden sm:table-cell">{n(i.signedInViews)}</td>
+                        <td className="py-1.5 pr-3 text-right">{n(i.checkouts)}</td>
+                        <td className="py-1.5 pr-3 text-right">{n(i.paid)}</td>
+                        <td className="py-1.5 pr-3 text-right hidden sm:table-cell">
+                          {formatMoney(i.revenuePaise)}
+                        </td>
+                        <td className="py-1.5 text-right">{pct(i.paid, i.views)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
 
-      <ActivityTables activity={activity} />
+          <section aria-label="Most read" className="rounded-2xl border border-line bg-surface p-4">
+            <h3 className="m-0 mb-2 text-[15px] font-semibold">Most read after buying</h3>
+            {data.topReading.length === 0 ? (
+              <p className="m-0 text-sm text-ink2">Nobody read a bought file in this period.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px] tabular-nums">
+                  <thead className="text-ink2 text-left">
+                    <tr>
+                      <th className="py-1.5 pr-3 font-medium">Course</th>
+                      <th className="py-1.5 pr-3 font-medium text-right">Readers</th>
+                      <th className="py-1.5 font-medium text-right">Pages read</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.topReading.map((r) => (
+                      <tr key={r.courseId} className="border-t border-line">
+                        <td className="py-1.5 pr-3 min-w-[140px] sm:min-w-[200px]">
+                          <Link to={`/c/${r.slug}`} className="text-ink hover:underline">
+                            {r.title}
+                          </Link>
+                        </td>
+                        <td className="py-1.5 pr-3 text-right">{n(r.readers)}</td>
+                        <td className="py-1.5 text-right">{n(r.pages)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      )}
 
-      <section aria-label="Most viewed" className="rounded-2xl border border-line bg-surface p-4">
-        <h3 className="m-0 mb-2 text-[15px] font-semibold">Most viewed courses and bundles</h3>
-        {data.topItems.length === 0 ? (
-          <p className="m-0 text-sm text-ink2">No page views in this period yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px] tabular-nums">
-              <thead className="text-ink2 text-left">
-                <tr>
-                  <th className="py-1.5 pr-3 font-medium">Course or bundle</th>
-                  <th className="py-1.5 pr-3 font-medium text-right">Views</th>
-                  <th className="py-1.5 pr-3 font-medium text-right">Signed in</th>
-                  <th className="py-1.5 pr-3 font-medium text-right">Checkouts</th>
-                  <th className="py-1.5 pr-3 font-medium text-right">Paid</th>
-                  <th className="py-1.5 pr-3 font-medium text-right">Revenue</th>
-                  <th className="py-1.5 font-medium text-right">Views → paid</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.topItems.map((i) => (
-                  <tr key={`${i.kind}:${i.id}`} className="border-t border-line">
-                    <td className="py-1.5 pr-3 min-w-[200px]">
-                      <Link
-                        to={i.kind === 'course' ? `/c/${i.slug}` : `/b/${i.slug}`}
-                        className="text-ink hover:underline"
-                      >
-                        {i.title}
-                      </Link>
-                      {i.kind === 'bundle' && <span className="ml-1.5 text-[11px] text-ink2">bundle</span>}
-                    </td>
-                    <td className="py-1.5 pr-3 text-right">{n(i.views)}</td>
-                    <td className="py-1.5 pr-3 text-right">{n(i.signedInViews)}</td>
-                    <td className="py-1.5 pr-3 text-right">{n(i.checkouts)}</td>
-                    <td className="py-1.5 pr-3 text-right">{n(i.paid)}</td>
-                    <td className="py-1.5 pr-3 text-right">{formatMoney(i.revenuePaise)}</td>
-                    <td className="py-1.5 text-right">{pct(i.paid, i.views)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section aria-label="Most read" className="rounded-2xl border border-line bg-surface p-4">
-        <h3 className="m-0 mb-2 text-[15px] font-semibold">Most read after buying</h3>
-        {data.topReading.length === 0 ? (
-          <p className="m-0 text-sm text-ink2">Nobody read a bought file in this period.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px] tabular-nums">
-              <thead className="text-ink2 text-left">
-                <tr>
-                  <th className="py-1.5 pr-3 font-medium">Course</th>
-                  <th className="py-1.5 pr-3 font-medium text-right">Readers</th>
-                  <th className="py-1.5 font-medium text-right">Pages read</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.topReading.map((r) => (
-                  <tr key={r.courseId} className="border-t border-line">
-                    <td className="py-1.5 pr-3 min-w-[200px]">
-                      <Link to={`/c/${r.slug}`} className="text-ink hover:underline">
-                        {r.title}
-                      </Link>
-                    </td>
-                    <td className="py-1.5 pr-3 text-right">{n(r.readers)}</td>
-                    <td className="py-1.5 text-right">{n(r.pages)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <DeeperLinks />
+      {view === 'health' && <DeeperLinks />}
     </>
   );
 }
@@ -326,10 +465,12 @@ type ActivityState = {
   refetch: () => unknown;
 };
 
-/** Signed-in students and visitors: who was around, and how much they opened. */
-function ActivitySummary({ activity }: { activity: ActivityState }) {
-  if (activity.isLoading) return <Skeleton className="h-24 rounded-2xl" />;
-  if (activity.isError || !activity.data)
+/** Which pages and tools are used, what students do, and who was active (newest first). */
+function ActivityTables({ activity, part }: { activity: ActivityState; part: 'pages' | 'students' }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  if (activity.isLoading) return <Skeleton className="h-40 rounded-2xl" />;
+  const a = activity.data;
+  if (!a)
     return (
       <ErrorState
         title="Student activity didn't load."
@@ -337,150 +478,133 @@ function ActivitySummary({ activity }: { activity: ActivityState }) {
         onRetry={() => activity.refetch()}
       />
     );
-  const a = activity.data.summary;
-  return (
-    <section
-      aria-label="Students and visitors"
-      className="grid grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-2xl bg-line shadow-[0_0_0_1px_var(--line)]"
-    >
-      <Figure
-        label="Active students"
-        value={n(a.activeStudents)}
-        hint="Signed in and opened something"
-        tone="teal"
-      />
-      <Figure label="Pages by students" value={n(a.studentPages)} hint="Every page they opened" />
-      <Figure label="Pages by visitors" value={n(a.visitorPages)} hint="Not signed in, counted together" />
-      <Figure label="Actions" value={n(a.actions)} hint="Peeks, checkouts, payments, files opened" />
-    </section>
-  );
-}
-
-/** Which pages and tools are used, what students do, and who was active (newest first). */
-function ActivityTables({ activity }: { activity: ActivityState }) {
-  const [openId, setOpenId] = useState<string | null>(null);
-  const a = activity.data;
-  if (!a) return null;
   return (
     <>
-      <section aria-label="Pages and tools" className="rounded-2xl border border-line bg-surface p-4">
-        <h3 className="m-0 text-[15px] font-semibold">Pages and tools</h3>
-        <p className="m-0 mb-2 text-[12px] text-ink2">
-          Every page, including each tool under /tools (new tools show up here by themselves).
-        </p>
-        {a.pages.length === 0 ? (
-          <p className="m-0 text-sm text-ink2">Nothing opened in this period yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px] tabular-nums">
-              <thead className="text-ink2 text-left">
-                <tr>
-                  <th className="py-1.5 pr-3 font-medium">Page</th>
-                  <th className="py-1.5 pr-3 font-medium text-right">Opened</th>
-                  <th className="py-1.5 pr-3 font-medium text-right">By students</th>
-                  <th className="py-1.5 pr-3 font-medium text-right">By visitors</th>
-                  <th className="py-1.5 font-medium text-right">Different students</th>
-                </tr>
-              </thead>
-              <tbody>
-                {a.pages.map((p) => {
-                  const href = activityHref(p.target);
-                  return (
-                    <tr key={p.target} className="border-t border-line">
-                      <td className="py-1.5 pr-3 min-w-[200px]">
-                        {href ? (
-                          <Link to={href} className="text-ink hover:underline">
-                            {activityLabel(p.target)}
-                          </Link>
-                        ) : (
-                          activityLabel(p.target)
-                        )}
-                      </td>
-                      <td className="py-1.5 pr-3 text-right">{n(p.hits)}</td>
-                      <td className="py-1.5 pr-3 text-right">{n(p.studentHits)}</td>
-                      <td className="py-1.5 pr-3 text-right">{n(p.visitorHits)}</td>
-                      <td className="py-1.5 text-right">{n(p.students)}</td>
+      {part === 'pages' && (
+        <>
+          <section aria-label="Pages and tools" className="rounded-2xl border border-line bg-surface p-4">
+            <h3 className="m-0 text-[15px] font-semibold">Pages and tools</h3>
+            <p className="m-0 mb-2 text-[12px] text-ink2">
+              Every page, including each tool under /tools (new tools show up here by themselves).
+            </p>
+            {a.pages.length === 0 ? (
+              <p className="m-0 text-sm text-ink2">Nothing opened in this period yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px] tabular-nums">
+                  <thead className="text-ink2 text-left">
+                    <tr>
+                      <th className="py-1.5 pr-3 font-medium">Page</th>
+                      <th className="py-1.5 pr-3 font-medium text-right">Opened</th>
+                      <th className="py-1.5 pr-3 font-medium text-right hidden sm:table-cell">By students</th>
+                      <th className="py-1.5 pr-3 font-medium text-right hidden sm:table-cell">By visitors</th>
+                      <th className="py-1.5 font-medium text-right">Different students</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                  </thead>
+                  <tbody>
+                    {a.pages.map((p) => {
+                      const href = activityHref(p.target);
+                      return (
+                        <tr key={p.target} className="border-t border-line">
+                          <td className="py-1.5 pr-3 min-w-[140px] sm:min-w-[200px]">
+                            {href ? (
+                              <Link to={href} className="text-ink hover:underline">
+                                {activityLabel(p.target)}
+                              </Link>
+                            ) : (
+                              activityLabel(p.target)
+                            )}
+                          </td>
+                          <td className="py-1.5 pr-3 text-right">{n(p.hits)}</td>
+                          <td className="py-1.5 pr-3 text-right hidden sm:table-cell">{n(p.studentHits)}</td>
+                          <td className="py-1.5 pr-3 text-right hidden sm:table-cell">{n(p.visitorHits)}</td>
+                          <td className="py-1.5 text-right">{n(p.students)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
 
-      <section aria-label="What students do" className="rounded-2xl border border-line bg-surface p-4">
-        <h3 className="m-0 mb-2 text-[15px] font-semibold">What students do</h3>
-        {a.actions.length === 0 ? (
-          <p className="m-0 text-sm text-ink2">No peeks, checkouts or files opened in this period.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px] tabular-nums">
-              <thead className="text-ink2 text-left">
-                <tr>
-                  <th className="py-1.5 pr-3 font-medium">Action</th>
-                  <th className="py-1.5 pr-3 font-medium text-right">Times</th>
-                  <th className="py-1.5 pr-3 font-medium text-right">By visitors</th>
-                  <th className="py-1.5 font-medium text-right">Different students</th>
-                </tr>
-              </thead>
-              <tbody>
-                {a.actions.map((x) => (
-                  <tr key={x.target} className="border-t border-line">
-                    <td className="py-1.5 pr-3 min-w-[200px]">{activityLabel(x.target)}</td>
-                    <td className="py-1.5 pr-3 text-right">{n(x.hits)}</td>
-                    <td className="py-1.5 pr-3 text-right">{n(x.visitorHits)}</td>
-                    <td className="py-1.5 text-right">{n(x.students)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section aria-label="Active students" className="rounded-2xl border border-line bg-surface p-4">
-        <h3 className="m-0 text-[15px] font-semibold">Active students</h3>
-        <p className="m-0 mb-2 text-[12px] text-ink2">
-          Most recently active first. Open one to see what they opened, day by day.
-        </p>
-        {a.students.length === 0 ? (
-          <p className="m-0 text-sm text-ink2">No signed-in student opened anything in this period.</p>
-        ) : (
-          <ul className="m-0 p-0 list-none divide-y divide-line">
-            {a.students.map((s) => (
-              <li key={s.userId}>
-                <button
-                  type="button"
-                  aria-expanded={openId === s.userId}
-                  onClick={() => setOpenId(openId === s.userId ? null : s.userId)}
-                  className="w-full flex flex-wrap items-center gap-x-4 gap-y-1 py-2 text-left bg-transparent border-0 cursor-pointer"
-                >
-                  <span className="flex-[1_1_220px] min-w-0">
-                    <span className="block font-semibold text-ink truncate">
-                      {s.fullName ?? s.email.split('@')[0]}
+          <section aria-label="What students do" className="rounded-2xl border border-line bg-surface p-4">
+            <h3 className="m-0 mb-2 text-[15px] font-semibold">What students do</h3>
+            {a.actions.length === 0 ? (
+              <p className="m-0 text-sm text-ink2">No peeks, checkouts or files opened in this period.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px] tabular-nums">
+                  <thead className="text-ink2 text-left">
+                    <tr>
+                      <th className="py-1.5 pr-3 font-medium">Action</th>
+                      <th className="py-1.5 pr-3 font-medium text-right">Times</th>
+                      <th className="py-1.5 pr-3 font-medium text-right hidden sm:table-cell">By visitors</th>
+                      <th className="py-1.5 font-medium text-right">Different students</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {a.actions.map((x) => (
+                      <tr key={x.target} className="border-t border-line">
+                        <td className="py-1.5 pr-3 min-w-[140px] sm:min-w-[200px]">
+                          {activityLabel(x.target)}
+                        </td>
+                        <td className="py-1.5 pr-3 text-right">{n(x.hits)}</td>
+                        <td className="py-1.5 pr-3 text-right hidden sm:table-cell">{n(x.visitorHits)}</td>
+                        <td className="py-1.5 text-right">{n(x.students)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+      {part === 'students' && (
+        <section aria-label="Active students" className="rounded-2xl border border-line bg-surface p-4">
+          <h3 className="m-0 text-[15px] font-semibold">Active students</h3>
+          <p className="m-0 mb-2 text-[12px] text-ink2">
+            Most recently active first. Open one to see what they opened, day by day.
+          </p>
+          {a.students.length === 0 ? (
+            <p className="m-0 text-sm text-ink2">No signed-in student opened anything in this period.</p>
+          ) : (
+            <ul className="m-0 p-0 list-none divide-y divide-line">
+              {a.students.map((s) => (
+                <li key={s.userId}>
+                  <button
+                    type="button"
+                    aria-expanded={openId === s.userId}
+                    onClick={() => setOpenId(openId === s.userId ? null : s.userId)}
+                    className="w-full flex flex-wrap items-center gap-x-4 gap-y-1 py-2 text-left bg-transparent border-0 cursor-pointer"
+                  >
+                    <span className="flex-[1_1_220px] min-w-0">
+                      <span className="block font-semibold text-ink truncate">
+                        {s.fullName ?? s.email.split('@')[0]}
+                      </span>
+                      <span className="block font-mono text-[12px] text-ink2 truncate">{s.email}</span>
                     </span>
-                    <span className="block font-mono text-[12px] text-ink2 truncate">{s.email}</span>
-                  </span>
-                  <span className="text-[13px] text-ink2 tabular-nums">
-                    {ago(s.lastAt)} · {plural(s.days, 'day')} · {n(s.hits)} opened
-                  </span>
-                  {s.topPage && (
-                    <span className="text-[13px] text-ink2 truncate max-w-[260px]">
-                      mostly {activityLabel(s.topPage)}
+                    <span className="text-[13px] text-ink2 tabular-nums">
+                      {ago(s.lastAt)} · {plural(s.days, 'day')} · {n(s.hits)} opened
                     </span>
+                    {s.topPage && (
+                      <span className="text-[13px] text-ink2 truncate max-w-[260px]">
+                        mostly {activityLabel(s.topPage)}
+                      </span>
+                    )}
+                  </button>
+                  {openId === s.userId && (
+                    <div className="rounded-xl border border-line mb-2 pt-2">
+                      <StudentActivity userId={s.userId} />
+                    </div>
                   )}
-                </button>
-                {openId === s.userId && (
-                  <div className="rounded-xl border border-line mb-2 pt-2">
-                    <StudentActivity userId={s.userId} />
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </>
   );
 }

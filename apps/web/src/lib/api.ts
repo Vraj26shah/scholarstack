@@ -500,6 +500,11 @@ export class ApiClient {
     this.request<ConvertScopeResultDto>('POST', '/admin/convert', input);
   adminBooks = (courseId: string) =>
     this.request<AdminCourseBooksDto>('GET', `/admin/courses/${encodeURIComponent(courseId)}/books`);
+  adminLookupIsbn = (isbn: string) =>
+    this.request<{ isbn: string; title: string; author: string }>(
+      'GET',
+      `/admin/books/lookup?isbn=${encodeURIComponent(isbn)}`,
+    );
   adminAddBook = (courseId: string, book: CourseBookInput) =>
     this.request<AdminCourseBooksDto>('POST', `/admin/courses/${encodeURIComponent(courseId)}/books`, book);
   adminUpdateBook = (bookId: string, book: CourseBookInput) =>

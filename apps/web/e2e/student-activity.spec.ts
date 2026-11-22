@@ -52,9 +52,12 @@ test('what a student opens shows in Insights and in their own Activity', async (
   await admin.getByRole('tab', { name: 'Insights', exact: true }).click();
   await admin.getByRole('radio', { name: 'Today' }).click();
 
+  const views = admin.getByRole('tablist', { name: 'Insights views' });
+  await views.getByRole('tab', { name: 'Pages & tools' }).click();
   const pages = admin.getByRole('region', { name: 'Pages and tools' });
   await expect(pages).toContainText('Tool · cgpa');
   await expect(pages).toContainText('Help');
+  await views.getByRole('tab', { name: 'Students', exact: true }).click();
   const active = admin.getByRole('region', { name: 'Active students' });
   const row = active.getByRole('button', { name: new RegExp(name.split('.')[0]!) }).first();
   await expect(row).toBeVisible();
@@ -65,8 +68,8 @@ test('what a student opens shows in Insights and in their own Activity', async (
   await shot(admin, 'insights');
 
   // The same student's row on the Students screen has the same Activity.
-  // The view tab inside the Students section (the section tab has the same name).
-  await admin.getByRole('tab', { name: 'Students', exact: true }).last().click();
+  // The Students view (the section tab, and an Insights tab, have the same name: section, view, Insights).
+  await admin.getByRole('tab', { name: 'Students', exact: true }).nth(1).click();
   const card = admin.getByRole('button', { name: new RegExp(name) }).first();
   await expect(card).toBeVisible();
   await card.click();

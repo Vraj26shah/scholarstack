@@ -9,6 +9,7 @@ import {
 } from '@ss/contracts';
 import { type Context, Hono } from 'hono';
 import { z } from 'zod';
+import { fetchCover } from '../../application/book-lookup';
 import { sha256Hex } from '../../infrastructure/crypto';
 import { type AppEnv, bearer, networkKey, requestMeta, throttle } from '../helpers';
 
@@ -118,6 +119,19 @@ catalogueRoutes.post('/insights/hit', async (c) => {
   const { userId, isAdmin } = await optionalViewer(c);
   await k.insights.recordHit(userId ? { userId, isAdmin } : null, parsed.data);
   return c.body(null, 204);
+});
+
+/** A book's cover by ISBN (Open Library, through us). Cached for a month; 404 when there is none. */
+catalogueRoutes.get('/covers/:isbn', async (c) => {
+  const cover = await fetchCover(c.req.param('isbn')).catch(() => null);
+  if (!cover) return c.body(null, 404, { 'cache-control': 'public, max-age=86400' });
+  return new Response(cover.body, {
+    headers: {
+      'content-type': cover.type,
+      'cache-control': 'public, max-age=2592000, immutable',
+      'x-content-type-options': 'nosniff',
+    },
+  });
 });
 
 /** First page of a unit, watermarked "PREVIEW". Public and cacheable. */

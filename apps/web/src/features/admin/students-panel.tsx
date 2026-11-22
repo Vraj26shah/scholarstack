@@ -476,11 +476,19 @@ export function StudentsPanel({ go }: { go: (section: string) => void }) {
     (a.fullName ?? a.email).localeCompare(b.fullName ?? b.email),
   );
   const branchNames = new Map((academic.data?.branches ?? []).map((b) => [b.code.toUpperCase(), b.name]));
-  const tiles: [string, number][] = [
-    ['People', all.length],
-    ['With a course now', all.filter((p) => p.courses.some((c) => c.state === 'active')).length],
-    ['Shared notes', all.filter((p) => p.uploads.length > 0).length],
-    ['Questions waiting', all.filter((p) => p.questions.some((q) => q.status === 'open')).length],
+  const weekAgoTile = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  // Each tile is also its filter: tap one to list exactly those people.
+  const tiles: [string, number, string][] = [
+    ['People', all.length, ''],
+    [
+      'Seen this week',
+      all.filter((p) => !!p.lastSeenAt && Date.parse(p.lastSeenAt) > weekAgoTile).length,
+      'active',
+    ],
+    ['With a course', all.filter((p) => p.courses.length > 0).length, 'buyers'],
+    ['No course yet', all.filter((p) => p.courses.length === 0).length, 'browsing'],
+    ['Shared notes', all.filter((p) => p.uploads.length > 0).length, 'contributors'],
+    ['Asked a question', all.filter((p) => p.questions.length > 0).length, 'askers'],
   ];
   const batches = [...new Set(all.map((s) => s.batchYear).filter((y): y is number => !!y))].sort(
     (a, b) => b - a,
@@ -523,16 +531,30 @@ export function StudentsPanel({ go }: { go: (section: string) => void }) {
         Everyone who has signed up: buyers, people who shared notes or asked, and those still just looking.
         Open a person to see what they opened, and to change their courses.
       </p>
-      <dl className="m-0 grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {tiles.map(([label, n]) => (
-          <div key={label} className="rounded-2xl bg-card shadow-[0_0_0_1px_var(--line)] px-4 py-3">
-            <dt className="text-[12px] text-ink2">{label}</dt>
-            <dd className="m-0 mt-1 font-display font-extrabold text-[28px] leading-none tabular-nums">
+      <div
+        className="m-0 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3"
+        role="group"
+        aria-label="Who to show"
+      >
+        {tiles.map(([label, n, filter]) => (
+          <button
+            key={label}
+            type="button"
+            aria-pressed={kind === filter}
+            onClick={() => setKind(filter)}
+            className={`text-left rounded-2xl px-4 py-3 cursor-pointer border-0 transition-shadow ${
+              kind === filter
+                ? 'bg-card shadow-[0_0_0_2px_var(--teal)]'
+                : 'bg-card shadow-[0_0_0_1px_var(--line)] hover:shadow-[0_0_0_1px_var(--teal)]'
+            }`}
+          >
+            <span className="block text-[12px] text-ink2">{label}</span>
+            <span className="block mt-1 font-display font-extrabold text-[28px] leading-none tabular-nums text-ink">
               {n}
-            </dd>
-          </div>
+            </span>
+          </button>
         ))}
-      </dl>
+      </div>
       {giving && <GiveAccessCard onClose={() => setGiving(false)} />}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
         <input

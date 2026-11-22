@@ -399,4 +399,33 @@ export function seedDemo(db: MemoryDb, sources?: MemoryObjectStore, pageAssets?:
   ].entries()) {
     db.features.set(f[0]!, { key: f[0]!, title: f[1]!, blurb: f[2]!, status: 'soon', sort: i + 1 });
   }
+
+  // A course with a real reading list: a textbook by ISBN, and two free legal books.
+  const dsa = [...db.courses.values()].find((c) => c.slug === 'dsa-2025-cse-core');
+  if (dsa)
+    for (const [sort, b] of [
+      {
+        title: 'Introduction to Algorithms',
+        author: 'Cormen, Leiserson, Rivest & Stein',
+        isbn: '9780262046305',
+        url: 'https://openlibrary.org/isbn/9780262046305',
+      },
+      {
+        title: 'Open Data Structures',
+        author: 'Pat Morin',
+        url: 'https://opendatastructures.org/',
+        freeUrl: 'https://opendatastructures.org/',
+        freeKind: 'pdf' as const,
+      },
+      {
+        title: 'Algorithms',
+        author: 'Jeff Erickson',
+        url: 'https://jeffe.cs.illinois.edu/teaching/algorithms/',
+        freeUrl: 'https://jeffe.cs.illinois.edu/teaching/algorithms/',
+        freeKind: 'pdf' as const,
+      },
+    ].entries()) {
+      const id = `demo-book-${sort}`;
+      db.books.set(id, { id, courseId: dsa.id, sort, ...b });
+    }
 }

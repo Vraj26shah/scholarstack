@@ -1789,7 +1789,10 @@ export class MemoryCourseBooks implements CourseBookRepository {
     this.db.books.set(row.id, row);
     return row;
   }
-  async update(id: string, patch: Pick<CourseBook, 'title' | 'author' | 'url'>) {
+  async update(
+    id: string,
+    patch: Pick<CourseBook, 'title' | 'author' | 'url' | 'isbn' | 'freeUrl' | 'freeKind'>,
+  ) {
     const current = this.db.books.get(id);
     if (!current) throw new Error('book not found');
     const row = { ...current, ...patch };
