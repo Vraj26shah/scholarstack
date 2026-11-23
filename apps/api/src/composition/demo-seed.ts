@@ -401,7 +401,6 @@ export function seedDemo(db: MemoryDb, sources?: MemoryObjectStore, pageAssets?:
       'Mess menu',
       "Today's food at your hostel mess or day-scholar restaurant, and the rest of the week.",
     ],
-    ['reminders', 'Reminders', "Your meals and tomorrow's classes on your phone, even with the site closed."],
   ].entries()) {
     db.features.set(f[0]!, { key: f[0]!, title: f[1]!, blurb: f[2]!, status: 'soon', sort: i + 1 });
   }

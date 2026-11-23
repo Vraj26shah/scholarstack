@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../../../shared/ui/button';
 import { Sheet as Dialog } from '../../../shared/ui/feedback';
-import { ReminderPrompt } from '../../reminders/reminder-prompt';
+import { ClassReminders } from '../../reminders/class-reminders';
 import { useSyncTimetableReminders } from '../../reminders/use-reminders';
 import { newId, useToolState } from '../core/storage';
 import { ToolHeader } from '../core/ui';
@@ -253,7 +253,7 @@ export default function TimetableTool({
         onClear={() => setCourses([])}
       />
 
-      {courses.length > 0 && <ReminderPrompt context={{ kind: 'timetable' }} />}
+      {courses.some((c) => !c.tentative) && <ClassReminders courses={courses} />}
 
       <Dialog
         open={draft !== null}

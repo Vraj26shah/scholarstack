@@ -23,6 +23,9 @@ export const SEED_MESSES: MessInput[] = [
     source: 'notice',
     note: 'Typed from the notice-board photo (week 1, from 12 Oct 2026, veg & non-veg). High tea and dinner times are our best guess until the notice gives them.',
     prices: '',
+    phone: '',
+    orderNote: '',
+    order: [],
     cycleStart: '2026-10-12',
     published: false,
     meals: [
@@ -135,6 +138,18 @@ export const SEED_MESSES: MessInput[] = [
     source: 'owner',
     note: 'Pure vegetarian dhaba and family restaurant. Free home delivery; parcels available. Serving hours are not on the menu card, so the times here are approximate.',
     prices: 'Mess thali ₹80 · Tiffin ₹3,600 a month',
+    // The number printed on the owner's menu card.
+    phone: '+91 85179 03810',
+    orderNote: 'Free home delivery · Parcel available',
+    order: [
+      {
+        title: 'Thali & tiffin',
+        items: [
+          { name: 'Mess thali', price: 80, note: "today's lunch or dinner menu" },
+          { name: 'Monthly tiffin', price: 3600, note: 'a month' },
+        ],
+      },
+    ],
     cycleStart: '2026-11-23',
     published: false,
     meals: [
@@ -175,6 +190,43 @@ export const SEED_MESSES: MessInput[] = [
           },
         },
       },
+    ],
+  },
+];
+
+/**
+ * Demo site only: a sample à la carte list for the dhaba, so ordering can be tried end to end.
+ * These are made-up dishes and prices, never seeded into the live database; the owner's real
+ * card replaces them in Admin › Campus.
+ */
+export const DEMO_DHABA_EXTRAS: MessInput['order'] = [
+  {
+    title: 'Main course',
+    items: [
+      { name: 'Paneer butter masala', price: 160, note: 'full' },
+      { name: 'Kadai paneer', price: 170, note: 'full' },
+      { name: 'Mix veg', price: 120, note: '' },
+      { name: 'Dal fry', price: 90, note: '' },
+      { name: 'Dal makhani', price: 130, note: '' },
+      { name: 'Chhole masala', price: 110, note: '' },
+    ],
+  },
+  {
+    title: 'Breads & rice',
+    items: [
+      { name: 'Tawa roti', price: 8, note: 'each' },
+      { name: 'Butter roti', price: 12, note: 'each' },
+      { name: 'Aloo paratha', price: 40, note: 'with curd' },
+      { name: 'Jeera rice', price: 80, note: '' },
+      { name: 'Veg fried rice', price: 100, note: '' },
+    ],
+  },
+  {
+    title: 'Snacks & drinks',
+    items: [
+      { name: 'Hakka noodles', price: 90, note: '' },
+      { name: 'Masala chai', price: 15, note: '' },
+      { name: 'Sweet lassi', price: 40, note: '' },
     ],
   },
 ];

@@ -42,6 +42,11 @@ export function MessPicker({
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [active, setActive] = useState(0);
+  /**
+   * The list opens in the page, pushing what's below down, so it never covers the menu or the
+   * footer, however short the page is.
+   */
+  const [listMax, setListMax] = useState(300);
   const root = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -70,6 +75,11 @@ export function MessPicker({
 
   /** Opening starts on the chosen mess; searching or filtering starts from the top. */
   const toggleOpen = () => {
+    if (!open) {
+      // The list fits the screen, above the phone's bottom bar.
+      const bar = window.matchMedia?.('(max-width: 640px)').matches ? 84 : 0;
+      setListMax(Math.max(160, Math.min(320, window.innerHeight - bar - 260)));
+    }
     if (!open)
       setActive(
         Math.max(
@@ -143,7 +153,7 @@ export function MessPicker({
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-full mt-2 z-30 rounded-2xl bg-surface shadow-[0_24px_48px_-20px_var(--shadow),0_0_0_1px_var(--line)] p-2 flex flex-col gap-2">
+        <div className="mt-1 rounded-2xl bg-surface shadow-[0_18px_34px_-22px_var(--shadow),0_0_0_1px_var(--line)] p-2 flex flex-col gap-2">
           <div className="flex items-center gap-2 rounded-xl bg-sunk px-3 h-11">
             <SearchIcon size={16} className="text-ink2 shrink-0" />
             <input
@@ -186,7 +196,8 @@ export function MessPicker({
             role="listbox"
             tabIndex={-1}
             aria-label="Messes"
-            className="max-h-[300px] overflow-y-auto"
+            className="overflow-y-auto overscroll-contain"
+            style={{ maxHeight: listMax }}
           >
             {results.map((m, i) => {
               const heading = i === 0 || results[i - 1]!.kind !== m.kind;

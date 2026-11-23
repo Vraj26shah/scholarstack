@@ -12,9 +12,18 @@ import {
   subscribeBrowser,
   unsubscribeBrowser,
 } from './push-client';
-import { type LocalReminders, serverPrefs, setLocalReminders, useLocalReminders } from './settings-store';
+import {
+  type LocalReminders,
+  getLocalReminders,
+  serverPrefs,
+  setLocalReminders,
+  useLocalReminders,
+} from './settings-store';
 
 const WEEK = 7 * 24 * 3600 * 1000;
+
+/** Taps in quick succession are sent to the server once, when they settle. */
+let saveTimer: number | undefined;
 
 export type ReminderState =
   /** Not for this visitor yet (students before launch), or the server has no push keys. */
@@ -87,6 +96,25 @@ export function useReminders() {
       return true;
     });
 
+  /**
+   * Change a setting from a tap: shown at once, sent to the server a moment later (one request for
+   * several quick taps). `saved` turns true once the server has it.
+   */
+  const [saved, setSaved] = useState(false);
+  const update = (patch: (r: LocalReminders) => LocalReminders) => {
+    setLocalReminders(patch);
+    setSaved(false);
+    window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => {
+      const cur = getLocalReminders();
+      if (!cur.endpoint) return;
+      void run('save', async () => {
+        await api.pushPrefs(cur.endpoint!, serverPrefs(cur));
+        return true;
+      }).then((ok) => setSaved(!!ok));
+    }, 700);
+  };
+
   const test = () =>
     run('test', async () => {
       if (!local.endpoint) return false;
@@ -104,6 +132,7 @@ export function useReminders() {
     });
 
   const snooze = () => setLocalReminders((r) => ({ ...r, snoozedUntil: Date.now() + WEEK }));
+  const unsnooze = () => setLocalReminders((r) => ({ ...r, snoozedUntil: null }));
   const snoozed = !!local.snoozedUntil && local.snoozedUntil > Date.now();
 
   return {
@@ -114,9 +143,12 @@ export function useReminders() {
     setError,
     turnOn,
     save,
+    update,
+    saved,
     test,
     turnOff,
     snooze,
+    unsnooze,
     snoozed,
     loading: status.isLoading,
   };

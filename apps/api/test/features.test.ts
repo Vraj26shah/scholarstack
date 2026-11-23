@@ -630,7 +630,6 @@ describe('toolbox and announcements', () => {
       ['attendance', 'soon', '/tools/attendance'],
       ['timetable', 'soon', '/tools/timetable'],
       ['mess-menu', 'soon', '/tools/mess-menu'],
-      ['reminders', 'soon', '/tools/reminders'],
     ]);
   });
 

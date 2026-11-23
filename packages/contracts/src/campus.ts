@@ -87,6 +87,20 @@ export const MessMeal = z.object({
 });
 export type MessMeal = z.infer<typeof MessMeal>;
 
+/** One thing a restaurant sells, at the owner's price (whole rupees). */
+export const MessOrderItem = z.object({
+  name: z.string().trim().min(1).max(80),
+  price: z.number().int().min(0).max(100_000),
+  /** e.g. "half / full", "a month", "today's lunch or dinner". */
+  note: z.string().trim().max(80).default(''),
+});
+export type MessOrderItem = z.infer<typeof MessOrderItem>;
+export const MessOrderSection = z.object({
+  title: z.string().trim().min(1).max(60),
+  items: z.array(MessOrderItem).max(60),
+});
+export type MessOrderSection = z.infer<typeof MessOrderSection>;
+
 export const SaveMessBody = z
   .object({
     slug,
@@ -98,6 +112,16 @@ export const SaveMessBody = z
     note: z.string().trim().max(400).default(''),
     /** Prices exactly as the owner gave them, e.g. "Mess thali ₹80 · Tiffin ₹3,600 a month". */
     prices: z.string().trim().max(200).default(''),
+    /** The owner's number for orders (calls and WhatsApp). Empty for hostel messes. */
+    phone: z
+      .string()
+      .trim()
+      .regex(/^(\+?\d[\d ]{6,17})?$/, 'Use digits, e.g. +91 85179 03810')
+      .default(''),
+    /** e.g. "Free home delivery · Parcel available". */
+    orderNote: z.string().trim().max(160).default(''),
+    /** What students can order, by section, with the owner's prices. */
+    order: z.array(MessOrderSection).max(12).default([]),
     meals: z.array(MessMeal).min(1).max(4),
     /** A rotating menu: week 1, week 2… counted from cycleStart. One week repeats every week. */
     weeks: z.array(MessWeek).min(1).max(6),

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   type MessInput,
   ReminderPrefs,
+  SaveMessBody,
   campusClock,
   dishesOn,
   duePushes,
@@ -125,5 +126,33 @@ describe('due reminders', () => {
     });
     // Monday 9 pm: Tuesday has nothing.
     expect(duePushes(p, null, ist('2026-11-23', '21:00'))).toEqual([]);
+  });
+});
+
+describe('restaurant ordering', () => {
+  const base = {
+    slug: 'dhaba',
+    name: 'Dhaba',
+    kind: 'restaurant',
+    source: 'owner',
+    meals: [{ key: 'lunch', start: '12:00', end: '15:00' }],
+    weeks: [{ days: {} }],
+    cycleStart: '2026-11-23',
+  };
+  it('a hostel mess needs no phone or order list', () => {
+    expect(SaveMessBody.parse(base)).toMatchObject({ phone: '', orderNote: '', order: [] });
+  });
+  it("keeps the owner's items and whole-rupee prices", () => {
+    const m = SaveMessBody.parse({
+      ...base,
+      phone: '+91 85179 03810',
+      order: [{ title: 'Thali', items: [{ name: 'Mess thali', price: 80 }] }],
+    });
+    expect(m.order[0]!.items[0]).toEqual({ name: 'Mess thali', price: 80, note: '' });
+    expect(SaveMessBody.safeParse({ ...base, phone: 'call me' }).success).toBe(false);
+    expect(
+      SaveMessBody.safeParse({ ...base, order: [{ title: 'T', items: [{ name: 'X', price: 9.5 }] }] })
+        .success,
+    ).toBe(false);
   });
 });

@@ -69,6 +69,9 @@ export function setLocalReminders(next: LocalReminders | ((prev: LocalReminders)
   for (const l of listeners) l();
 }
 
+/** The latest settings, outside React (for a save that runs after a pause). */
+export const getLocalReminders = () => snapshot;
+
 export function useLocalReminders(): LocalReminders {
   return useSyncExternalStore(
     (cb) => {

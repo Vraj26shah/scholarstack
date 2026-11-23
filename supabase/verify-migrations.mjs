@@ -439,7 +439,7 @@ check(
 check(
   'toolbox seeded with CGPA calculator, attendance, timetable maker and the mess menu (coming soon)',
   (await all('select key from public.features order by sort')).map((r) => r.key).join() ===
-    'cgpa,attendance,timetable,mess-menu,reminders',
+    'cgpa,attendance,timetable,mess-menu',
   (await all('select key from public.features order by sort')).map((r) => r.key).join(),
 );
 check(
@@ -649,8 +649,18 @@ check(
   (await asUser('someone@gmail.com', 'select * from public.course_overview')).length === 0,
 );
 check(
+  'the dhaba has its order number and prices from the menu card',
+  (
+    await all(
+      "select phone, jsonb_array_length(order_menu) as n from public.messes where slug = 'radha-rani-ka-dhaba'",
+    )
+  )
+    .map((r) => `${r.phone}|${r.n}`)
+    .join() === '+91 85179 03810|1',
+);
+check(
   'RLS: anyone can read the toolbox',
-  (await asUser('someone@gmail.com', 'select key from public.features')).length === 5,
+  (await asUser('someone@gmail.com', 'select key from public.features')).length === 4,
 );
 check(
   'RLS: outsider sees no courses',

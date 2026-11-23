@@ -147,7 +147,7 @@ describe('reminders', () => {
     const a = await admin();
     expect((await a.call('GET', '/push/status')).json.open).toBe(true);
     expect((await a.call('POST', '/push/subscribe', device())).status).toBe(200);
-    launch('reminders');
+    launch('mess-menu');
     expect((await student.call('POST', '/push/subscribe', device(2))).status).toBe(200);
   });
 

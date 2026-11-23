@@ -31,9 +31,12 @@ import type {
 import type { Clock, FeatureRepository } from '../domain/ports';
 import { fail } from './errors';
 
-/** The toolbox keys that switch these on for students. Until then only admins can use them. */
+/**
+ * The toolbox key that switches these on for students. Until then only admins can use them.
+ * Reminders live inside the Mess menu and the Timetable maker, so they launch with the Mess menu.
+ */
 export const MESS_FEATURE = 'mess-menu';
-export const REMINDERS_FEATURE = 'reminders';
+export const REMINDERS_FEATURE = MESS_FEATURE;
 
 const isLive = async (features: FeatureRepository, key: string) =>
   (await features.find(key))?.status === 'live';
@@ -264,7 +267,7 @@ export class ReminderService {
       title: 'Reminders are on ✓',
       body: `This is how they'll look. ${prefsSummary(sub.prefs)}.`,
       tag: 'test',
-      url: '/tools/reminders',
+      url: sub.prefs.classes.courses.length ? '/tools/timetable' : '/tools/mess-menu',
     };
   }
 

@@ -189,3 +189,24 @@ export const Bowl = ({ size, ...p }: P) => (
     <path d="M9 7c0-1.2 1-1.8 1-3M13 7c0-1.2 1-1.8 1-3" />
   </svg>
 );
+export const Phone = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" />
+  </svg>
+);
+export const ChatBubble = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M4 20l1.4-4.2A8 8 0 1 1 8.4 18.7z" />
+    <path d="M9 10.5h.01M12 10.5h.01M15 10.5h.01" />
+  </svg>
+);
+export const Plus = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+export const Minus = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M5 12h14" />
+  </svg>
+);

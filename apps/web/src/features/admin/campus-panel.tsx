@@ -10,6 +10,7 @@ import {
   type MessInput,
   type MessKind,
   type MessMeal,
+  type MessOrderSection,
   type MessWeek,
   campusClock,
 } from '@ss/contracts';
@@ -34,6 +35,43 @@ const fromText = (text: string): MessDish[] =>
     .map((l) =>
       l.endsWith('?') ? { name: l.slice(0, -1).trim(), unsure: true } : { name: l, unsure: false },
     );
+
+/**
+ * The order list as text: "# Section" starts a section, then one item per line as
+ * "Paneer butter masala | 160 | half / full" (name | price | optional note).
+ */
+const orderToText = (order: MessOrderSection[] = []) =>
+  order
+    .map(
+      (s) =>
+        `# ${s.title}\n${s.items.map((i) => [i.name, i.price, i.note].filter((x) => x !== '').join(' | ')).join('\n')}`,
+    )
+    .join('\n\n');
+const orderFromText = (text: string): { order: MessOrderSection[]; bad: string[] } => {
+  const order: MessOrderSection[] = [];
+  const bad: string[] = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('#')) {
+      order.push({ title: line.replace(/^#+/, '').trim().slice(0, 60) || 'Menu', items: [] });
+      continue;
+    }
+    const [name = '', price = '', ...note] = line.split('|').map((x) => x.trim());
+    const rupees = Number(price.replace(/[₹,\s]|rs\.?/gi, ''));
+    if (!name || !Number.isInteger(rupees) || rupees < 0) {
+      bad.push(line);
+      continue;
+    }
+    if (!order.length) order.push({ title: 'Menu', items: [] });
+    order[order.length - 1]!.items.push({
+      name: name.slice(0, 80),
+      price: rupees,
+      note: note.join(' | ').slice(0, 80),
+    });
+  }
+  return { order: order.filter((s) => s.items.length).slice(0, 12), bad };
+};
 
 const emptyWeek = (label = ''): MessWeek => ({
   label,
@@ -61,6 +99,9 @@ const newMess = (): MessInput => ({
   source: 'notice',
   note: '',
   prices: '',
+  phone: '',
+  orderNote: '',
+  order: [],
   meals: DEFAULT_MEALS.hostel,
   weeks: [emptyWeek('Week 1')],
   cycleStart: campusClock(new Date()).date,
@@ -146,7 +187,7 @@ export function MessMenusPanel() {
   );
 }
 
-function LaunchNote({ live, what }: { live: boolean; what: string }) {
+function LaunchNote({ live, what, detail }: { live: boolean; what: string; detail?: string }) {
   return (
     <p
       className={`m-0 rounded-xl px-4 py-3 text-[14px] ${live ? 'bg-mist/50 text-ink' : 'bg-marigold-soft text-marigold-text'}`}
@@ -161,6 +202,7 @@ function LaunchNote({ live, what }: { live: boolean; what: string }) {
           on the live site to test. Press <strong>Launch</strong> in Emails › Emails & tools when it's ready.
         </>
       )}
+      {detail && <span className="block mt-1">{detail}</span>}
     </p>
   );
 }
@@ -176,6 +218,8 @@ function MessEditor({
   const [day, setDay] = useState<DayKey>(DAY_KEYS[campusClock(new Date()).day]!);
   const [text, setText] = useState<Record<string, string>>({});
   const [done, setDone] = useState<string | null>(null);
+  const [orderText, setOrderText] = useState(() => orderToText(initial.order));
+  const orderBad = orderFromText(orderText).bad;
   const set = (patch: Partial<MessInput>) => {
     setDone(null);
     setForm((f) => ({ ...f, ...patch }));
@@ -303,6 +347,51 @@ function MessEditor({
               placeholder="Mess thali ₹80 · Tiffin ₹3,600 a month"
             />
           </Field>
+        )}
+        {form.kind === 'restaurant' && (
+          <>
+            <Field label="Phone for orders (calls and WhatsApp)">
+              <input
+                className={input}
+                value={form.phone}
+                inputMode="tel"
+                maxLength={20}
+                onChange={(e) => set({ phone: e.target.value })}
+                placeholder="+91 85179 03810"
+              />
+            </Field>
+            <Field label="Delivery and parcels">
+              <input
+                className={input}
+                value={form.orderNote}
+                maxLength={160}
+                onChange={(e) => set({ orderNote: e.target.value })}
+                placeholder="Free home delivery · Parcel available"
+              />
+            </Field>
+            <Field
+              label="What students can order: '# Section', then 'Name | price | note' on each line"
+              className="sm:col-span-2"
+            >
+              <textarea
+                className={`${input} h-auto py-2 font-mono text-[13px]`}
+                rows={8}
+                value={orderText}
+                onChange={(e) => {
+                  setOrderText(e.target.value);
+                  set({ order: orderFromText(e.target.value).order });
+                }}
+                placeholder={
+                  "# Thali & tiffin\nMess thali | 80 | today's menu\n\n# Main course\nPaneer butter masala | 160 | full"
+                }
+              />
+              {orderBad.length > 0 && (
+                <span className="text-[13px] text-blush-text">
+                  Left out (needs "name | price"): {orderBad.slice(0, 3).join(' · ')}
+                </span>
+              )}
+            </Field>
+          </>
         )}
         <Field label="Note above the menu" className="sm:col-span-2">
           <textarea
@@ -601,14 +690,15 @@ export function RemindersAdminPanel() {
     <Panel
       title="Reminders"
       aside={
-        <Link to="/tools/reminders" className="text-[14px] font-semibold text-ink2 hover:text-ink">
+        <Link to="/tools/mess-menu#reminders" className="text-[14px] font-semibold text-ink2 hover:text-ink">
           Turn them on for this device
         </Link>
       }
     >
       <LaunchNote
-        live={features.data?.find((f) => f.key === 'reminders')?.status === 'live'}
+        live={features.data?.find((f) => f.key === 'mess-menu')?.status === 'live'}
         what="Reminders"
+        detail="Meal reminders are in the Mess menu, class reminders in the Timetable maker. They launch with the Mess menu."
       />
       {q.isLoading ? (
         <Skeleton className="h-32" />

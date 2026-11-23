@@ -1,5 +1,5 @@
 import type { ConversionProgressReport } from '@ss/contracts';
-import { SEED_MESSES } from '../application/campus-seed';
+import { DEMO_DHABA_EXTRAS, SEED_MESSES } from '../application/campus-seed';
 import type { AppConfig } from '../application/config';
 import type { Clock, ConversionJob, IdGenerator } from '../domain/ports';
 import type { Container } from '../http/container';
@@ -110,9 +110,12 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
     pushSender: new MemoryPushSender(DEMO_VAPID_PUBLIC_KEY),
   };
   if (options.seed !== false)
-    SEED_MESSES.forEach((m, sort) =>
-      campus.messes.rows.set(m.slug, { ...structuredClone(m), sort, updatedAt: clock.now() }),
-    );
+    SEED_MESSES.forEach((m, sort) => {
+      const row = { ...structuredClone(m), sort, updatedAt: clock.now() };
+      // The demo gets a sample à la carte list (not in the live seed: no invented prices there).
+      if (m.kind === 'restaurant') row.order = [...row.order, ...structuredClone(DEMO_DHABA_EXTRAS)];
+      campus.messes.rows.set(m.slug, row);
+    });
 
   const catalogue = new MemoryCatalogue(db);
   const orders = new MemoryOrders(db);

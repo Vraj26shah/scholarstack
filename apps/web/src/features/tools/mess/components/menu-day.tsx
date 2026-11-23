@@ -11,6 +11,7 @@ import {
   toMinutes,
   weekIndex,
 } from '@ss/contracts';
+import { MealBell } from '../../../reminders/meal-reminders';
 
 /** The seven dates of this campus week (Monday first), given today's date and weekday. */
 export function weekDates(today: string, day: number): string[] {
@@ -111,11 +112,14 @@ export function MenuDay({
               aria-labelledby={`meal-${meal.key}-h`}
               className={`scroll-mt-24 rounded-[18px] bg-card p-5 flex flex-col gap-3 shadow-[0_18px_34px_-26px_var(--shadow),0_0_0_1px_var(--line)] ${focus === meal.key ? 'ring-2 ring-teal' : ''} ${status?.tone === 'past' ? 'opacity-70' : ''} ${firstOpen === meal.key ? 'order-first sm:order-none' : ''}`}
             >
-              <header className="flex flex-wrap items-baseline justify-between gap-2">
+              <header className="flex flex-wrap items-center justify-between gap-2">
                 <h3 id={`meal-${meal.key}-h`} className="m-0 text-[20px] font-bold text-ink">
                   {MEAL_NAMES[meal.key]}
                 </h3>
-                <span className="text-[14px] text-ink2 tabular-nums">{formatSpan(meal.start, meal.end)}</span>
+                <span className="flex items-center gap-1 text-[14px] text-ink2 tabular-nums">
+                  {formatSpan(meal.start, meal.end)}
+                  <MealBell mess={mess} meal={meal.key} />
+                </span>
               </header>
               {status && (
                 <span
