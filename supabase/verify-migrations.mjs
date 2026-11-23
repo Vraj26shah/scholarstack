@@ -100,6 +100,15 @@ check(
   'hook allows the listed admin Gmail exactly',
   JSON.stringify(await hook('VitbSmashers@Gmail.com')) === '{}',
 );
+await db.query(
+  "update public.messes set owner_emails = '{dhaba.owner@gmail.com}' where slug = 'radha-rani-ka-dhaba'",
+);
+check('hook lets a restaurant owner sign up', JSON.stringify(await hook('Dhaba.Owner@gmail.com')) === '{}');
+check(
+  'hook still blocks other Gmail addresses',
+  (await hook('dhaba.owner2@gmail.com')).error?.http_code === 403,
+);
+await db.query("update public.messes set owner_emails = '{}' where slug = 'radha-rani-ka-dhaba'");
 for (const trick of [
   'vit.bsmashers@gmail.com',
   'vitbsmashers+x@gmail.com',

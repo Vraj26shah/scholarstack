@@ -121,8 +121,8 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
       // The demo gets a sample à la carte list (not in the live seed: no invented prices there).
       if (m.kind === 'restaurant') {
         row.order = [...row.order, ...structuredClone(DEMO_DHABA_EXTRAS)];
-        // A demo owner (sign in as owner.demo@gmail.com) and orders switched on, to try it end to end.
-        row.ownerEmails = ['owner.demo@gmail.com'];
+        // A demo owner (sign in as dhaba.demo@gmail.com) and orders switched on, to try it end to end.
+        row.ownerEmails = ['dhaba.demo@gmail.com'];
         row.ordersOpen = true;
       }
       campus.messes.rows.set(m.slug, row);

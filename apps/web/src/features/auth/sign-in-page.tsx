@@ -5,7 +5,7 @@ import { track } from '../../lib/analytics';
 import { ApiError, api, friendly } from '../../lib/api';
 import { authGateway } from '../../lib/auth';
 import { env, isDemo } from '../../lib/env';
-import { STUDENT_HOME } from '../../lib/landing';
+import { STUDENT_HOME, homeFor } from '../../lib/landing';
 import { reportProblem } from '../../lib/problems';
 import { useSession } from '../../lib/session';
 import { Ambient } from '../../shared/ui/ambient';
@@ -16,6 +16,15 @@ import { Button } from '../../shared/ui/button';
 import { ChevronLeft } from '../../shared/ui/icons';
 import { ThemeToggle } from '../../shared/ui/theme-toggle';
 import { Turnstile, turnstileProblem } from './turnstile';
+
+/**
+ * Where to go once signed in: what was asked for, except that admins land on the admin page and a
+ * restaurant owner (no college address) lands on their orders when they only asked for home.
+ */
+const landingFor = (me: { isAdmin: boolean; email: string } | null | undefined, next: string) => {
+  if (me?.isAdmin) return next.startsWith('/admin') ? next : '/admin';
+  return next === STUDENT_HOME ? homeFor(me, env.domain) : next;
+};
 
 function safeNext(raw: string | null): string {
   return raw?.startsWith('/') && !raw.startsWith('//') ? raw : STUDENT_HOME;
@@ -80,7 +89,7 @@ export function SignInPage() {
 
   if (status === 'ready') {
     const me = useSession.getState().me;
-    const dest = me?.isAdmin && !next.startsWith('/admin') ? '/admin' : next;
+    const dest = landingFor(me, next);
     return <Navigate to={dest} replace />;
   }
 
@@ -93,7 +102,7 @@ export function SignInPage() {
     if (useSession.getState().status === 'ready') {
       track('login');
       // Admins land on the admin page they asked for (e.g. /admin?tab=tools), else the admin home.
-      navigate(me?.isAdmin && !next.startsWith('/admin') ? '/admin' : next, { replace: true });
+      navigate(landingFor(me, next), { replace: true });
     }
   }
 

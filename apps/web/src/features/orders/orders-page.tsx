@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api, friendly } from '../../lib/api';
 import { Button } from '../../shared/ui/button';
+import { Page } from '../../shared/ui/chrome';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { ChatBubble, Phone } from '../../shared/ui/icons';
 
@@ -394,45 +395,47 @@ export function OrdersPage() {
   const mess = owned.data?.find((m) => m.slug === slug) ?? owned.data?.[0];
 
   return (
-    <main className="mx-auto max-w-[1280px] px-4 sm:px-9 pb-20 flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <p className="m-0 font-mono text-[13px] tracking-[0.14em] text-teal-text">ORDERS</p>
-        {owned.data && owned.data.length > 1 ? (
-          <select
-            value={mess?.slug}
-            onChange={(e) => setSlug(e.target.value)}
-            aria-label="Restaurant"
-            className="self-start bg-transparent font-display text-[clamp(30px,5vw,48px)] font-extrabold tracking-[-0.04em] text-ink outline-none"
-          >
-            {owned.data.map((m) => (
-              <option key={m.slug} value={m.slug}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+    <Page wide>
+      <div className="flex flex-col gap-6 pt-2">
+        <div className="flex flex-col gap-1">
+          <p className="m-0 font-mono text-[13px] tracking-[0.14em] text-teal-text">ORDERS</p>
+          {owned.data && owned.data.length > 1 ? (
+            <select
+              value={mess?.slug}
+              onChange={(e) => setSlug(e.target.value)}
+              aria-label="Restaurant"
+              className="self-start bg-transparent font-display text-[clamp(30px,5vw,48px)] font-extrabold tracking-[-0.04em] text-ink outline-none"
+            >
+              {owned.data.map((m) => (
+                <option key={m.slug} value={m.slug}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <h1 className="m-0 font-display text-[clamp(30px,5vw,48px)] leading-[1.05] font-extrabold tracking-[-0.04em] text-ink">
+              {mess?.name ?? 'Orders'}
+            </h1>
+          )}
+          <p className="m-0 text-[15px] text-ink2">Keep this page open. New orders appear within seconds.</p>
+        </div>
+        {owned.isLoading ? (
+          <Skeleton className="h-40" />
+        ) : owned.isError ? (
+          <ErrorState
+            title="Couldn't load your restaurant"
+            message={friendly(owned.error)}
+            onRetry={() => owned.refetch()}
+          />
+        ) : !mess ? (
+          <p className="m-0 text-[16px] text-ink">
+            This account doesn't run a restaurant on Scholars Stack. If you should, ask the site admin to add
+            your email to your restaurant.
+          </p>
         ) : (
-          <h1 className="m-0 font-display text-[clamp(30px,5vw,48px)] leading-[1.05] font-extrabold tracking-[-0.04em] text-ink">
-            {mess?.name ?? 'Orders'}
-          </h1>
+          <Board key={mess.slug} mess={mess} />
         )}
-        <p className="m-0 text-[15px] text-ink2">Keep this page open. New orders appear within seconds.</p>
       </div>
-      {owned.isLoading ? (
-        <Skeleton className="h-40" />
-      ) : owned.isError ? (
-        <ErrorState
-          title="Couldn't load your restaurant"
-          message={friendly(owned.error)}
-          onRetry={() => owned.refetch()}
-        />
-      ) : !mess ? (
-        <p className="m-0 text-[16px] text-ink">
-          This account doesn't run a restaurant on Scholars Stack. If you should, ask the site admin to add
-          your email to your restaurant.
-        </p>
-      ) : (
-        <Board key={mess.slug} mess={mess} />
-      )}
-    </main>
+    </Page>
   );
 }
