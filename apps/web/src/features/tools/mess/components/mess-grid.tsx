@@ -81,15 +81,15 @@ export function MessGrid({
   const anyExtras = mess.meals.some((m) => m.extras);
 
   return (
-    <div className="overflow-x-auto rounded-[18px] bg-card shadow-[0_18px_34px_-26px_var(--shadow),0_0_0_1px_var(--line)]">
+    <div className="overflow-x-auto border-t-2 border-ink -mx-4 px-4 sm:mx-0 sm:px-0">
       <table
         className={`w-full table-fixed border-collapse text-left ${wide ? 'min-w-[920px]' : 'min-w-[600px]'}`}
       >
         <caption className="sr-only">{mess.name}: this week's menu. Today is highlighted.</caption>
         <thead>
           <tr>
-            <th className="sticky left-0 z-10 bg-card w-[96px] sm:w-[112px] p-3 font-mono text-[11px] text-ink2 font-normal align-bottom">
-              DAY
+            <th className="sticky left-0 z-10 bg-bg w-[92px] sm:w-[120px] py-3 pr-3">
+              <span className="sr-only">Day</span>
             </th>
             {mess.meals.map((m) => {
               const hot = m.key === target.key && !!target.date;
@@ -98,16 +98,16 @@ export function MessGrid({
                   key={m.key}
                   scope="col"
                   aria-current={hot ? 'time' : undefined}
-                  className="p-2 pl-3 align-bottom font-normal"
+                  className="py-3 px-3 align-bottom font-normal"
                 >
                   <span className="flex items-end justify-between gap-2">
                     <span className="min-w-0">
                       <span
-                        className={`block font-semibold text-[15px] ${hot ? 'text-teal-text' : 'text-ink'}`}
+                        className={`block text-[12px] font-semibold uppercase tracking-[0.12em] ${hot ? 'text-teal-text' : 'text-ink'}`}
                       >
                         {MEAL_NAMES[m.key]}
                       </span>
-                      <span className="block font-mono text-[11px] text-ink2">
+                      <span className="block text-[13px] tabular-nums text-ink2">
                         {formatSpan(m.start, m.end)}
                       </span>
                     </span>
@@ -123,18 +123,16 @@ export function MessGrid({
             const key = DAY_KEYS[r]!;
             const isToday = date === today;
             return (
-              <tr
-                key={date}
-                aria-current={isToday ? 'date' : undefined}
-                className={`border-t border-line ${isToday ? 'bg-mist/25' : ''}`}
-              >
+              <tr key={date} aria-current={isToday ? 'date' : undefined} className="border-t border-line">
                 <th
                   scope="row"
-                  className={`sticky left-0 z-10 p-3 align-top text-[14px] font-semibold ${isToday ? 'bg-mist/40 text-ink' : 'bg-card'}`}
+                  className={`sticky left-0 z-10 bg-bg py-3.5 pr-3 align-top text-left font-normal ${isToday ? 'shadow-[inset_3px_0_0_var(--teal)] pl-3' : ''}`}
                 >
-                  {DAY_NAMES[key].slice(0, 3)}
-                  <span className="hidden sm:inline">{DAY_NAMES[key].slice(3)}</span>
-                  <span className="block font-mono text-[11px] font-normal text-ink2">
+                  <span className="block font-display text-[19px] leading-tight font-bold tracking-[-0.02em] text-ink">
+                    {DAY_NAMES[key].slice(0, 3)}
+                    <span className="hidden sm:inline">{DAY_NAMES[key].slice(3)}</span>
+                  </span>
+                  <span className="block text-[12px] tabular-nums text-ink2">
                     {Number(date.slice(8))}{' '}
                     {new Date(`${date}T00:00:00Z`).toLocaleDateString('en-IN', {
                       month: 'short',
@@ -142,8 +140,8 @@ export function MessGrid({
                     })}
                   </span>
                   {isToday && (
-                    <span className="mt-1 inline-block rounded bg-teal px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white">
-                      TODAY
+                    <span className="mt-0.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-text">
+                      Today
                     </span>
                   )}
                 </th>
@@ -153,21 +151,19 @@ export function MessGrid({
                   const hot = date === target.date && m.key === target.key;
                   const wait = toMinutes(m.start) - nowMinutes;
                   return (
-                    <td key={m.key} className="p-1.5 align-top">
+                    <td key={m.key} className={`align-top ${hot ? 'bg-mist/45' : ''}`}>
                       <div
                         id={isToday ? `meal-${m.key}` : undefined}
-                        className={`h-full min-h-[92px] rounded-xl p-3 flex flex-col gap-1.5 text-[13px] text-ink2 ${
-                          hot
-                            ? 'bg-surface ring-2 ring-teal shadow-[0_10px_24px_-16px_var(--shadow)]'
-                            : state === 'over'
-                              ? 'opacity-55'
-                              : ''
-                        }`}
+                        className={`h-full min-h-[88px] px-3 py-3.5 flex flex-col gap-1.5 text-[13.5px] text-ink2 ${state === 'over' ? 'opacity-50' : ''}`}
                       >
                         {hot && (
                           <span
-                            className={`self-start inline-flex items-center h-6 px-2 rounded-md text-[11.5px] font-semibold ${state === 'now' ? 'bg-teal text-white' : 'bg-marigold-soft text-marigold-text'}`}
+                            className={`inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] ${state === 'now' ? 'text-teal-text' : 'text-marigold-text'}`}
                           >
+                            <span
+                              aria-hidden="true"
+                              className={`w-1.5 h-1.5 rounded-full ${state === 'now' ? 'bg-teal animate-pulse' : 'bg-marigold'}`}
+                            />
                             {state === 'now'
                               ? `Serving now · till ${formatClock(toMinutes(m.end))}`
                               : !isToday
@@ -197,15 +193,15 @@ export function MessGrid({
             );
           })}
           {anyExtras && (
-            <tr className="border-t border-line bg-sunk/60">
+            <tr className="border-t border-ink/60">
               <th
                 scope="row"
-                className="sticky left-0 z-10 bg-sunk p-3 align-top text-[12px] font-semibold text-ink2"
+                className="sticky left-0 z-10 bg-bg py-3 pr-3 align-top text-left text-[12px] font-semibold uppercase tracking-[0.12em] text-ink2"
               >
                 Every day
               </th>
               {mess.meals.map((m) => (
-                <td key={m.key} className="p-3 align-top text-[12.5px] leading-snug text-ink2">
+                <td key={m.key} className="px-3 py-3 align-top text-[13px] leading-snug text-ink2">
                   {m.extras || '—'}
                 </td>
               ))}

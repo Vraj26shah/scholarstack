@@ -108,7 +108,7 @@ export default function MessTool() {
         )}
 
         {!slug && list.data && (
-          <div className="grid gap-3 sm:grid-cols-2 max-w-[760px] pt-2">
+          <div className="grid gap-6 sm:grid-cols-2 max-w-[760px] pt-2">
             {(
               [
                 ['Hosteller?', "Pick your hostel's mess: breakfast, lunch, high tea and dinner, all week."],
@@ -118,8 +118,8 @@ export default function MessTool() {
                 ],
               ] as const
             ).map(([t, body]) => (
-              <div key={t} className="rounded-[18px] bg-card p-4 shadow-[0_0_0_1px_var(--line)]">
-                <p className="m-0 text-[15px] font-bold text-ink">{t}</p>
+              <div key={t} className="border-t-2 border-ink pt-3">
+                <p className="m-0 font-display text-[20px] font-bold text-ink">{t}</p>
                 <p className="m-0 mt-1 text-[14px] leading-relaxed text-ink2">{body}</p>
               </div>
             ))}

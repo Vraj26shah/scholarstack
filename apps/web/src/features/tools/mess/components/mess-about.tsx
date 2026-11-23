@@ -22,16 +22,13 @@ export function MessAbout({ mess, onReport }: { mess: MessDto; onReport: () => v
       </div>
 
       {(mess.prices || canOrder) && (
-        <p className="m-0 flex flex-wrap items-center gap-2">
+        <p className="m-0 flex flex-wrap items-center gap-x-5 gap-y-2">
           {mess.prices
             .split('·')
             .map((p) => p.trim())
             .filter(Boolean)
             .map((p) => (
-              <span
-                key={p}
-                className="inline-flex items-center h-9 rounded-full bg-marigold-soft px-4 text-[15px] font-bold text-marigold-text"
-              >
+              <span key={p} className="text-[17px] font-semibold text-ink">
                 {p}
               </span>
             ))}

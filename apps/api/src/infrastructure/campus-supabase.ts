@@ -1,6 +1,14 @@
-import { type MessInput, type MessReportStatus, ReminderPrefs } from '@ss/contracts';
+import {
+  type MessInput,
+  type MessOrderStatus,
+  type MessReportStatus,
+  OPEN_MESS_ORDER,
+  ReminderPrefs,
+} from '@ss/contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
+  MessOrderRecord,
+  MessOrderRepository,
   MessRecord,
   MessReportRecord,
   MessReportRepository,
@@ -23,6 +31,8 @@ const toMess = (r: Row): MessRecord => ({
   phone: (r.phone as string) ?? '',
   orderNote: (r.order_note as string) ?? '',
   order: (r.order_menu as MessRecord['order']) ?? [],
+  ownerEmails: (r.owner_emails as string[]) ?? [],
+  ordersOpen: !!r.orders_open,
   meals: r.meals as MessRecord['meals'],
   weeks: r.weeks as MessRecord['weeks'],
   cycleStart: String(r.cycle_start).slice(0, 10),
@@ -57,6 +67,8 @@ export class SupabaseMesses implements MessRepository {
               phone: m.phone,
               order_note: m.orderNote,
               order_menu: m.order,
+              owner_emails: m.ownerEmails,
+              orders_open: m.ordersOpen,
               meals: m.meals,
               weeks: m.weeks,
               cycle_start: m.cycleStart,
@@ -209,5 +221,123 @@ export class SupabasePush implements PushRepository {
   }
   async pruneSent(beforeDay: string) {
     must(await this.db.from('push_sent').delete().lt('day', beforeDay));
+  }
+}
+
+const ORDER_COLS =
+  'id, code, mess_slug, user_id, email, lines, total, mode, address, name, phone, note, status, owner_note, ip_hash, created_at, updated_at';
+
+const toOrder = (r: Row): MessOrderRecord => ({
+  id: r.id as string,
+  code: r.code as string,
+  messSlug: r.mess_slug as string,
+  userId: r.user_id as string,
+  email: (r.email as string) ?? '',
+  lines: (r.lines as MessOrderRecord['lines']) ?? [],
+  total: Number(r.total),
+  mode: r.mode as MessOrderRecord['mode'],
+  address: (r.address as string) ?? '',
+  name: (r.name as string) ?? '',
+  phone: (r.phone as string) ?? '',
+  note: (r.note as string) ?? '',
+  status: r.status as MessOrderStatus,
+  ownerNote: (r.owner_note as string) ?? '',
+  ipHash: (r.ip_hash as string) ?? '',
+  createdAt: new Date(r.created_at as string),
+  updatedAt: new Date(r.updated_at as string),
+});
+
+const count = (res: { count: number | null; error: { message: string } | null }) => {
+  if (res.error) throw new Error(`Supabase: ${res.error.message.slice(0, 300)}`);
+  return res.count ?? 0;
+};
+
+export class SupabaseMessOrders implements MessOrderRepository {
+  constructor(private readonly db: SupabaseClient) {}
+  async add(o: Omit<MessOrderRecord, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'ownerNote'>) {
+    return toOrder(
+      must(
+        await this.db
+          .from('mess_orders')
+          .insert({
+            code: o.code,
+            mess_slug: o.messSlug,
+            user_id: o.userId,
+            email: o.email,
+            lines: o.lines,
+            total: o.total,
+            mode: o.mode,
+            address: o.address,
+            name: o.name,
+            phone: o.phone,
+            note: o.note,
+            ip_hash: o.ipHash,
+          })
+          .select(ORDER_COLS)
+          .single(),
+      ) as Row,
+    );
+  }
+  async find(id: string) {
+    if (!isUuid(id)) return null;
+    const row = must(
+      await this.db.from('mess_orders').select(ORDER_COLS).eq('id', id).maybeSingle(),
+    ) as Row | null;
+    return row ? toOrder(row) : null;
+  }
+  async listForUser(userId: string, limit: number) {
+    return (
+      must(
+        await this.db
+          .from('mess_orders')
+          .select(ORDER_COLS)
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(limit),
+      ) as Row[]
+    ).map(toOrder);
+  }
+  async listForMess(slug: string, since: Date, limit: number) {
+    return (
+      must(
+        await this.db
+          .from('mess_orders')
+          .select(ORDER_COLS)
+          .eq('mess_slug', slug)
+          .or(`status.in.(${OPEN_MESS_ORDER.join(',')}),created_at.gte.${since.toISOString()}`)
+          .order('created_at', { ascending: false })
+          .limit(limit),
+      ) as Row[]
+    ).map(toOrder);
+  }
+  async setStatus(id: string, status: MessOrderStatus, ownerNote: string) {
+    if (!isUuid(id)) return null;
+    const rows = must(
+      await this.db
+        .from('mess_orders')
+        .update({ status, owner_note: ownerNote, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select(ORDER_COLS),
+    ) as Row[];
+    return rows[0] ? toOrder(rows[0]) : null;
+  }
+  async countSince(by: { userId?: string; ipHash?: string; messSlug?: string }, since: Date) {
+    let q = this.db
+      .from('mess_orders')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', since.toISOString());
+    if (by.userId) q = q.eq('user_id', by.userId);
+    if (by.ipHash) q = q.eq('ip_hash', by.ipHash);
+    if (by.messSlug) q = q.eq('mess_slug', by.messSlug);
+    return count(await q);
+  }
+  async countOpenForUser(userId: string) {
+    return count(
+      await this.db
+        .from('mess_orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .in('status', [...OPEN_MESS_ORDER]),
+    );
   }
 }

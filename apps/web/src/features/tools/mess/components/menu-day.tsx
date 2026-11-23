@@ -39,10 +39,10 @@ export function DayStrip({
             aria-selected={on}
             aria-label={`${DAY_NAMES[key]}${isToday ? ', today' : ''}`}
             onClick={() => onChange(d)}
-            className={`flex flex-col items-center justify-center h-14 rounded-2xl text-[13px] font-semibold ${on ? 'bg-brand text-white' : isToday ? 'bg-mist/60 text-ink' : 'text-ink2 hover:text-ink hover:bg-sunk'}`}
+            className={`flex flex-col items-center justify-center h-14 rounded-xl text-[13px] font-semibold ${on ? 'bg-ink text-bg' : isToday ? 'text-teal-text shadow-[inset_0_-2px_0_var(--teal)]' : 'text-ink2 hover:text-ink'}`}
           >
             <span>{DAY_NAMES[key].slice(0, 3)}</span>
-            <span className={`text-[12px] font-normal ${on ? 'text-on-brand2' : ''}`}>
+            <span className={`text-[12px] font-normal ${on ? 'opacity-75' : ''}`}>
               {isToday ? 'Today' : Number(d.slice(8))}
             </span>
           </button>
@@ -65,9 +65,9 @@ function mealStatus(
 }
 
 const TONE = {
-  now: 'bg-mist text-on-mist',
-  next: 'bg-marigold-soft text-marigold-text',
-  past: 'bg-sunk text-ink2',
+  now: 'text-teal-text',
+  next: 'text-marigold-text',
+  past: 'text-ink2',
 };
 
 /** Every meal of one day: time, what's served, what comes with it. */
@@ -97,7 +97,7 @@ export function MenuDay({
           {label || `Week ${week + 1}`} of a {mess.weeks.length}-week menu
         </p>
       )}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-x-10 gap-y-6 sm:grid-cols-2">
         {mess.meals.map((meal) => {
           const dishes = dishesOn(mess, date, meal.key);
           const start = toMinutes(meal.start);
@@ -110,10 +110,13 @@ export function MenuDay({
               key={meal.key}
               id={`meal-${meal.key}`}
               aria-labelledby={`meal-${meal.key}-h`}
-              className={`scroll-mt-24 rounded-[18px] bg-card p-5 flex flex-col gap-3 shadow-[0_18px_34px_-26px_var(--shadow),0_0_0_1px_var(--line)] ${focus === meal.key ? 'ring-2 ring-teal' : ''} ${status?.tone === 'past' ? 'opacity-70' : ''} ${firstOpen === meal.key ? 'order-first sm:order-none' : ''}`}
+              className={`scroll-mt-24 border-t-2 pt-3 flex flex-col gap-2.5 ${status?.tone === 'now' || focus === meal.key ? 'border-teal' : 'border-ink'} ${status?.tone === 'past' ? 'opacity-55' : ''} ${firstOpen === meal.key ? 'order-first sm:order-none' : ''}`}
             >
               <header className="flex flex-wrap items-center justify-between gap-2">
-                <h3 id={`meal-${meal.key}-h`} className="m-0 text-[20px] font-bold text-ink">
+                <h3
+                  id={`meal-${meal.key}-h`}
+                  className="m-0 font-display text-[24px] leading-tight font-bold tracking-[-0.02em] text-ink"
+                >
                   {MEAL_NAMES[meal.key]}
                 </h3>
                 <span className="flex items-center gap-1 text-[14px] text-ink2 tabular-nums">
@@ -123,13 +126,13 @@ export function MenuDay({
               </header>
               {status && (
                 <span
-                  className={`self-start inline-flex items-center h-6 px-2.5 rounded-md text-[12px] font-semibold ${TONE[status.tone]}`}
+                  className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${TONE[status.tone]}`}
                 >
                   {status.text}
                 </span>
               )}
               {dishes.length ? (
-                <ul className="m-0 pl-5 flex flex-col gap-1.5 text-[15px] leading-snug text-ink marker:text-line">
+                <ul className="m-0 p-0 list-none flex flex-col gap-1.5 text-[15px] leading-snug text-ink">
                   {dishes.map((d) => (
                     <li key={d.name}>
                       {d.unsure ? (

@@ -17,7 +17,8 @@ import { ShelfPage } from '../features/shelf/shelf-page';
 import { setMonitoringUser, track, trackPageView } from '../lib/analytics';
 import { ApiError } from '../lib/api';
 import { authGateway } from '../lib/auth';
-import { STUDENT_HOME, decidesLanding, isPhone, jumpTo, landing } from '../lib/landing';
+import { env } from '../lib/env';
+import { decidesLanding, homeFor, isPhone, jumpTo, landing } from '../lib/landing';
 import { recordVisit } from '../lib/nav-history';
 import { usePageActivity } from '../lib/page-views';
 import { persistQueries, restoreQueries } from '../lib/persist-queries';
@@ -53,6 +54,9 @@ const ContributePage = lazy(
   loadScreen(() =>
     import('../features/contribute/contribute-page').then((m) => ({ default: m.ContributePage })),
   ),
+);
+const OrdersPage = lazy(
+  loadScreen(() => import('../features/orders/orders-page').then((m) => ({ default: m.OrdersPage }))),
 );
 const HelpPage = lazy(
   loadScreen(() => import('../features/help/help-page').then((m) => ({ default: m.HelpPage }))),
@@ -278,16 +282,14 @@ function RootAuthCodeHandler() {
         await claim();
         track('login');
         const target =
-          localPath(sessionStorage.getItem('auth_next')) ||
-          (useSession.getState().me?.isAdmin ? '/admin' : STUDENT_HOME);
+          localPath(sessionStorage.getItem('auth_next')) || homeFor(useSession.getState().me, env.domain);
         sessionStorage.removeItem('auth_next');
         if (active) navigate(target, { replace: true });
       } catch (error) {
         if (!active) return;
         if (error instanceof ApiError && error.code === 'SESSION_REPLACED') {
           const target =
-            localPath(sessionStorage.getItem('auth_next')) ||
-            (useSession.getState().me?.isAdmin ? '/admin' : STUDENT_HOME);
+            localPath(sessionStorage.getItem('auth_next')) || homeFor(useSession.getState().me, env.domain);
           sessionStorage.removeItem('auth_next');
           navigate(target, { replace: true });
           return;
@@ -412,6 +414,7 @@ function Shell() {
             <Route path="/read/:fileId" element={guard(<ReaderPage />)} />
             <Route path="/account" element={guard(<AccountPage />)} />
             <Route path="/admin" element={guard(<AdminPage />)} />
+            <Route path="/orders" element={guard(<OrdersPage />)} />
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/contact" element={<ContactPage />} />

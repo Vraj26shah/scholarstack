@@ -1,6 +1,9 @@
 import {
+  MessOrderStatusBody,
+  MessOrdersOpenBody,
   MessReportBody,
   MessReportStatusBody,
+  PlaceMessOrderBody,
   PushEndpointBody,
   PushPrefsBody,
   PushRenewBody,
@@ -52,6 +55,61 @@ campusRoutes.post('/mess/reports', async (c) => {
   const body = MessReportBody.parse(await c.req.json());
   await c.get('container').mess.report(body, ipHash, await callerIsAdmin(c));
   return c.json({ ok: true });
+});
+
+// ── Orders: students order from a restaurant; its owner runs them from /orders ──
+
+/** Ordering needs a signed-in student (a real, verified college address) on their live device. */
+campusRoutes.post('/mess/:slug/orders', async (c) => {
+  const { principal } = await requireLive(c);
+  const { ipHash } = await requestMeta(c);
+  await throttle(c, 'mess-order', principal.userId);
+  const body = PlaceMessOrderBody.parse(await c.req.json());
+  const k = c.get('container');
+  return c.json(
+    await k.orders.place(principal, await k.account.isAdmin(principal), c.req.param('slug'), body, ipHash),
+  );
+});
+
+campusRoutes.get('/me/mess-orders', async (c) => {
+  const { principal } = await requireLive(c);
+  return c.json(await c.get('container').orders.mine(principal));
+});
+
+campusRoutes.post('/me/mess-orders/:id/cancel', async (c) => {
+  const { principal } = await requireLive(c);
+  return c.json(await c.get('container').orders.cancel(principal, c.req.param('id')));
+});
+
+/** The restaurants the caller runs (admins: all of them). Empty for everyone else. */
+campusRoutes.get('/owner/messes', async (c) => {
+  const { principal } = await requireLive(c);
+  const k = c.get('container');
+  return c.json(await k.orders.owned(principal, await k.account.isAdmin(principal)));
+});
+
+campusRoutes.get('/owner/messes/:slug/orders', async (c) => {
+  const { principal } = await requireLive(c);
+  const k = c.get('container');
+  return c.json(await k.orders.board(principal, await k.account.isAdmin(principal), c.req.param('slug')));
+});
+
+campusRoutes.put('/owner/messes/:slug/open', async (c) => {
+  const { principal } = await requireLive(c);
+  const { open } = MessOrdersOpenBody.parse(await c.req.json());
+  const k = c.get('container');
+  return c.json(
+    await k.orders.setOpen(principal, await k.account.isAdmin(principal), c.req.param('slug'), open),
+  );
+});
+
+campusRoutes.put('/owner/orders/:id', async (c) => {
+  const { principal } = await requireLive(c);
+  const { status, note } = MessOrderStatusBody.parse(await c.req.json());
+  const k = c.get('container');
+  return c.json(
+    await k.orders.setStatus(principal, await k.account.isAdmin(principal), c.req.param('id'), status, note),
+  );
 });
 
 // ── Reminders (one device = one push address) ──
@@ -124,19 +182,24 @@ campusRoutes.get('/admin/mess', async (c) => {
 
 campusRoutes.post('/admin/mess', async (c) => {
   await requireAdmin(c);
-  return c.json(await c.get('container').mess.create(SaveMessBody.parse(await c.req.json())));
+  const saved = await c.get('container').mess.create(SaveMessBody.parse(await c.req.json()));
+  c.get('container').orders.forgetOwners();
+  return c.json(saved);
 });
 
 campusRoutes.put('/admin/mess/:slug', async (c) => {
   await requireAdmin(c);
-  return c.json(
-    await c.get('container').mess.update(c.req.param('slug'), SaveMessBody.parse(await c.req.json())),
-  );
+  const saved = await c
+    .get('container')
+    .mess.update(c.req.param('slug'), SaveMessBody.parse(await c.req.json()));
+  c.get('container').orders.forgetOwners();
+  return c.json(saved);
 });
 
 campusRoutes.delete('/admin/mess/:slug', async (c) => {
   await requireAdmin(c);
   await c.get('container').mess.remove(c.req.param('slug'));
+  c.get('container').orders.forgetOwners();
   return c.json({ ok: true });
 });
 

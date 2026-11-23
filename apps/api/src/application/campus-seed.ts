@@ -21,11 +21,13 @@ export const SEED_MESSES: MessInput[] = [
     kind: 'hostel',
     place: 'VIT Bhopal hostels',
     source: 'notice',
-    note: 'Typed from the notice-board photo (week 1, from 12 Oct 2026, veg & non-veg). High tea and dinner times are our best guess until the notice gives them.',
+    note: 'Typed from the notice-board photos: week 1 from 12 Oct 2026, week 2 from 19 Oct, then they alternate (veg & non-veg).',
     prices: '',
     phone: '',
     orderNote: '',
     order: [],
+    ownerEmails: [],
+    ordersOpen: false,
     cycleStart: '2026-10-12',
     published: false,
     meals: [
@@ -36,11 +38,11 @@ export const SEED_MESSES: MessInput[] = [
         end: '14:30',
         extras: 'Roti (plain & butter) · Plain rice (north & south) · Pickle',
       },
-      { key: 'snacks', start: '16:30', end: '17:30', extras: 'Tea, coffee, milk' },
+      { key: 'snacks', start: '17:00', end: '18:30', extras: 'Tea, coffee, milk' },
       {
         key: 'dinner',
-        start: '19:30',
-        end: '21:30',
+        start: '19:15',
+        end: '21:15',
         extras: 'Roti (plain & butter) · Plain rice (north & south) · Pickle',
       },
     ],
@@ -53,7 +55,7 @@ export const SEED_MESSES: MessInput[] = [
               'Idly & masala vada; Moong dal sambar; Peanut chutney; Mix fruits; 1 boiled egg (non-veg) / steamed sprouts salad (veg)',
             ),
             lunch: dishes(
-              'Dal fry; Aloo gobi sukhi (dry); Mixed vegetable sambar; Beans peas stir fry; Tomato dhaniya shorba?; Curd; Kheer?',
+              'Dal fry; Aloo gobi sukhi sabzi; Mixed vegetable sambar; Beans peas stir fry; Tomato dhaniya shorba; Curd; Kheer',
             ),
             snacks: dishes('Kala chana sundal'),
             dinner: dishes(
@@ -65,66 +67,157 @@ export const SEED_MESSES: MessInput[] = [
               'Aloo paratha; Curd & pickle; Banana; 1 boiled egg (non-veg) / mixed vegetables & sprouts salad (veg)',
             ),
             lunch: dishes(
-              'Rajma masala; Tindora fry?; Mixed veg curry?; Stir-fried vegetables?; Ajwain rasam?; Butter milk',
+              'Rajma masala; Tindli fry; Mixed veg imli tikha curry; Stir-fry mix vegetables; Ajwain rasam; Butter milk',
             ),
-            snacks: dishes('Punugulu + podi & allam (ginger) chutney?'),
+            snacks: dishes('Punugulu + podi & allam (ginger) chutney'),
             dinner: dishes('Veg pulao; Veg jalfrezi; Dal makhani; Mix vegetable salad; Rasam; Curd rice'),
           },
           wed: {
             breakfast: dishes(
-              'Sabudana khichdi?; Set dosa & vada curry?; Coconut chutney; Mix fruits; 1 boiled egg (non-veg) / steamed green gram sprouts (veg)',
+              'Sabudana khichdi; Set dosa & vada curry; Coconut chutney; Mix fruits; 1 boiled egg (non-veg) / steamed green gram sprouts (veg)',
             ),
             lunch: dishes(
-              'Gujarati dal; Veg kofta curry (semi gravy); Drumstick sambar; Cabbage peas carrot sauté; Garlic pepper rasam; Curd; Kesari?',
+              'Gujarati dal; Veg kofta curry (semi gravy); Drumstick sambar; Cabbage peas carrot sauté; Garlic pepper rasam; Curd; Kesari',
             ),
-            snacks: dishes('Pani puri with aloo, kala chana, onion'),
+            snacks: dishes('Pani puri with aloo, kala chana, onion filling'),
             dinner: dishes(
-              'Paneer chatpata (veg) / chicken korma (non-veg); Moong masoor dal (North); Bengali salad?; Rasam; Curd rice',
+              'Paneer chatpata (veg) / chicken kosha (non-veg); Moong masoor dal (North); Bengali salad; Rasam; Curd rice',
             ),
           },
           thu: {
             breakfast: dishes(
-              'Pav bhaji & fried chillies; Mix fruits; 2 boiled eggs (non-veg) / green gram sprouts chaat (veg)',
+              'Pav bhaji & fried chillies; Mix fruits; 1 boiled egg (non-veg) / peas & green gram sprouts chaat (veg)',
             ),
             lunch: dishes(
-              'Jeera rice (+ plain rice south); Cholar dal; Aloo posto; Butter beans curry?; Carrot & beans poriyal (Tamil Nadu); Chenna saag?; Chaas',
+              'Jeera rice & plain rice (south); Cholar dal; Aloo posto; Carrot & beans / mutter poriyal (Tamil Nadu); Chenna saag?; Chaas',
             ),
-            snacks: dishes('Mini veg samosa, green & sweet chutney'),
+            snacks: dishes('Mix veg samosa, green chutney / imli sweet chutney'),
             dinner: dishes(
               'Palak paneer (veg) / anda curry (non-veg); Mix vegetable salad; Rasam; Curd rice',
             ),
           },
           fri: {
             breakfast: dishes(
-              'Vegetable poha; Jalebi?; Single fruit; Egg bhurji (non-veg) / paneer bhurji (veg)',
+              'Vegetable poha; Jalebi; Single fruit; Egg bhurji (non-veg) / paneer bhurji (veg)',
             ),
             lunch: dishes(
-              'Rajasthani kadhi; Bhindi pachadi?; Mixed vegetable tooran?; Dal sambar; Seasonal mixed vegetable sabji; Chettinad rasam; Curd; Gulab jamun?',
+              'Rajasthani kadhi; Baingan bharta; Mixed vegetable toor / masoor dal sambar; Seasonal mixed vegetables sauté; Chettinad rasam; Curd; Gulab jamun',
             ),
-            snacks: dishes('Cheese & vegetable sandwich?'),
+            snacks: dishes('Chana & vegetable sandwich'),
             dinner: dishes(
-              'Paneer tikka masala (veg) / chicken tikka masala (non-veg); Dal fry; Salad; Rasam; Curd rice',
+              'Paneer tikka masala (veg) / chicken tikka masala (non-veg); Dal fry; Bengali salad; Rasam; Curd rice',
             ),
           },
           sat: {
             breakfast: dishes(
-              'Wheat poori; Channa masala; Chilli & lemon wedges; Banana; 1 boiled egg (non-veg) / green gram sprouts (veg)',
+              'Wheat poori; Chana masala; Chilli & lemon wedges; Banana; 1 boiled egg (non-veg) / steamed green gram sprouts (veg)',
             ),
             lunch: dishes(
-              'Lasooni dal; Jeera aloo dry; Tomato rice (Karnataka); Papad?; Bellulli saaru (garlic rasam); Butter milk',
+              'Lasooni dal; Jeera aloo dry; Tomato rice (Karnataka); Papad; Bellulli saaru (garlic rasam); Butter milk',
             ),
             snacks: dishes('Dal kachori + green chutney'),
-            dinner: dishes('Aloo fried (Indo-Chinese)?; Dal tadka; Mix vegetable salad; Rasam; Curd rice'),
+            dinner: dishes(
+              'Aloo chilli dry (Indo-Chinese); Dal tadka; Mix vegetable salad; Rasam; Curd rice',
+            ),
           },
           sun: {
             breakfast: dishes(
-              'Dosa, masala separately; Sambar; Tomato garlic chutney?; Banana; 1 boiled egg (non-veg) / mixed sprouts chaat (veg)',
+              'Dosa, masala served separately; Sambar; Tomato garlic relish; Banana; 1 boiled egg (non-veg) / mixed sprouts chaat (veg)',
             ),
             lunch: dishes(
-              'Veg Hyderabadi dum biryani (veg) / chicken Hyderabadi dum biryani (non-veg); Dal Kolhapuri?; Chole paneer (Punjabi)?; Mix raita; Veg salan (long mirchi)?; Pineapple kesari?',
+              'Veg Hyderabadi dum biryani (veg) / chicken Hyderabadi dum biryani (non-veg); Dal Kolhapuri; Chole paneer (Punjabi); Mix raita; Veg salan (long mirchi / baingan); Pineapple halwa',
             ),
             snacks: dishes('Vada pav, green chutney'),
-            dinner: dishes('Main dish not readable on the notice?; Dal Kolhapuri?; Salad; Rasam; Curd rice'),
+            dinner: dishes('Soya chunk masala (pan-India); Dal Kolhapuri; Bengali salad; Rasam; Curd rice'),
+          },
+        },
+      },
+      {
+        label: 'Week 2',
+        days: {
+          mon: {
+            breakfast: dishes(
+              'Vegetable idli & ulundu vada; Sambar; Tomato onion mint chutney; Mix fruits; 1 boiled egg (non-veg) / steamed sprouts salad (veg)',
+            ),
+            lunch: dishes(
+              'Palak dal; Aloo bhujia?; Bisibelebath & boondi; Beans, carrot / peas stir fry; Pepper rasam; Curd; Fruit kesari',
+            ),
+            snacks: dishes('Sprouts chaat'),
+            dinner: dishes(
+              'Toor dal; Veg Kolhapuri (veg) / egg Kolhapuri (non-veg); Mix vegetable salad; Rasam; Curd rice',
+            ),
+          },
+          tue: {
+            breakfast: dishes(
+              'Poha, sev, jeeravan; Jalebi; Banana; 1 boiled egg (non-veg) / mixed vegetables & sprouts salad (veg)',
+            ),
+            lunch: dishes(
+              'Kashmiri rajma; Matki usal; Drumstick imli tikha curry; Cabbage peas sauté; Lemon rasam; Butter milk',
+            ),
+            snacks: dishes('Vegetable cutlet with chutney'),
+            dinner: dishes(
+              'Jeera rice & plain rice; Dal fry; Banana bhindi dry?; Cucumber salad; Rasam; Curd rice',
+            ),
+          },
+          wed: {
+            breakfast: dishes(
+              'Misal pav; Mix fruits; 1 boiled egg (non-veg) / steamed green gram sprouts (veg)',
+            ),
+            lunch: dishes(
+              'Veg dalma; Aloo kosa?; Lauki sambar; Beetroot grated sauté; Pineapple rasam; Curd; Kheer',
+            ),
+            snacks: dishes('Dahi vada with vegetable / boondi toppings'),
+            dinner: dishes(
+              'Dal tadka; Paneer lababdar (veg) / pepper chicken (non-veg); Mix vegetable salad; Rasam; Curd rice',
+            ),
+          },
+          thu: {
+            breakfast: dishes(
+              'Methi paratha; Dahi; Pickle; Banana; 1 boiled egg (non-veg) / peas & green gram sprouts chaat (veg)',
+            ),
+            lunch: dishes(
+              'Panchmel dal; Mixed vegetable kadai dry; Brinjal imli tikha curry; Aloo gobi dry sabzi; Tomato dhaniya shorba; Chaas',
+            ),
+            snacks: dishes('Bhel puri'),
+            dinner: dishes(
+              'Bhaja muger dal?; Chole masala (veg) / egg chick masala (non-veg)?; Bengali salad; Rasam; Curd rice',
+            ),
+          },
+          fri: {
+            breakfast: dishes(
+              'Podi uttapam; Sambar; Lasuni chutney; Single fruit; Egg bhurji (non-veg) / paneer bhurji (veg)',
+            ),
+            lunch: dishes(
+              'Amritsari chole masala; Papad / fryums; Pappu (thick dal); Mix vegetable fry; Chettinad rasam; Curd; Gulab jamun',
+            ),
+            snacks: dishes('Mirchi bhaji with coconut chutney?'),
+            dinner: dishes(
+              'Dal tadka (North India); Mutter paneer masala (veg) / chicken makhani (non-veg); Mix vegetable salad; Rasam; Curd rice',
+            ),
+          },
+          sat: {
+            breakfast: dishes(
+              'Bhatura?; Chole masala; Lemon & chilli; Mix fruits; 1 boiled egg (non-veg) / steamed green gram sprouts (veg)',
+            ),
+            lunch: dishes(
+              'Soya chunk chukka masala?; Amti dal; Garlic potato roast; Pudina rice; Garlic rasam; Butter milk',
+            ),
+            snacks: dishes('Corn club sandwich, green chutney (Indo-Western)'),
+            dinner: dishes(
+              'Veg fried rice & plain rice; Veg Manchurian (semi-gravy); Dal fry (North India); Bengali salad; Rasam; Curd rice',
+            ),
+          },
+          sun: {
+            breakfast: dishes(
+              'Dosa, masala served separately; Sambar; Coconut chutney; Banana; 1 boiled egg (non-veg) / mixed sprouts chaat (veg)',
+            ),
+            lunch: dishes(
+              'Veg Lucknowi biryani (veg) / chicken Lucknowi biryani (non-veg); Paneer pasanda (Lucknowi)?; Masala dal; Onion / cucumber raita; Veg salan (long mirchi / baingan); Double ka meetha',
+            ),
+            snacks: dishes('Chinese veg noodles (Indo-Chinese)'),
+            dinner: dishes(
+              'Ghee rice & plain rice; Mix dal; Aloo shimla mirch (North India); Mix vegetable salad; Rasam; Curd rice',
+            ),
           },
         },
       },
@@ -150,6 +243,8 @@ export const SEED_MESSES: MessInput[] = [
         ],
       },
     ],
+    ownerEmails: [],
+    ordersOpen: false,
     cycleStart: '2026-11-23',
     published: false,
     meals: [

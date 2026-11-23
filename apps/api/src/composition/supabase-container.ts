@@ -1,7 +1,12 @@
 import type { ConversionQueue, ObjectStore, RateLimiter, UploadStore } from '../domain/ports';
 import type { Container } from '../http/container';
 import { SupabaseJwtVerifier } from '../infrastructure/auth';
-import { SupabaseMessReports, SupabaseMesses, SupabasePush } from '../infrastructure/campus-supabase';
+import {
+  SupabaseMessOrders,
+  SupabaseMessReports,
+  SupabaseMesses,
+  SupabasePush,
+} from '../infrastructure/campus-supabase';
 import { MemoryRateLimiter } from '../infrastructure/cloudflare';
 import {
   DeviceCookie,
@@ -95,6 +100,7 @@ export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): C
       books: new SupabaseCourseBooks(db),
       messes: new SupabaseMesses(db),
       messReports: new SupabaseMessReports(db),
+      messOrders: new SupabaseMessOrders(db),
       push: new SupabasePush(db),
       // Without keys, reminders stay off (the site says so) and nothing is sent.
       pushSender:
@@ -140,7 +146,7 @@ export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): C
       env.SUPABASE_URL,
       env.SUPABASE_LEGACY_JWT_SECRET ?? '',
       config.allowedDomain,
-      (email) => services.admins.isAdmin(email),
+      (email) => services.outsideAllowed(email),
     ),
     deviceCookie: new DeviceCookie(env.DEVICE_COOKIE_SECRET),
     secureCookies: env.APP_ENV !== 'development',

@@ -102,6 +102,8 @@ const newMess = (): MessInput => ({
   phone: '',
   orderNote: '',
   order: [],
+  ownerEmails: [],
+  ordersOpen: false,
   meals: DEFAULT_MEALS.hostel,
   weeks: [emptyWeek('Week 1')],
   cycleStart: campusClock(new Date()).date,
@@ -219,6 +221,7 @@ function MessEditor({
   const [text, setText] = useState<Record<string, string>>({});
   const [done, setDone] = useState<string | null>(null);
   const [orderText, setOrderText] = useState(() => orderToText(initial.order));
+  const [ownersText, setOwnersText] = useState(() => initial.ownerEmails.join(', '));
   const orderBad = orderFromText(orderText).bad;
   const set = (patch: Partial<MessInput>) => {
     setDone(null);
@@ -360,6 +363,33 @@ function MessEditor({
                 placeholder="+91 85179 03810"
               />
             </Field>
+            <Field label="Owner's sign-in email(s), comma separated (they get the Orders page)">
+              <input
+                className={input}
+                value={ownersText}
+                inputMode="email"
+                onChange={(e) => {
+                  setOwnersText(e.target.value);
+                  set({
+                    ownerEmails: e.target.value
+                      .split(/[,\s]+/)
+                      .map((x) => x.trim().toLowerCase())
+                      .filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))
+                      .slice(0, 5),
+                  });
+                }}
+                placeholder="owner@gmail.com"
+              />
+            </Field>
+            <label className="flex items-center gap-2 self-end h-11 text-[15px] font-semibold">
+              <input
+                type="checkbox"
+                className="w-5 h-5 accent-[var(--teal)]"
+                checked={form.ordersOpen}
+                onChange={(e) => set({ ordersOpen: e.target.checked })}
+              />
+              Taking orders on the site (the owner can switch this too)
+            </label>
             <Field label="Delivery and parcels">
               <input
                 className={input}

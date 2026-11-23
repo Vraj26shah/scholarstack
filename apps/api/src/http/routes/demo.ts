@@ -20,7 +20,7 @@ demoRoutes.post('/dev/login', async (c) => {
   const container = c.get('container');
   if (
     !isCollegeEmail(normalized, container.config.allowedDomain) &&
-    !(await container.admins.isAdmin(normalized))
+    !(await container.outsideAllowed(normalized))
   )
     throw fail.notCollege();
   let userId = users.get(normalized);

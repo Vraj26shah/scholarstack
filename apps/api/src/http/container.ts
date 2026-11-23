@@ -17,6 +17,7 @@ import type { DiscountReportService } from '../application/discount-report';
 import type { EarningsService } from '../application/earnings/earnings-service';
 import type { InsightsService } from '../application/insights-service';
 import type { OfferService } from '../application/offer-service';
+import type { OrderService } from '../application/order-service';
 import type { PackService } from '../application/packs';
 import type { PreviewService } from '../application/preview-service';
 import type { PriceBook } from '../application/price-book';
@@ -66,6 +67,10 @@ export interface Container {
   mess: MessService;
   /** Push reminders: meals, tomorrow's classes, a class about to start. */
   reminders: ReminderService;
+  /** Orders to restaurants for day scholars, and the owners' board. */
+  orders: OrderService;
+  /** Admins and restaurant owners may sign in from outside the college domain. */
+  outsideAllowed: (email: string) => Promise<boolean>;
   /** Daily trims of history tables (cron). */
   housekeeping: DatabaseHousekeeping;
   previews: PreviewService;

@@ -26,25 +26,28 @@ function Line({
   live?: boolean;
 }) {
   return (
-    <div className="flex items-stretch gap-3 min-w-0">
-      <span className={`w-1.5 flex-none rounded-full ${live ? 'bg-teal' : 'bg-marigold'}`} />
-      <div className="min-w-0">
-        <p className="m-0 text-[12px] font-medium text-ink2">{label}</p>
-        <p className="m-0 text-[17px] font-semibold leading-snug">
-          {MEAL_NAMES[meal.key]} <span className="text-[14px] font-normal text-ink2">· {when}</span>
-        </p>
-        <p className="m-0 text-[14px] text-ink2 [overflow-wrap:anywhere]">
-          {dishes.length
-            ? dishes.map((d, i) => (
-                <span key={d}>
-                  {i > 0 && ', '}
-                  {d}
-                  {isFavourite(d, favourites) && ' ⭐'}
-                </span>
-              ))
-            : 'Menu not in yet'}
-        </p>
-      </div>
+    <div className="flex flex-col gap-1 min-w-0">
+      <p
+        className={`m-0 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] ${live ? 'text-teal-text' : 'text-ink2'}`}
+      >
+        {live && <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-teal animate-pulse" />}
+        {label}
+      </p>
+      <p className="m-0 font-display text-[24px] leading-tight font-bold tracking-[-0.02em] text-ink">
+        {MEAL_NAMES[meal.key]}{' '}
+        <span className="font-sans text-[15px] font-normal tracking-normal text-ink2">{when}</span>
+      </p>
+      <p className="m-0 text-[15px] leading-snug text-ink2 [overflow-wrap:anywhere]">
+        {dishes.length
+          ? dishes.map((d, i) => (
+              <span key={d}>
+                {i > 0 && ', '}
+                <span className={i === 0 ? 'text-ink font-medium' : ''}>{d}</span>
+                {isFavourite(d, favourites) && ' ⭐'}
+              </span>
+            ))
+          : 'Menu not in yet'}
+      </p>
     </div>
   );
 }
@@ -81,7 +84,7 @@ export function MealNow({
   return (
     <section
       aria-label="Meals now"
-      className="print:hidden grid gap-4 sm:grid-cols-2 rounded-[18px] bg-card p-4 sm:p-5 shadow-[0_0_0_1px_var(--line)]"
+      className="print:hidden grid gap-5 sm:grid-cols-2 sm:gap-10 border-y border-line py-5"
     >
       {now ? (
         <Line
@@ -93,7 +96,7 @@ export function MealNow({
           favourites={favourites}
         />
       ) : (
-        <p className="m-0 self-center text-[15px] text-ink2">
+        <p className="m-0 self-center font-display text-[20px] text-ink2">
           {next ? 'Nothing being served right now.' : "Today's meals are over."}
         </p>
       )}

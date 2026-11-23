@@ -2,10 +2,14 @@ import type {
   AdminPushStatsDto,
   MessDto,
   MessInput,
+  MessOrderDto,
+  MessOrderStatus,
   MessReportDto,
   MessReportInput,
   MessReportStatus,
   MessSummaryDto,
+  OwnedMessDto,
+  PlaceMessOrderInput,
   PushDeviceDto,
   PushRunDto,
   PushStatusDto,
@@ -237,6 +241,19 @@ export class ApiClient {
   pushDevices = () => this.request<PushDeviceDto[]>('GET', '/push/devices');
   pushRemoveDevice = (id: string) =>
     this.request<{ ok: true }>('DELETE', `/push/devices/${encodeURIComponent(id)}`);
+  // Orders: students order from restaurants; owners run them at /orders
+  placeMessOrder = (slug: string, o: PlaceMessOrderInput) =>
+    this.request<MessOrderDto>('POST', `/mess/${encodeURIComponent(slug)}/orders`, o);
+  myMessOrders = () => this.request<MessOrderDto[]>('GET', '/me/mess-orders');
+  cancelMessOrder = (id: string) =>
+    this.request<MessOrderDto>('POST', `/me/mess-orders/${encodeURIComponent(id)}/cancel`);
+  ownedMesses = () => this.request<OwnedMessDto[]>('GET', '/owner/messes');
+  ownerOrders = (slug: string) =>
+    this.request<MessOrderDto[]>('GET', `/owner/messes/${encodeURIComponent(slug)}/orders`);
+  ownerSetOpen = (slug: string, open: boolean) =>
+    this.request<OwnedMessDto>('PUT', `/owner/messes/${encodeURIComponent(slug)}/open`, { open });
+  ownerSetOrder = (id: string, status: MessOrderStatus, note = '') =>
+    this.request<MessOrderDto>('PUT', `/owner/orders/${encodeURIComponent(id)}`, { status, note });
   adminMesses = () => this.request<MessDto[]>('GET', '/admin/mess');
   adminCreateMess = (m: MessInput) => this.request<MessDto>('POST', '/admin/mess', m);
   adminSaveMess = (slug: string, m: MessInput) =>

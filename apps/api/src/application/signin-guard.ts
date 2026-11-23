@@ -28,6 +28,8 @@ export class SignInGuard {
     private readonly strikes: SignInStrikes,
     private readonly admins: Pick<AdminAccess, 'isAdmin'>,
     private readonly config: AppConfig,
+    /** Restaurant owners sign in with their own address, like admins. */
+    private readonly owners: { isOwner(email: string): Promise<boolean> } = { isOwner: async () => false },
   ) {}
 
   async check(rawEmail: string, ipHash: string): Promise<{ ok: true; admin: boolean }> {
@@ -37,7 +39,8 @@ export class SignInGuard {
     const admin = isWellFormedEmail(email) ? await this.admins.isAdmin(email) : false;
     if (isWellFormedEmail(email) && isCollegeEmail(email, this.config.allowedDomain))
       await this.budgetLink(email, ipHash);
-    else if (admin) await this.budgetLink(email, ipHash);
+    else if (admin || (isWellFormedEmail(email) && (await this.owners.isOwner(email).catch(() => false))))
+      await this.budgetLink(email, ipHash);
     else {
       const until = await this.strikes.strike(ipHash, STRIKE_LIMIT, BLOCK_HOURS);
       if (until) throw blocked(until);

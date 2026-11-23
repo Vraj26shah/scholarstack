@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
+import { api } from '../../lib/api';
 import { useSession } from '../../lib/session';
 import { LABEL } from '../copy';
 import { StackWord, Wordmark } from './brand';
@@ -13,8 +15,31 @@ function initials(email: string, name: string | null) {
 }
 
 /** Top bar. `onDark` renders inside the Ink Blue hero panel. */
+/** Restaurant owners get an "Orders" link. Asked once per signed-in account per visit. */
+const ownerAnswer = new Map<string, boolean>();
+function useRunsRestaurant(accountId: string | null) {
+  const [owner, setOwner] = useState(() => (accountId ? (ownerAnswer.get(accountId) ?? false) : false));
+  useEffect(() => {
+    if (!accountId) return setOwner(false);
+    if (ownerAnswer.has(accountId)) return setOwner(ownerAnswer.get(accountId)!);
+    let live = true;
+    api
+      .ownedMesses()
+      .then((list) => {
+        ownerAnswer.set(accountId, list.length > 0);
+        if (live) setOwner(list.length > 0);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [accountId]);
+  return owner;
+}
+
 export function Header({ onDark = false }: { onDark?: boolean }) {
   const { status, me } = useSession();
+  const owner = useRunsRestaurant(status === 'ready' && me && !me.isAdmin ? me.id : null);
   const link = `no-underline font-medium ${onDark ? 'text-white' : 'text-ink'} hover:opacity-80`;
   return (
     <header className="mx-auto max-w-[1280px] px-4 sm:px-9 py-5 flex items-center justify-between gap-3">
@@ -44,6 +69,16 @@ export function Header({ onDark = false }: { onDark?: boolean }) {
             </NavLink>
           )}
         </span>
+        {owner && (
+          <NavLink
+            to="/orders"
+            className={`inline-flex items-center h-9 px-3 rounded-full text-[13px] font-semibold no-underline ${
+              onDark ? 'bg-white text-ink' : 'bg-ink text-bg'
+            }`}
+          >
+            Orders
+          </NavLink>
+        )}
         {me?.isAdmin && (
           <NavLink
             to="/admin"

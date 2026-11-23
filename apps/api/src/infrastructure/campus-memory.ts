@@ -1,5 +1,13 @@
-import type { MessInput, MessReportStatus, ReminderPrefs } from '@ss/contracts';
+import {
+  type MessInput,
+  type MessOrderStatus,
+  type MessReportStatus,
+  OPEN_MESS_ORDER,
+  type ReminderPrefs,
+} from '@ss/contracts';
 import type {
+  MessOrderRecord,
+  MessOrderRepository,
   MessRecord,
   MessReportRecord,
   MessReportRepository,
@@ -92,5 +100,59 @@ export class MemoryPush implements PushRepository {
   async pruneSent(beforeDay: string) {
     const keep = this.sent.filter((s) => s.day >= beforeDay);
     this.sent.splice(0, this.sent.length, ...keep);
+  }
+}
+
+const OPEN = new Set<MessOrderStatus>(OPEN_MESS_ORDER);
+
+export class MemoryMessOrders implements MessOrderRepository {
+  readonly rows: MessOrderRecord[] = [];
+  constructor(private readonly now: () => Date = () => new Date()) {}
+  async add(o: Omit<MessOrderRecord, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'ownerNote'>) {
+    const at = this.now();
+    const row: MessOrderRecord = {
+      ...structuredClone(o),
+      id: nextId('order'),
+      status: 'placed',
+      ownerNote: '',
+      createdAt: at,
+      updatedAt: at,
+    };
+    this.rows.unshift(row);
+    return structuredClone(row);
+  }
+  async find(id: string) {
+    const row = this.rows.find((r) => r.id === id);
+    return row ? structuredClone(row) : null;
+  }
+  async listForUser(userId: string, limit: number) {
+    return structuredClone(this.rows.filter((r) => r.userId === userId).slice(0, limit));
+  }
+  async listForMess(slug: string, since: Date, limit: number) {
+    return structuredClone(
+      this.rows
+        .filter((r) => r.messSlug === slug && (OPEN.has(r.status) || r.createdAt >= since))
+        .slice(0, limit),
+    );
+  }
+  async setStatus(id: string, status: MessOrderStatus, ownerNote: string) {
+    const row = this.rows.find((r) => r.id === id);
+    if (!row) return null;
+    row.status = status;
+    row.ownerNote = ownerNote;
+    row.updatedAt = this.now();
+    return structuredClone(row);
+  }
+  async countSince(by: { userId?: string; ipHash?: string; messSlug?: string }, since: Date) {
+    return this.rows.filter(
+      (r) =>
+        r.createdAt >= since &&
+        (!by.userId || r.userId === by.userId) &&
+        (!by.ipHash || r.ipHash === by.ipHash) &&
+        (!by.messSlug || r.messSlug === by.messSlug),
+    ).length;
+  }
+  async countOpenForUser(userId: string) {
+    return this.rows.filter((r) => r.userId === userId && OPEN.has(r.status)).length;
   }
 }

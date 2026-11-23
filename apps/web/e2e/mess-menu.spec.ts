@@ -52,7 +52,7 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await expect(grid.getByRole('rowheader', { name: /^Mon/ })).toBeVisible();
   await expect(grid.locator('tr[aria-current="date"]')).toHaveCount(1);
   await expect(grid.getByText('Dal fry').first()).toBeVisible();
-  await expect(grid.getByText('Kheer')).toHaveAttribute('title', /Hard to read/);
+  await expect(grid.getByText('Chenna saag')).toHaveAttribute('title', /Hard to read/);
   await shot(page, 'mess-hostel', info.project.name);
   // One day at a time.
   await page.getByRole('tab', { name: 'Day' }).click();
@@ -74,23 +74,40 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await expect(page.getByRole('table').getByRole('columnheader')).toHaveCount(3); // day, lunch, dinner
   await shot(page, 'mess-restaurant', info.project.name);
 
-  // Ordering: today's thali with what's in it, a total, then WhatsApp with the order written out.
+  // Ordering: the current thali, a bill, a confirmed number, then the restaurant's own screen.
+  await expect(page.getByText('Mess thali ₹80')).toBeVisible();
   await page.getByRole('link', { name: 'Order now' }).click();
-  await expect(page.getByRole('heading', { name: /Order from Radha Rani/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Order', exact: true })).toBeVisible();
   await page.getByRole('button', { name: /^Add .*thali/ }).click();
   await page.getByRole('button', { name: /^One more .*thali/ }).click();
-  const order = page.getByRole('complementary', { name: 'Your order' });
-  await expect(order.getByText('₹160').last()).toBeVisible();
-  await order.getByRole('button', { name: 'Send order on WhatsApp' }).click();
-  await expect(page.getByText('Where should they deliver?')).toBeVisible();
-  await order.getByLabel('Deliver to').fill('Block B, room 214');
-  const send = order.getByRole('link', { name: 'Send order on WhatsApp' });
-  await expect(send).toHaveAttribute('href', /^https:\/\/wa\.me\/918517903810\?text=.*2%20%C3%97/);
-  await expect(page.getByRole('link', { name: /Call \+91 85179 03810/ })).toHaveAttribute(
-    'href',
-    'tel:+918517903810',
-  );
+  await page.getByRole('button', { name: 'Add Butter roti' }).click();
+  const bill = page.getByRole('complementary', { name: 'Your bill' });
+  await expect(bill.getByText('₹172', { exact: true }).first()).toBeVisible();
+  await bill.getByRole('button', { name: /Place order/ }).click();
+  await expect(bill.getByText('Add where to deliver it.')).toBeVisible();
+  await bill.getByLabel('Deliver to').fill('Block B, room 214');
+  await bill.getByLabel('Name').fill('Asha');
+  await bill.getByLabel('Mobile number').fill('98765 43210');
+  await bill.getByRole('button', { name: /Place order/ }).click();
+  await expect(bill.getByText('Tick to confirm your number.')).toBeVisible();
+  await bill.getByRole('checkbox', { name: /\+91 98765 43210 is my number/ }).check();
   await shot(page, 'mess-order', info.project.name);
+  await bill.getByRole('button', { name: /Place order · ₹172/ }).click();
+  await expect(bill.getByText('Sent, waiting for the restaurant')).toBeVisible();
+  const code = (await bill.locator('p.font-display').textContent())!.trim();
+  expect(code).toMatch(/^[A-Z0-9]{4}$/);
+  await shot(page, 'mess-order-placed', info.project.name);
+
+  // The restaurant's screen (admins see every restaurant): accept, and the student sees it.
+  await page.goto('/orders');
+  const ticket = page.getByRole('article', { name: `Order ${code}` });
+  await expect(ticket).toBeVisible();
+  await expect(ticket.getByText('Block B, room 214')).toBeVisible();
+  await shot(page, 'orders-board', info.project.name);
+  await ticket.getByRole('button', { name: 'Accept · 15 min' }).click();
+  await expect(page.getByRole('region', { name: /Making/ }).getByText(code)).toBeVisible();
+  await page.goto('/tools/mess-menu#order');
+  await expect(page.getByText('Accepted, being made · “Ready in 15 min”')).toBeVisible();
 
   // Meal reminders live in the menu page itself.
   await expect(page.getByRole('heading', { name: 'Meal reminders' })).toBeVisible();

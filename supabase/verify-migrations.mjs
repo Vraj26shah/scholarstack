@@ -649,6 +649,23 @@ check(
   (await asUser('someone@gmail.com', 'select * from public.course_overview')).length === 0,
 );
 check(
+  'Safal has both weeks of the notice and its real high tea and dinner times',
+  (
+    await all(
+      "select jsonb_array_length(weeks) as w, meals->2->>'start' as tea, meals->3->>'start' as dinner from public.messes where slug = 'safal-hostel-mess'",
+    )
+  )
+    .map((r) => `${r.w}|${r.tea}|${r.dinner}`)
+    .join() === '2|17:00|19:15',
+);
+check(
+  'RLS: nobody reads orders from the browser',
+  await asUser('someone@gmail.com', 'select * from public.mess_orders').then(
+    (rows) => rows.length === 0,
+    () => true,
+  ),
+);
+check(
   'the dhaba has its order number and prices from the menu card',
   (
     await all(

@@ -122,6 +122,10 @@ export const SaveMessBody = z
     orderNote: z.string().trim().max(160).default(''),
     /** What students can order, by section, with the owner's prices. */
     order: z.array(MessOrderSection).max(12).default([]),
+    /** Who runs the restaurant: these addresses may sign in (any domain) and see its orders. */
+    ownerEmails: z.array(z.string().trim().toLowerCase().email()).max(5).default([]),
+    /** The owner is taking orders on the site right now. */
+    ordersOpen: z.boolean().default(false),
     meals: z.array(MessMeal).min(1).max(4),
     /** A rotating menu: week 1, week 2… counted from cycleStart. One week repeats every week. */
     weeks: z.array(MessWeek).min(1).max(6),
@@ -149,6 +153,104 @@ export interface MessSummaryDto {
   kind: MessKind;
   place: string;
   published: boolean;
+}
+
+// ── Orders (restaurants for day scholars) ───────────────────────────────────
+
+/** An Indian mobile number, written any common way: "+91 98765 43210", "098765-43210"… */
+export const normaliseMobile = (raw: string): string | null => {
+  let d = raw.replace(/\D/g, '');
+  if (d.length === 12 && d.startsWith('91')) d = d.slice(2);
+  else if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
+  return /^[6-9]\d{9}$/.test(d) ? d : null;
+};
+export const formatMobile = (d: string) => (d.length === 10 ? `+91 ${d.slice(0, 5)} ${d.slice(5)}` : d);
+
+export const MESS_ORDER_STATUSES = ['placed', 'accepted', 'ready', 'done', 'rejected', 'cancelled'] as const;
+export type MessOrderStatus = (typeof MESS_ORDER_STATUSES)[number];
+export const OPEN_MESS_ORDER: readonly MessOrderStatus[] = ['placed', 'accepted', 'ready'];
+export const MESS_ORDER_STATUS_TEXT: Record<MessOrderStatus, string> = {
+  placed: 'Sent, waiting for the restaurant',
+  accepted: 'Accepted, being made',
+  ready: 'Ready',
+  done: 'Delivered',
+  rejected: 'Declined by the restaurant',
+  cancelled: 'Cancelled',
+};
+/** What the owner may move an order to from each step. */
+export const MESS_ORDER_NEXT: Record<MessOrderStatus, MessOrderStatus[]> = {
+  placed: ['accepted', 'rejected'],
+  accepted: ['ready', 'rejected'],
+  ready: ['done'],
+  done: [],
+  rejected: [],
+  cancelled: [],
+};
+
+export const PlaceMessOrderBody = z.object({
+  lines: z
+    .array(
+      z.object({
+        /** The item's name exactly as on the restaurant's list (prices are looked up on the server). */
+        name: z.string().trim().min(1).max(80),
+        qty: z.number().int().min(1).max(20),
+        /** e.g. which day's thali and what's in it. */
+        detail: z.string().trim().max(200).default(''),
+      }),
+    )
+    .min(1, 'Add something to your order')
+    .max(25),
+  mode: z.enum(['delivery', 'pickup']),
+  address: z.string().trim().max(120).default(''),
+  name: z.string().trim().min(2, 'Add your name').max(60),
+  phone: z
+    .string()
+    .trim()
+    .refine((v) => normaliseMobile(v) !== null, 'Use a 10-digit Indian mobile number'),
+  note: z.string().trim().max(160).default(''),
+  /** The student ticked "this is my number, the restaurant may call it". */
+  phoneConfirmed: z.literal(true, { errorMap: () => ({ message: 'Confirm your phone number' }) }),
+});
+export type PlaceMessOrderInput = z.infer<typeof PlaceMessOrderBody>;
+
+export const MessOrderStatusBody = z.object({
+  status: z.enum(MESS_ORDER_STATUSES),
+  /** Why it was declined, or a word to the student ("ready in 20 min"). */
+  note: z.string().trim().max(120).default(''),
+});
+
+export const MessOrdersOpenBody = z.object({ open: z.boolean() });
+
+export interface MessOrderLineDto {
+  name: string;
+  qty: number;
+  price: number;
+  detail: string;
+}
+
+export interface MessOrderDto {
+  id: string;
+  /** Short code both sides say on the phone, e.g. "K7Q2". */
+  code: string;
+  messSlug: string;
+  messName: string;
+  lines: MessOrderLineDto[];
+  total: number;
+  mode: 'delivery' | 'pickup';
+  address: string;
+  name: string;
+  phone: string;
+  note: string;
+  status: MessOrderStatus;
+  ownerNote: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OwnedMessDto {
+  slug: string;
+  name: string;
+  ordersOpen: boolean;
 }
 
 // ── "Something changed? Tell us" ─────────────────────────────────────────────

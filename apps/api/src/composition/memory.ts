@@ -4,7 +4,12 @@ import type { AppConfig } from '../application/config';
 import type { Clock, ConversionJob, IdGenerator } from '../domain/ports';
 import type { Container } from '../http/container';
 import { DemoAuth } from '../infrastructure/auth';
-import { MemoryMessReports, MemoryMesses, MemoryPush } from '../infrastructure/campus-memory';
+import {
+  MemoryMessOrders,
+  MemoryMessReports,
+  MemoryMesses,
+  MemoryPush,
+} from '../infrastructure/campus-memory';
 import { InstantConversionQueue, MemoryRateLimiter } from '../infrastructure/cloudflare';
 import {
   DeviceCookie,
@@ -105,6 +110,7 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
   const campus = {
     messes: new MemoryMesses(() => clock.now()),
     messReports: new MemoryMessReports(() => clock.now()),
+    messOrders: new MemoryMessOrders(() => clock.now()),
     push: new MemoryPush(() => clock.now()),
     // A real (demo-only) key, so a browser on the demo site can subscribe; nothing is sent.
     pushSender: new MemoryPushSender(DEMO_VAPID_PUBLIC_KEY),
@@ -113,7 +119,12 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
     SEED_MESSES.forEach((m, sort) => {
       const row = { ...structuredClone(m), sort, updatedAt: clock.now() };
       // The demo gets a sample à la carte list (not in the live seed: no invented prices there).
-      if (m.kind === 'restaurant') row.order = [...row.order, ...structuredClone(DEMO_DHABA_EXTRAS)];
+      if (m.kind === 'restaurant') {
+        row.order = [...row.order, ...structuredClone(DEMO_DHABA_EXTRAS)];
+        // A demo owner (sign in as owner.demo@gmail.com) and orders switched on, to try it end to end.
+        row.ownerEmails = ['owner.demo@gmail.com'];
+        row.ordersOpen = true;
+      }
       campus.messes.rows.set(m.slug, row);
     });
 
@@ -263,6 +274,6 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
     ...services,
     demo: { auth, gateway, newId: () => ids.next(), outbox: () => db.outbox },
   };
-  auth.allowAdmins((email) => container.admins.isAdmin(email));
+  auth.allowAdmins((email) => container.outsideAllowed(email));
   return { container, db, sources, pages, gateway, auth, seeder, mailer, campus };
 }

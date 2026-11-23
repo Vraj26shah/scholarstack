@@ -182,7 +182,7 @@ describe('reminders', () => {
     );
     at('12:00');
     expect((await a.call('POST', '/admin/push/run')).json.sent).toBe(0);
-    at('19:05'); // Monday dinner: methi mutter malai paneer
+    at('18:50'); // Monday dinner (7:15 pm): methi mutter malai paneer
     await a.call('POST', '/admin/push/run');
     expect(env.campus.pushSender.sent.at(-1)!.message.title).toBe('Dinner in 25 min · paneer ⭐');
   });
@@ -356,5 +356,130 @@ describe('web push', () => {
     expect(headers.topic).toBe('mess');
     status = 410;
     expect(await sender.send(target, msg, 600)).toBe('gone');
+  });
+});
+
+describe('ordering from a restaurant', () => {
+  const OWNER = 'dhaba.owner@gmail.com';
+  /** The dhaba, published, run by OWNER, taking orders; the tool launched. */
+  const openDhaba = async () => {
+    launch('mess-menu');
+    const a = await admin();
+    const { updatedAt: _u, sort: _s, ...input } = (await a.call('GET', '/mess/radha-rani-ka-dhaba')).json;
+    const r = await a.call('PUT', '/admin/mess/radha-rani-ka-dhaba', {
+      ...input,
+      published: true,
+      ordersOpen: true,
+      ownerEmails: [OWNER],
+    });
+    expect(r.status).toBe(200);
+    return a;
+  };
+  const order = (patch: Record<string, unknown> = {}) => ({
+    lines: [{ name: 'Mess thali', qty: 2, price: 1, detail: "Today's lunch" }],
+    mode: 'delivery',
+    address: 'Block B, room 214',
+    name: 'Asha',
+    phone: '+91 98765 43210',
+    phoneConfirmed: true,
+    ...patch,
+  });
+  const student = async (n = 1) => {
+    const b = new Browser(app);
+    await b.signIn(`student${n}@vitbhopal.ac.in`);
+    return b;
+  };
+
+  it("needs a signed-in student, a confirmed number, and uses the owner's prices", async () => {
+    await openDhaba();
+    expect((await new Browser(app).call('POST', '/mess/radha-rani-ka-dhaba/orders', order())).status).toBe(
+      401,
+    );
+    const s = await student();
+    expect(
+      (await s.call('POST', '/mess/radha-rani-ka-dhaba/orders', order({ phoneConfirmed: false }))).status,
+    ).toBe(400);
+    expect((await s.call('POST', '/mess/radha-rani-ka-dhaba/orders', order({ phone: '12345' }))).status).toBe(
+      400,
+    );
+    const r = await s.call('POST', '/mess/radha-rani-ka-dhaba/orders', order());
+    expect(r.status).toBe(200);
+    // ₹80 a thali from the restaurant's list, whatever the browser said.
+    expect(r.json).toMatchObject({
+      status: 'placed',
+      total: 160,
+      phone: '9876543210',
+      messName: expect.any(String),
+    });
+    expect(r.json.code).toMatch(/^[A-Z0-9]{4}$/);
+    expect((await s.call('GET', '/me/mess-orders')).json).toHaveLength(1);
+  });
+
+  it('refuses double taps, too many open orders, and a closed kitchen', async () => {
+    const a = await openDhaba();
+    const s = await student();
+    expect((await s.call('POST', '/mess/radha-rani-ka-dhaba/orders', order())).status).toBe(200);
+    expect((await s.call('POST', '/mess/radha-rani-ka-dhaba/orders', order())).status).toBe(429);
+    clock.t += 2 * 60_000;
+    expect((await s.call('POST', '/mess/radha-rani-ka-dhaba/orders', order())).status).toBe(200);
+    clock.t += 2 * 60_000;
+    const third = await s.call('POST', '/mess/radha-rani-ka-dhaba/orders', order());
+    expect(third.status).toBe(400);
+    expect(third.json.error.message).toMatch(/still being made/);
+    // The owner closes: nobody can order.
+    expect(
+      (await a.call('PUT', '/owner/messes/radha-rani-ka-dhaba/open', { open: false })).json.ordersOpen,
+    ).toBe(false);
+    const other = await student(2);
+    expect((await other.call('POST', '/mess/radha-rani-ka-dhaba/orders', order())).status).toBe(400);
+  });
+
+  it('the owner signs in with their own address, sees the board and moves orders along', async () => {
+    await openDhaba();
+    const s = await student();
+    const placed = (await s.call('POST', '/mess/radha-rani-ka-dhaba/orders', order())).json;
+
+    const owner = new Browser(app);
+    await owner.signIn(OWNER);
+    expect((await owner.call('GET', '/owner/messes')).json).toEqual([
+      expect.objectContaining({ slug: 'radha-rani-ka-dhaba', ordersOpen: true }),
+    ]);
+    const board = (await owner.call('GET', '/owner/messes/radha-rani-ka-dhaba/orders')).json;
+    expect(board.map((o: { id: string }) => o.id)).toEqual([placed.id]);
+    // Students never see who the owners are.
+    expect((await s.call('GET', '/mess/radha-rani-ka-dhaba')).json.ownerEmails).toEqual([]);
+
+    const move = (status: string, note = '') =>
+      owner.call('PUT', `/owner/orders/${placed.id}`, { status, note });
+    expect((await move('done')).status).toBe(400); // can't skip steps
+    expect((await move('accepted', 'Ready in 20 min')).json.status).toBe('accepted');
+    expect((await s.call('POST', `/me/mess-orders/${placed.id}/cancel`)).status).toBe(400); // already started
+    expect((await move('ready')).json.status).toBe('ready');
+    expect((await move('done')).json.status).toBe('done');
+    expect((await s.call('GET', '/me/mess-orders')).json[0]).toMatchObject({ status: 'done', ownerNote: '' });
+
+    // Someone else's address is still turned away, and can't see the board.
+    const stranger = new Browser(app);
+    expect((await stranger.signIn('stranger@gmail.com')).status).toBe(403);
+    const otherStudent = await student(3);
+    expect((await otherStudent.call('GET', '/owner/messes')).json).toEqual([]);
+    expect((await otherStudent.call('GET', '/owner/messes/radha-rani-ka-dhaba/orders')).status).toBe(403);
+  });
+
+  it('a student can cancel before the restaurant starts; declining needs a reason', async () => {
+    await openDhaba();
+    const s = await student();
+    const first = (await s.call('POST', '/mess/radha-rani-ka-dhaba/orders', order())).json;
+    expect((await s.call('POST', `/me/mess-orders/${first.id}/cancel`)).json.status).toBe('cancelled');
+    clock.t += 2 * 60_000;
+    const second = (await s.call('POST', '/mess/radha-rani-ka-dhaba/orders', order())).json;
+    const owner = new Browser(app);
+    await owner.signIn(OWNER);
+    expect((await owner.call('PUT', `/owner/orders/${second.id}`, { status: 'rejected' })).status).toBe(400);
+    const no = await owner.call('PUT', `/owner/orders/${second.id}`, {
+      status: 'rejected',
+      note: 'Out of thali',
+    });
+    expect(no.json).toMatchObject({ status: 'rejected', ownerNote: 'Out of thali' });
   });
 });

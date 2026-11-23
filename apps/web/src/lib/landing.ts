@@ -9,6 +9,17 @@
 /** Where a student goes after signing in when nothing else was asked for. */
 export const STUDENT_HOME = '/#catalogue';
 
+/**
+ * Where someone lands after signing in: admins on the admin page; a restaurant owner (the only
+ * other people allowed in with an address outside the college) on their orders; students home.
+ */
+export const homeFor = (me: { isAdmin: boolean; email: string } | null | undefined, collegeDomain: string) =>
+  me?.isAdmin
+    ? '/admin'
+    : me && !me.email.toLowerCase().endsWith(`@${collegeDomain}`)
+      ? '/orders'
+      : STUDENT_HOME;
+
 /** True until the page the browser opened (a fresh visit or a refresh) has been placed. */
 export const landing = { pending: typeof window !== 'undefined' };
 

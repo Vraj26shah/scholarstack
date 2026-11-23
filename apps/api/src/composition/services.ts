@@ -20,6 +20,7 @@ import { EarningsService } from '../application/earnings/earnings-service';
 import { InsightsService } from '../application/insights-service';
 import { StudentMailer } from '../application/notify/student-mailer';
 import { OfferService } from '../application/offer-service';
+import { OrderService } from '../application/order-service';
 import { PackService } from '../application/packs';
 import { PreviewService } from '../application/preview-service';
 import { PriceBook } from '../application/price-book';
@@ -34,6 +35,7 @@ import { StorageTreeService } from '../application/storage-tree';
 import { SupportDeskService } from '../application/support/support-desk-service';
 import { SupportService } from '../application/support/support-service';
 import type {
+  MessOrderRepository,
   MessReportRepository,
   MessRepository,
   PushRepository,
@@ -111,6 +113,7 @@ export interface Ports {
   /** Mess menus, students' corrections, and push reminders. */
   messes: MessRepository;
   messReports: MessReportRepository;
+  messOrders: MessOrderRepository;
   push: PushRepository;
   pushSender: PushSender;
   signInStrikes: SignInStrikes;
@@ -198,6 +201,10 @@ export function buildServices(p: Ports, config: AppConfig) {
     prices,
   );
   const admins = new AdminAccess(p.admins, config.adminEmails);
+  const orders = new OrderService(p.messes, p.messOrders, p.features, p.clock);
+  /** Admins, and restaurant owners, may sign in with an address outside the college domain. */
+  const outsideAllowed = async (email: string) =>
+    (await admins.isAdmin(email)) || (await orders.isOwner(email).catch(() => false));
   const studentMail = new StudentMailer(p.mailer, p.emailQuota, p.unsubscribeSigner, p.clock, config);
   const earnings = new EarningsService(
     p.earnings,
@@ -270,6 +277,8 @@ export function buildServices(p: Ports, config: AppConfig) {
     insights: new InsightsService(p.insights, () => p.clock.now()),
     books: new BookService(p.catalogueReader, p.books),
     mess: new MessService(p.messes, p.messReports, p.features),
+    orders,
+    outsideAllowed,
     reminders: new ReminderService(p.push, p.messes, p.pushSender, p.features, p.clock, config.pushPerRun),
     housekeeping: p.housekeeping,
     previews: new PreviewService(p.catalogueReader, p.catalogueWriter, p.pages, p.seeder, p.limiter),
@@ -334,7 +343,7 @@ export function buildServices(p: Ports, config: AppConfig) {
     ),
     announcements,
     courseUpdates: p.courseUpdates,
-    signInGuard: new SignInGuard(p.signInStrikes, admins, config),
+    signInGuard: new SignInGuard(p.signInStrikes, admins, config, orders),
     signInStrikes: p.signInStrikes,
   };
 }

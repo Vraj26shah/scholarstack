@@ -76,7 +76,8 @@ export class MessService {
     await this.assertOpen(admin);
     const mess = await this.messes.find(slug);
     if (!mess || (!mess.published && !admin)) throw fail.notFound('That mess');
-    return toDto(mess);
+    // Who runs it is private: only admins see the owners' addresses.
+    return admin ? toDto(mess) : { ...toDto(mess), ownerEmails: [] };
   }
 
   async report(input: MessReportInput, ipHash: string, admin: boolean) {

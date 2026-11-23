@@ -3,7 +3,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ApiError, api, friendly } from '../../lib/api';
 import { authGateway } from '../../lib/auth';
 import { env } from '../../lib/env';
-import { STUDENT_HOME } from '../../lib/landing';
+import { homeFor } from '../../lib/landing';
 import { useSession } from '../../lib/session';
 import { Button } from '../../shared/ui/button';
 import { Sheet, Spinner } from '../../shared/ui/feedback';
@@ -84,8 +84,7 @@ export function AuthCallbackPage() {
         return;
       }
       await claim();
-      const target =
-        sessionStorage.getItem('auth_next') || (useSession.getState().me?.isAdmin ? '/admin' : STUDENT_HOME);
+      const target = sessionStorage.getItem('auth_next') || homeFor(useSession.getState().me, env.domain);
       sessionStorage.removeItem('auth_next');
       navigate(target, { replace: true });
     } catch (error) {
@@ -102,17 +101,13 @@ export function AuthCallbackPage() {
       }
       if (await authGateway.completeRedirect()) {
         await claim();
-        const target =
-          sessionStorage.getItem('auth_next') ||
-          (useSession.getState().me?.isAdmin ? '/admin' : STUDENT_HOME);
+        const target = sessionStorage.getItem('auth_next') || homeFor(useSession.getState().me, env.domain);
         sessionStorage.removeItem('auth_next');
         navigate(target, { replace: true });
       } else setFailed(true);
     })().catch((error: unknown) => {
       if (error instanceof ApiError && error.code === 'SESSION_REPLACED') {
-        const target =
-          sessionStorage.getItem('auth_next') ||
-          (useSession.getState().me?.isAdmin ? '/admin' : STUDENT_HOME);
+        const target = sessionStorage.getItem('auth_next') || homeFor(useSession.getState().me, env.domain);
         sessionStorage.removeItem('auth_next');
         navigate(target, { replace: true });
         return;

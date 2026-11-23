@@ -128,16 +128,19 @@ export function ReminderCard({
     <section
       id={id}
       aria-labelledby={`${id}-h`}
-      className={`print:hidden scroll-mt-24 rounded-[18px] bg-card p-5 sm:p-6 flex flex-col gap-4 shadow-[0_18px_34px_-26px_var(--shadow),0_0_0_1px_var(--line)] ${on ? '' : 'max-w-[720px]'}`}
+      className={`print:hidden scroll-mt-24 border-t border-line pt-6 flex flex-col gap-4 ${on ? '' : 'max-w-[720px]'}`}
     >
       <header className="flex items-start gap-3">
         <span
-          className={`shrink-0 grid place-items-center w-10 h-10 rounded-full ${on ? 'bg-teal text-white' : 'bg-mist text-on-mist'}`}
+          className={`shrink-0 grid place-items-center w-9 h-9 rounded-full ${on ? 'bg-teal text-white' : 'border-[1.5px] border-ink text-ink'}`}
         >
           <Bell size={20} />
         </span>
         <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-          <h2 id={`${id}-h`} className="m-0 text-[18px] font-bold text-ink">
+          <h2
+            id={`${id}-h`}
+            className="m-0 font-display text-[22px] leading-tight font-bold tracking-[-0.02em] text-ink"
+          >
             {title}
           </h2>
           <p className="m-0 text-[14px] leading-relaxed text-ink2">

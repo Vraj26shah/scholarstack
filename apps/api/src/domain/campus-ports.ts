@@ -1,4 +1,11 @@
-import type { DayKey, MealKey, MessInput, MessReportStatus, ReminderPrefs } from '@ss/contracts';
+import type {
+  DayKey,
+  MealKey,
+  MessInput,
+  MessOrderStatus,
+  MessReportStatus,
+  ReminderPrefs,
+} from '@ss/contracts';
 
 // Ports for the campus tools: mess menus, menu corrections from students, and push reminders.
 
@@ -79,4 +86,40 @@ export interface PushSender {
   /** The VAPID public key browsers subscribe with ('' when not set up). */
   readonly publicKey: string;
   send(target: PushTarget, message: PushMessage, ttlSeconds: number): Promise<PushResult>;
+}
+
+// ── Orders ──
+
+export interface MessOrderRecord {
+  id: string;
+  code: string;
+  messSlug: string;
+  userId: string;
+  email: string;
+  lines: { name: string; qty: number; price: number; detail: string }[];
+  total: number;
+  mode: 'delivery' | 'pickup';
+  address: string;
+  name: string;
+  phone: string;
+  note: string;
+  status: MessOrderStatus;
+  ownerNote: string;
+  ipHash: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MessOrderRepository {
+  add(
+    order: Omit<MessOrderRecord, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'ownerNote'>,
+  ): Promise<MessOrderRecord>;
+  find(id: string): Promise<MessOrderRecord | null>;
+  listForUser(userId: string, limit: number): Promise<MessOrderRecord[]>;
+  /** Every order still open, plus anything since `since`, newest first. */
+  listForMess(slug: string, since: Date, limit: number): Promise<MessOrderRecord[]>;
+  setStatus(id: string, status: MessOrderStatus, ownerNote: string): Promise<MessOrderRecord | null>;
+  /** How many orders since `since`: by this student, from this network, at this restaurant. */
+  countSince(by: { userId?: string; ipHash?: string; messSlug?: string }, since: Date): Promise<number>;
+  countOpenForUser(userId: string): Promise<number>;
 }
