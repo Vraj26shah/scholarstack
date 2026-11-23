@@ -1,8 +1,10 @@
 import type { ConversionProgressReport } from '@ss/contracts';
+import { SEED_MESSES } from '../application/campus-seed';
 import type { AppConfig } from '../application/config';
 import type { Clock, ConversionJob, IdGenerator } from '../domain/ports';
 import type { Container } from '../http/container';
 import { DemoAuth } from '../infrastructure/auth';
+import { MemoryMessReports, MemoryMesses, MemoryPush } from '../infrastructure/campus-memory';
 import { InstantConversionQueue, MemoryRateLimiter } from '../infrastructure/cloudflare';
 import {
   DeviceCookie,
@@ -48,6 +50,7 @@ import {
   MemorySupport,
 } from '../infrastructure/memory-ledgers';
 import { DemoGateway } from '../infrastructure/payments';
+import { MemoryPushSender } from '../infrastructure/web-push';
 import { buildConfig } from './config';
 import { DEMO_IMPORT_ROOT, seedDemo } from './demo-seed';
 import { buildServices } from './services';
@@ -77,6 +80,10 @@ export interface MemoryContainerOptions {
 }
 
 /** Composition root for demo mode and tests: every port backed by memory. */
+/** Demo only (its private half is not kept anywhere): lets the demo site's browser subscribe. */
+const DEMO_VAPID_PUBLIC_KEY =
+  'BICNDUiEPxTD88UiCkrCpmmEhr7eMk5H65dTe2wF4edmb_EQz7ec0WQ4FmZ5vB1PAkAPWqNpnoleWqq3praHimE';
+
 export function memoryContainer(options: MemoryContainerOptions = {}) {
   const clock = options.clock ?? new SystemClock();
   const ids = options.ids ?? new RandomIds();
@@ -95,6 +102,17 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
   const sources = new MemoryObjectStore();
   const pages = new MemoryObjectStore(options.pageProducer);
   if (options.seed !== false) seedDemo(db, sources, pages);
+  const campus = {
+    messes: new MemoryMesses(() => clock.now()),
+    messReports: new MemoryMessReports(() => clock.now()),
+    push: new MemoryPush(() => clock.now()),
+    // A real (demo-only) key, so a browser on the demo site can subscribe; nothing is sent.
+    pushSender: new MemoryPushSender(DEMO_VAPID_PUBLIC_KEY),
+  };
+  if (options.seed !== false)
+    SEED_MESSES.forEach((m, sort) =>
+      campus.messes.rows.set(m.slug, { ...structuredClone(m), sort, updatedAt: clock.now() }),
+    );
 
   const catalogue = new MemoryCatalogue(db);
   const orders = new MemoryOrders(db);
@@ -202,6 +220,7 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
       earnings: new MemoryEarnings(db),
       deliveries: new MemoryDeliveries(db),
       books: new MemoryCourseBooks(db),
+      ...campus,
       courseUpdates: new MemoryCourseUpdates(db),
       signInStrikes: new MemorySignInStrikes(() => clock.now().getTime()),
       admins: new MemoryAdmins(db),
@@ -242,5 +261,5 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
     demo: { auth, gateway, newId: () => ids.next(), outbox: () => db.outbox },
   };
   auth.allowAdmins((email) => container.admins.isAdmin(email));
-  return { container, db, sources, pages, gateway, auth, seeder, mailer };
+  return { container, db, sources, pages, gateway, auth, seeder, mailer, campus };
 }

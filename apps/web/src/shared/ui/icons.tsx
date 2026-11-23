@@ -177,3 +177,15 @@ export const AskBubble = ({ size, ...p }: P) => (
     <path d="M10 9.5a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2V13M12 16h.01" />
   </svg>
 );
+export const Bell = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9z" />
+    <path d="M10.3 20a1.9 1.9 0 0 0 3.4 0" />
+  </svg>
+);
+export const Bowl = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M3 11h18a9 9 0 0 1-18 0z" />
+    <path d="M9 7c0-1.2 1-1.8 1-3M13 7c0-1.2 1-1.8 1-3" />
+  </svg>
+);

@@ -21,6 +21,9 @@ const optional = new Set([
   'CURRENT_INTAKE_YEAR',
   'BREVO_API_KEY',
   'CONVERTER_CALLBACK_URL',
+  'VAPID_PUBLIC_KEY',
+  'VAPID_PRIVATE_KEY',
+  'VAPID_SUBJECT',
 ]);
 const todo = [...env].filter(
   ([k, v]) =>

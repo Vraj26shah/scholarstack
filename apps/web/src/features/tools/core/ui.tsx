@@ -23,7 +23,18 @@ export function Labelled({
 }
 
 /** The tool's title block: the name, one plain line, and what it costs (nothing). */
-export function ToolHeader({ title, lead, aside }: { title: string; lead: string; aside?: ReactNode }) {
+export function ToolHeader({
+  title,
+  lead,
+  aside,
+  footnote,
+}: {
+  title: string;
+  lead: string;
+  aside?: ReactNode;
+  /** Replaces "Everything you enter stays on this device" for tools where that isn't the whole story. */
+  footnote?: ReactNode;
+}) {
   const { pathname } = useLocation();
   return (
     <header className="flex flex-col pt-4 pb-10">
@@ -33,8 +44,8 @@ export function ToolHeader({ title, lead, aside }: { title: string; lead: string
           <PageTitle>{title}</PageTitle>
           <p className="mt-1 mb-0 text-[17px] leading-relaxed text-ink2">{lead}</p>
           <p className="m-0 text-[14px] text-ink2">
-            <span className="font-semibold text-teal-text">Free</span>, no sign-in needed. Everything you
-            enter stays on this device.
+            <span className="font-semibold text-teal-text">Free</span>, no sign-in needed.{' '}
+            {footnote ?? 'Everything you enter stays on this device.'}
           </p>
         </div>
         {aside}

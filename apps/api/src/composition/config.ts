@@ -33,6 +33,12 @@ export interface WorkerEnv {
   EMAIL_DAILY_LIMIT?: string;
   EMAIL_RESERVE?: string;
   SIGNIN_EMAIL_DAILY_LIMIT?: string;
+  /** Web Push (VAPID) keys for reminders: `pnpm ops push:keys` makes a pair. Optional. */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  /** mailto: address the push services can contact. */
+  VAPID_SUBJECT?: string;
+  PUSH_PER_RUN?: string;
   NOTES: R2Bucket;
   PAGE_LIMITER?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   ASSETS?: Fetcher;
@@ -80,6 +86,7 @@ export function buildConfig(env: Partial<Record<keyof WorkerEnv, unknown>>, now 
     // Under the provider's total cap so announcements and receipts still go out.
     signinEmailDailyLimit: num(s('SIGNIN_EMAIL_DAILY_LIMIT'), 250),
     signinLinkBudgets: true,
+    pushPerRun: num(s('PUSH_PER_RUN'), 35),
   };
 }
 

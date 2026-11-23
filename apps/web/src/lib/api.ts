@@ -1,4 +1,18 @@
 import type {
+  AdminPushStatsDto,
+  MessDto,
+  MessInput,
+  MessReportDto,
+  MessReportInput,
+  MessReportStatus,
+  MessSummaryDto,
+  PushDeviceDto,
+  PushRunDto,
+  PushStatusDto,
+  PushSubscribeInput,
+  ReminderPrefs,
+} from '@ss/contracts';
+import type {
   AcademicDto,
   AccessChangeInput,
   AccessGrantInput,
@@ -208,6 +222,32 @@ export class ApiClient {
       this.onProblem(apiError);
     throw apiError;
   }
+
+  // Mess menus and reminders
+  messes = () => this.request<MessSummaryDto[]>('GET', '/mess');
+  mess = (slug: string) => this.request<MessDto>('GET', `/mess/${encodeURIComponent(slug)}`);
+  reportMess = (r: MessReportInput) => this.request<{ ok: true }>('POST', '/mess/reports', r);
+  pushStatus = () => this.request<PushStatusDto>('GET', '/push/status');
+  pushSubscribe = (s: PushSubscribeInput) => this.request<{ ok: true }>('POST', '/push/subscribe', s);
+  pushPrefs = (endpoint: string, prefs: ReminderPrefs) =>
+    this.request<{ ok: true }>('PUT', '/push/prefs', { endpoint, prefs });
+  pushUnsubscribe = (endpoint: string) =>
+    this.request<{ ok: true }>('POST', '/push/unsubscribe', { endpoint });
+  pushTest = (endpoint: string) => this.request<{ ok: true }>('POST', '/push/test', { endpoint });
+  pushDevices = () => this.request<PushDeviceDto[]>('GET', '/push/devices');
+  pushRemoveDevice = (id: string) =>
+    this.request<{ ok: true }>('DELETE', `/push/devices/${encodeURIComponent(id)}`);
+  adminMesses = () => this.request<MessDto[]>('GET', '/admin/mess');
+  adminCreateMess = (m: MessInput) => this.request<MessDto>('POST', '/admin/mess', m);
+  adminSaveMess = (slug: string, m: MessInput) =>
+    this.request<MessDto>('PUT', `/admin/mess/${encodeURIComponent(slug)}`, m);
+  adminDeleteMess = (slug: string) =>
+    this.request<{ ok: true }>('DELETE', `/admin/mess/${encodeURIComponent(slug)}`);
+  adminMessReports = () => this.request<MessReportDto[]>('GET', '/admin/mess-reports');
+  adminSetMessReport = (id: string, status: MessReportStatus) =>
+    this.request<{ ok: true }>('PUT', `/admin/mess-reports/${encodeURIComponent(id)}`, { status });
+  adminPushStats = () => this.request<AdminPushStatsDto>('GET', '/admin/push');
+  adminPushRun = () => this.request<PushRunDto>('POST', '/admin/push/run');
 
   // Catalogue
   catalogue = () => this.request<CatalogueIndexDto>('GET', '/catalogue');

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../../../shared/ui/button';
 import { Sheet as Dialog } from '../../../shared/ui/feedback';
+import { ReminderPrompt } from '../../reminders/reminder-prompt';
+import { useSyncTimetableReminders } from '../../reminders/use-reminders';
 import { newId, useToolState } from '../core/storage';
 import { ToolHeader } from '../core/ui';
 import { type CourseDraft, CourseForm } from './components/course-form';
@@ -8,7 +10,7 @@ import { CourseList } from './components/course-list';
 import { DayView } from './components/day-view';
 import { NowCard } from './components/now-card';
 import { TimetableGrid } from './components/timetable-grid';
-import { type Course, decodeShare, encodeShare, nextColor, stats } from './domain';
+import { type Course, dayIndex, decodeShare, encodeShare, nextColor, stats } from './domain';
 import { DEFAULT_EXPORTERS, type TimetableExporter } from './exporters';
 
 const emptyDraft = (courses: Course[], slots: string[]): CourseDraft => ({
@@ -22,6 +24,10 @@ const emptyDraft = (courses: Course[], slots: string[]): CourseDraft => ({
 });
 
 const isPhone = () => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 640px)').matches;
+
+/** "Tomorrow · 3 classes" opens ?day=tomorrow: the day view, on tomorrow. */
+const tomorrowLink = () =>
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('day') === 'tomorrow';
 
 /** A timetable someone shared (#t=… in the link), offered once, never applied without asking. */
 function useSharedTimetable() {
@@ -50,7 +56,8 @@ export default function TimetableTool({
   const [courses, setCourses] = useToolState<Course[]>('timetable_courses', []);
   const [picked, setPicked] = useState<string[]>([]);
   const [draft, setDraft] = useState<CourseDraft | null>(null);
-  const [view, setView] = useState<'week' | 'day'>(() => (isPhone() ? 'day' : 'week'));
+  const [view, setView] = useState<'week' | 'day'>(() => (isPhone() || tomorrowLink() ? 'day' : 'week'));
+  useSyncTimetableReminders(courses);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null);
   const { shared, dismiss } = useSharedTimetable();
@@ -228,7 +235,13 @@ export default function TimetableTool({
       {view === 'week' ? (
         <TimetableGrid courses={courses} picked={picked} onPick={pick} onOpen={setDraft} />
       ) : (
-        <DayView courses={courses} picked={picked} onPick={pick} onOpen={setDraft} />
+        <DayView
+          courses={courses}
+          picked={picked}
+          onPick={pick}
+          onOpen={setDraft}
+          initialDay={tomorrowLink() ? (dayIndex(new Date()) + 1) % 7 : undefined}
+        />
       )}
 
       <CourseList
@@ -239,6 +252,8 @@ export default function TimetableTool({
         }
         onClear={() => setCourses([])}
       />
+
+      {courses.length > 0 && <ReminderPrompt context={{ kind: 'timetable' }} />}
 
       <Dialog
         open={draft !== null}

@@ -439,7 +439,8 @@ check(
 check(
   'toolbox seeded with CGPA calculator, attendance, timetable maker and the mess menu (coming soon)',
   (await all('select key from public.features order by sort')).map((r) => r.key).join() ===
-    'cgpa,attendance,timetable,mess-menu',
+    'cgpa,attendance,timetable,mess-menu,reminders',
+  (await all('select key from public.features order by sort')).map((r) => r.key).join(),
 );
 check(
   'attendance is live (and stamped); the mess menu is only announced',
@@ -649,7 +650,7 @@ check(
 );
 check(
   'RLS: anyone can read the toolbox',
-  (await asUser('someone@gmail.com', 'select key from public.features')).length === 4,
+  (await asUser('someone@gmail.com', 'select key from public.features')).length === 5,
 );
 check(
   'RLS: outsider sees no courses',

@@ -25,4 +25,6 @@ export interface AppConfig {
    * end-to-end suite's many sign-ins from one machine aren't refused as a mail-draining attack).
    */
   signinLinkBudgets: boolean;
+  /** Reminder notifications sent per five-minute run (each one is a Worker request). */
+  pushPerRun: number;
 }

@@ -12,6 +12,7 @@
  *   pnpm ops qa [--out file.json]        live QA: database, security, admin, purchase and reader
  *   pnpm ops broken > broken.csv         files whose R2 copy is a web page / empty: re-upload these
  *   pnpm ops admins:sync                 copy ADMIN_EMAILS into the database admin list (sign-up check)
+ *   pnpm ops push:keys                   a new key pair for reminder notifications (VAPID_* in .env)
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
@@ -27,6 +28,7 @@ import { createApp } from '../http/app';
 import { SECURITY_HEADERS } from '../http/security-headers';
 import { S3ObjectStore } from '../infrastructure/s3';
 import { S3ManifestConversionQueue } from '../infrastructure/s3-conversion-queue';
+import { generateVapidKeys } from '../infrastructure/web-push';
 import { isPlaceholder, loadEnv } from './env';
 import { LocalConversionQueue, LocalConverter } from './local-converter';
 import { SupabaseManagement } from './management';
@@ -710,6 +712,14 @@ const commands: Record<string, () => Promise<void> | void> = {
   'curriculum:sync': syncCurriculum,
   status,
   serve: serveLive,
+  'push:keys': async () => {
+    const keys = await generateVapidKeys();
+    console.log('\nReminder (Web Push) keys. Put these in .env, then run pnpm secrets:push:\n');
+    console.log(`VAPID_PUBLIC_KEY=${keys.publicKey}`);
+    console.log(`VAPID_PRIVATE_KEY=${keys.privateKey}`);
+    console.log('VAPID_SUBJECT=mailto:<an address you read>');
+    console.log('\nMake them once. New keys switch off every device that already turned reminders on.');
+  },
 };
 
 const run = commands[command];

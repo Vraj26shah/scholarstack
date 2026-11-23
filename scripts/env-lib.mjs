@@ -37,6 +37,9 @@ export const WORKER_KEYS = [
   'EMAIL_FROM_NAME',
   'EMAIL_DAILY_LIMIT',
   'SIGNIN_EMAIL_DAILY_LIMIT',
+  'VAPID_PUBLIC_KEY',
+  'VAPID_PRIVATE_KEY',
+  'VAPID_SUBJECT',
   'ALLOWED_EMAIL_DOMAIN',
   'ADMIN_EMAILS',
   'CURRENT_INTAKE_YEAR',
@@ -79,6 +82,9 @@ export const WORKER_SECRETS = [
   'BREVO_API_KEY',
   'EMAIL_FROM',
   'EMAIL_FROM_NAME',
+  'VAPID_PUBLIC_KEY',
+  'VAPID_PRIVATE_KEY',
+  'VAPID_SUBJECT',
 ];
 
 export const PLACEHOLDER = /x{6,}|YOUR-PROJECT-REF|choose-a-long-random-string|you@|your-domain\.in/;

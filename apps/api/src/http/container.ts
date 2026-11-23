@@ -5,6 +5,7 @@ import type { AdminAccess } from '../application/admin-access';
 import type { AdminService } from '../application/admin-service';
 import type { AnnouncementService } from '../application/announcement-service';
 import type { BookService } from '../application/book-service';
+import type { MessService, ReminderService } from '../application/campus-service';
 import type { CatalogueService } from '../application/catalogue-service';
 import type { CheckoutService } from '../application/checkout-service';
 import type { AppConfig } from '../application/config';
@@ -61,6 +62,10 @@ export interface Container {
   /** One bundle per drawer, kept in step with it. */
   packs: PackService;
   books: BookService;
+  /** Mess menus (hostel messes and restaurants). */
+  mess: MessService;
+  /** Push reminders: meals, tomorrow's classes, a class about to start. */
+  reminders: ReminderService;
   /** Daily trims of history tables (cron). */
   housekeeping: DatabaseHousekeeping;
   previews: PreviewService;

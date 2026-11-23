@@ -7,14 +7,20 @@ export function DayView({
   picked,
   onPick,
   onOpen,
+  initialDay,
 }: {
   courses: Course[];
   picked: string[];
   onPick: (slot: string) => void;
   onOpen: (c: Course) => void;
+  /** Start on this day (0 = Monday) instead of today, e.g. from a "Tomorrow" reminder. */
+  initialDay?: number;
 }) {
   const today = dayIndex(new Date());
-  const [day, setDay] = useState(today < 0 ? 0 : today);
+  const [day, setDay] = useState(() => {
+    const d = initialDay ?? today;
+    return d >= 0 && d < GRID.length ? d : 0;
+  });
   const taken = occupied(courses);
   const row = GRID[day]!;
   return (

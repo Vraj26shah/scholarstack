@@ -1,6 +1,7 @@
 import type { ConversionQueue, ObjectStore, RateLimiter, UploadStore } from '../domain/ports';
 import type { Container } from '../http/container';
 import { SupabaseJwtVerifier } from '../infrastructure/auth';
+import { SupabaseMessReports, SupabaseMesses, SupabasePush } from '../infrastructure/campus-supabase';
 import { MemoryRateLimiter } from '../infrastructure/cloudflare';
 import {
   DeviceCookie,
@@ -45,6 +46,7 @@ import {
   SupabaseSignInStrikes,
   SupabaseSupport,
 } from '../infrastructure/supabase-ledgers';
+import { MemoryPushSender, VapidPushSender } from '../infrastructure/web-push';
 import { type WorkerEnv, buildConfig } from './config';
 import { buildServices } from './services';
 
@@ -91,6 +93,18 @@ export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): C
       earnings: new SupabaseEarnings(db),
       deliveries: new SupabaseDeliveries(db),
       books: new SupabaseCourseBooks(db),
+      messes: new SupabaseMesses(db),
+      messReports: new SupabaseMessReports(db),
+      push: new SupabasePush(db),
+      // Without keys, reminders stay off (the site says so) and nothing is sent.
+      pushSender:
+        env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY
+          ? new VapidPushSender(
+              env.VAPID_PUBLIC_KEY.trim(),
+              env.VAPID_PRIVATE_KEY.trim(),
+              env.VAPID_SUBJECT?.trim() || `mailto:${config.adminEmails[0] ?? 'admin@example.com'}`,
+            )
+          : new MemoryPushSender(''),
       courseUpdates: new SupabaseCourseUpdates(db),
       signInStrikes: new SupabaseSignInStrikes(db),
       admins: new SupabaseAdmins(db),

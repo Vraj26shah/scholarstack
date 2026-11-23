@@ -71,3 +71,84 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+
+// ── Reminders (Web Push) ─────────────────────────────────────────────────────
+// The server sends a small encrypted message; the browser wakes this worker to show it, even
+// when no tab of the site is open. Each kind has one tag, so a new one replaces the last.
+
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { title: 'Scholars Stack', body: event.data ? event.data.text() : '' };
+  }
+  const title = data.title || 'Scholars Stack';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || '',
+      tag: data.tag || 'ss',
+      renotify: true,
+      icon: '/apple-touch-icon.png',
+      badge: '/favicon.svg',
+      lang: 'en-IN',
+      data: { url: data.url || '/' },
+      actions: Array.isArray(data.actions) ? data.actions.slice(0, 2) : [],
+    }),
+  );
+});
+
+/** This device's push address, for "Mute today". */
+async function myEndpoint() {
+  const sub = await self.registration.pushManager.getSubscription();
+  return sub ? sub.endpoint : null;
+}
+
+self.addEventListener('notificationclick', (event) => {
+  const n = event.notification;
+  n.close();
+  if (event.action === 'mute') {
+    event.waitUntil(
+      myEndpoint().then(
+        (endpoint) =>
+          endpoint &&
+          fetch('/api/push/mute', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ endpoint }),
+          }).catch(() => {}),
+      ),
+    );
+    return;
+  }
+  // Open exactly that page: reuse an open tab of the site if there is one.
+  const target = new URL(n.data?.url || '/', self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((tabs) => {
+      for (const tab of tabs) {
+        if (new URL(tab.url).origin === self.location.origin && 'focus' in tab)
+          return tab.navigate(target).then((t) => (t || tab).focus());
+      }
+      return self.clients.openWindow(target);
+    }),
+  );
+});
+
+// The browser replaced this device's push address: tell the server, keeping the same settings.
+self.addEventListener('pushsubscriptionchange', (event) => {
+  const old = event.oldSubscription;
+  const key = old?.options?.applicationServerKey;
+  if (!old || !key) return;
+  event.waitUntil(
+    self.registration.pushManager
+      .subscribe({ userVisibleOnly: true, applicationServerKey: key })
+      .then((sub) =>
+        fetch('/api/push/renew', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ oldEndpoint: old.endpoint, subscription: sub.toJSON() }),
+        }),
+      )
+      .catch(() => {}),
+  );
+});

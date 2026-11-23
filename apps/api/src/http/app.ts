@@ -8,6 +8,7 @@ import type { Container } from './container';
 import type { AppEnv } from './helpers';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
+import { campusRoutes } from './routes/campus';
 import { catalogueRoutes } from './routes/catalogue';
 import { checkoutRoutes } from './routes/checkout';
 import { contributionRoutes } from './routes/contributions';
@@ -146,6 +147,7 @@ export function createApp(factory: ContainerFactory) {
   app.route('/', supportRoutes);
   app.route('/', authRoutes);
   app.route('/', readerRoutes);
+  app.route('/', campusRoutes);
   app.route('/', adminRoutes);
   app.route('/', demoRoutes);
 

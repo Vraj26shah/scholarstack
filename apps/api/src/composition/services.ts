@@ -6,6 +6,7 @@ import { AdminService } from '../application/admin-service';
 import { AnnouncementService } from '../application/announcement-service';
 import { BookService } from '../application/book-service';
 import { cachedBundles, cachedCatalogue } from '../application/cached-catalogue';
+import { MessService, ReminderService } from '../application/campus-service';
 import { CatalogueService } from '../application/catalogue-service';
 import { CheckoutService } from '../application/checkout-service';
 import type { AppConfig } from '../application/config';
@@ -32,6 +33,12 @@ import { StorageMapService } from '../application/storage-map';
 import { StorageTreeService } from '../application/storage-tree';
 import { SupportDeskService } from '../application/support/support-desk-service';
 import { SupportService } from '../application/support/support-service';
+import type {
+  MessReportRepository,
+  MessRepository,
+  PushRepository,
+  PushSender,
+} from '../domain/campus-ports';
 import type {
   AcademicRepository,
   AccessLog,
@@ -101,6 +108,11 @@ export interface Ports {
   courseUpdates: CourseUpdateSource;
   /** Recommended books per course. */
   books: CourseBookRepository;
+  /** Mess menus, students' corrections, and push reminders. */
+  messes: MessRepository;
+  messReports: MessReportRepository;
+  push: PushRepository;
+  pushSender: PushSender;
   signInStrikes: SignInStrikes;
   admins: AdminDirectory;
   academic: AcademicRepository;
@@ -257,6 +269,8 @@ export function buildServices(p: Ports, config: AppConfig) {
     discounts,
     insights: new InsightsService(p.insights, () => p.clock.now()),
     books: new BookService(p.catalogueReader, p.books),
+    mess: new MessService(p.messes, p.messReports, p.features),
+    reminders: new ReminderService(p.push, p.messes, p.pushSender, p.features, p.clock, config.pushPerRun),
     housekeeping: p.housekeeping,
     previews: new PreviewService(p.catalogueReader, p.catalogueWriter, p.pages, p.seeder, p.limiter),
     admins,

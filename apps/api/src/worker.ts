@@ -97,6 +97,13 @@ const handler = {
               console.log(JSON.stringify({ level: 'info', event: 'packs.cron', ...r.totals }));
           }),
         );
+      // Reminders (meals, classes) due in the next few minutes go out on every run.
+      job('reminders', () =>
+        container.reminders.run().then((r) => {
+          if (r.sent + r.gone + r.failed + r.deferred > 0)
+            console.log(JSON.stringify({ level: 'info', event: 'reminders.cron', ...r }));
+        }),
+      );
       return;
     }
     // A real database read every hour keeps the free Supabase project from pausing.

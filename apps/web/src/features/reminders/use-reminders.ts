@@ -1,0 +1,144 @@
+import { deviceLabel } from '@ss/contracts';
+import { useQuery } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { track } from '../../lib/analytics';
+import { ApiError, api } from '../../lib/api';
+import type { Course } from '../tools/timetable/domain';
+import {
+  PermissionRefused,
+  type PushSupport,
+  browserSubscription,
+  pushSupport,
+  subscribeBrowser,
+  unsubscribeBrowser,
+} from './push-client';
+import { type LocalReminders, serverPrefs, setLocalReminders, useLocalReminders } from './settings-store';
+
+const WEEK = 7 * 24 * 3600 * 1000;
+
+export type ReminderState =
+  /** Not for this visitor yet (students before launch), or the server has no push keys. */
+  'hidden' | 'unconfigured' | PushSupport | 'on';
+
+const message = (e: unknown) =>
+  e instanceof ApiError ? e.message : "That didn't work. Check your connection and try again.";
+
+/** Everything a screen needs to offer, turn on, change and turn off reminders on this device. */
+export function useReminders() {
+  const local = useLocalReminders();
+  const status = useQuery({ queryKey: ['push-status'], queryFn: api.pushStatus, staleTime: 5 * 60_000 });
+  const [support, setSupport] = useState<PushSupport>(() => pushSupport());
+  const [busy, setBusy] = useState<null | 'on' | 'save' | 'test' | 'off'>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // The browser may have dropped the subscription (site data cleared, permission reset).
+  useEffect(() => {
+    if (!local.endpoint) return;
+    void browserSubscription().then((sub) => {
+      if (!sub || sub.endpoint !== local.endpoint) setLocalReminders((r) => ({ ...r, endpoint: null }));
+    });
+  }, [local.endpoint]);
+
+  const state: ReminderState = !status.data?.open
+    ? 'hidden'
+    : !status.data.configured
+      ? 'unconfigured'
+      : local.endpoint
+        ? 'on'
+        : support;
+
+  const run = useCallback(async <T>(kind: NonNullable<typeof busy>, fn: () => Promise<T>) => {
+    setBusy(kind);
+    setError(null);
+    try {
+      return await fn();
+    } catch (e) {
+      if (e instanceof PermissionRefused) {
+        setSupport(pushSupport());
+        setError(
+          e.permission === 'denied'
+            ? null // the "blocked" card explains what to do
+            : 'No problem. Tap "Turn on" again whenever you want them.',
+        );
+      } else setError(message(e));
+      return undefined;
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
+  /** "Turn on": the browser's own prompt, then this device is saved with these choices. */
+  const turnOn = (patch: (r: LocalReminders) => LocalReminders = (r) => r) =>
+    run('on', async () => {
+      const key = status.data?.publicKey;
+      if (!key) throw new Error('no key');
+      const sub = await subscribeBrowser(key);
+      const next = { ...patch(local), endpoint: sub.endpoint, snoozedUntil: null };
+      await api.pushSubscribe({ ...sub, prefs: serverPrefs(next), label: deviceLabel(navigator.userAgent) });
+      setLocalReminders(next);
+      track('reminders_on', {});
+      return true;
+    });
+
+  const save = (next: LocalReminders) =>
+    run('save', async () => {
+      if (next.endpoint) await api.pushPrefs(next.endpoint, serverPrefs(next));
+      setLocalReminders(next);
+      return true;
+    });
+
+  const test = () =>
+    run('test', async () => {
+      if (!local.endpoint) return false;
+      await api.pushTest(local.endpoint);
+      return true;
+    });
+
+  const turnOff = () =>
+    run('off', async () => {
+      if (local.endpoint) await api.pushUnsubscribe(local.endpoint).catch(() => {});
+      await unsubscribeBrowser();
+      setLocalReminders((r) => ({ ...r, endpoint: null }));
+      track('reminders_off', {});
+      return true;
+    });
+
+  const snooze = () => setLocalReminders((r) => ({ ...r, snoozedUntil: Date.now() + WEEK }));
+  const snoozed = !!local.snoozedUntil && local.snoozedUntil > Date.now();
+
+  return {
+    state,
+    local,
+    busy,
+    error,
+    setError,
+    turnOn,
+    save,
+    test,
+    turnOff,
+    snooze,
+    snoozed,
+    loading: status.isLoading,
+  };
+}
+
+/**
+ * Keeps class reminders in step with the timetable: when a course is added, moved or removed,
+ * the server's copy of the chosen classes is updated (a moment later, once editing settles).
+ */
+export function useSyncTimetableReminders(courses: Course[]) {
+  const local = useLocalReminders();
+  const first = useRef(true);
+  const wanted = local.endpoint && (local.classes.nightly || local.classes.before);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    if (!wanted || !local.endpoint) return;
+    const t = window.setTimeout(() => {
+      void api.pushPrefs(local.endpoint!, serverPrefs(local, courses)).catch(() => {});
+    }, 1500);
+    return () => window.clearTimeout(t);
+  }, [courses, wanted, local]);
+}

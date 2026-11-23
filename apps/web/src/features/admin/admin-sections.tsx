@@ -1,6 +1,7 @@
 import type { TodayKey } from '@ss/contracts';
 import type { ReactNode } from 'react';
 import { BundlesPanel } from './bundles-panel';
+import { MessMenusPanel, MessReportsPanel, RemindersAdminPanel } from './campus-panel';
 import { ContributionsPanel } from './contributions-panel';
 import { ContributorsPanel } from './contributors-panel';
 import { CourseListPanel } from './course-list-panel';
@@ -37,7 +38,7 @@ export interface Group {
   views: View[];
 }
 
-/** Six places, each with a few views. Adding a screen means adding a view here, nothing else. */
+/** Seven places, each with a few views. Adding a screen means adding a view here, nothing else. */
 export const GROUPS: Group[] = [
   {
     key: 'today',
@@ -209,6 +210,38 @@ export const GROUPS: Group[] = [
         label: 'Uploads',
         note: <>Review and file uploads.</>,
         render: () => <ContributionsPanel />,
+      },
+    ],
+  },
+  {
+    key: 'campus',
+    label: 'Campus',
+    views: [
+      {
+        key: 'mess',
+        label: 'Mess menus',
+        note: (
+          <>
+            Hostel messes and day-scholar restaurants: <U>times and the week's menu</U>.
+          </>
+        ),
+        render: () => <MessMenusPanel />,
+      },
+      {
+        key: 'mess-reports',
+        label: 'Menu reports',
+        note: <>What students say changed. Fix the menu, then mark it fixed.</>,
+        render: () => <MessReportsPanel />,
+      },
+      {
+        key: 'reminders',
+        label: 'Reminders',
+        note: (
+          <>
+            Meal and class notifications: <U>who gets them</U>, and a test run.
+          </>
+        ),
+        render: () => <RemindersAdminPanel />,
       },
     ],
   },
