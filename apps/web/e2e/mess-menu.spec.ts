@@ -23,7 +23,14 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   // Own demo admin (two-device limit): admins use tools before launch.
   await signIn(page, info.project.name === 'phone' ? 'reviewer' : 'keeper');
   await page.goto('/tools/mess-menu');
-  await page.evaluate(() => localStorage.removeItem('ss_tool_mess_choice'));
+  await page.evaluate(() => {
+    localStorage.removeItem('ss_tool_mess_choice');
+    // Details saved by an earlier version of the order form (no phone field): must not crash.
+    localStorage.setItem(
+      'ss_tool_mess_order_details',
+      JSON.stringify({ name: 'Old', mode: 'delivery', address: '', note: '' }),
+    );
+  });
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Mess menu' })).toBeVisible();
   await expect(page.getByText('Admin preview.')).toBeVisible();

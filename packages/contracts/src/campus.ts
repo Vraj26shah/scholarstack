@@ -159,6 +159,7 @@ export interface MessSummaryDto {
 
 /** An Indian mobile number, written any common way: "+91 98765 43210", "098765-43210"… */
 export const normaliseMobile = (raw: string): string | null => {
+  if (typeof raw !== 'string') return null;
   let d = raw.replace(/\D/g, '');
   if (d.length === 12 && d.startsWith('91')) d = d.slice(2);
   else if (d.length === 11 && d.startsWith('0')) d = d.slice(1);

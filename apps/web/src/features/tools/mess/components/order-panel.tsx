@@ -238,13 +238,16 @@ export function OrderPanel({
   const signedIn = session === 'ready' && !!me;
   const qc = useQueryClient();
   const [cart, setCart] = useState<Record<string, number>>({});
-  const [details, setDetails] = useToolState<Details>('mess_order_details', {
-    name: '',
-    mode: 'delivery',
-    address: '',
-    phone: '',
-    note: '',
-  });
+  const [saved, setDetails] = useToolState<Partial<Details>>('mess_order_details', {});
+  // Saved by an older version of this page, a field may be missing (or not text): fill it in.
+  const text = (v: unknown) => (typeof v === 'string' ? v : '');
+  const details: Details = {
+    name: text(saved?.name),
+    mode: saved?.mode === 'pickup' ? 'pickup' : 'delivery',
+    address: text(saved?.address),
+    phone: text(saved?.phone),
+    note: text(saved?.note),
+  };
   const [confirmed, setConfirmed] = useState(false);
   const [tried, setTried] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -321,7 +324,7 @@ export function OrderPanel({
       else delete next[key];
       return next;
     });
-  const set = (p: Partial<Details>) => setDetails((d) => ({ ...d, ...p }));
+  const set = (p: Partial<Details>) => setDetails((d) => ({ ...details, ...d, ...p }));
 
   const phone = normaliseMobile(details.phone);
   const problem = !lines.length
