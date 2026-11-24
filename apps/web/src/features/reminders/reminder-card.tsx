@@ -82,6 +82,53 @@ export function Switch({
   );
 }
 
+/** What "Send a test" found, in plain words, with the fix when it didn't show. */
+export function TestResult({ result }: { result: null | 'waiting' | 'shown' | 'failed' | 'timeout' }) {
+  if (!result) return null;
+  if (result === 'waiting')
+    return (
+      <p role="status" className="m-0 text-[14px] text-ink2">
+        Sent. Waiting for it to arrive on this device…
+      </p>
+    );
+  if (result === 'shown')
+    return (
+      <p role="status" className="m-0 rounded-xl bg-sunk px-4 py-3 text-[14px] text-ink">
+        <strong className="text-teal-text">✓ It arrived on this device.</strong> If no pop-up appeared, your
+        device is hiding notifications: turn off Do Not Disturb / Focus, and allow notifications for your
+        browser in the phone's or computer's settings (Windows: Settings › System › Notifications › Google
+        Chrome).
+      </p>
+    );
+  return (
+    <div
+      role="alert"
+      className="flex flex-col gap-1.5 rounded-xl bg-blush px-4 py-3 text-[14px] text-blush-text"
+    >
+      <strong>
+        {result === 'failed' ? '✗ Your browser refused to show it.' : "✗ It didn't arrive within 20 seconds."}
+      </strong>
+      <ul className="m-0 pl-5 text-ink">
+        <li>
+          Keep the browser running (on a computer, Chrome must be open; on Android, don't force-close it).
+        </li>
+        <li>
+          Allow notifications for this site: the 🔒 next to the address › Site settings › Notifications ›
+          Allow.
+        </li>
+        <li>
+          Turn off Do Not Disturb / Focus Assist, and allow notifications for your browser in device settings.
+        </li>
+        <li>
+          On iPhone, open the site from the Home Screen icon (Share › Add to Home Screen) and turn reminders
+          on there.
+        </li>
+        <li>Still nothing? Tap "Turn off on this device", then turn it on again.</li>
+      </ul>
+    </div>
+  );
+}
+
 /** A small picture of the notification students will get. */
 export function SampleNotification({ title, body }: { title: string; body: string }) {
   return (
@@ -186,6 +233,7 @@ export function ReminderCard({
             {r.error}
           </p>
         )}
+        <TestResult result={r.testResult} />
         <OtherDevices />
         <p className="m-0 text-[12.5px] leading-relaxed text-ink2">
           Only this device's notification address and what you pick here are saved, never your whole

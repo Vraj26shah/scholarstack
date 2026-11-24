@@ -635,6 +635,23 @@ export interface AdminPushStatsDto {
   sentToday: number;
 }
 
+/** One device that gets notifications, as the admin sees it when testing. */
+export interface AdminPushDeviceDto {
+  id: string;
+  label: string;
+  /** The account's address when the device asked for order alerts ('' otherwise). */
+  email: string;
+  createdAt: string;
+  /** Last time the device reported that a notification reached its screen (null: never). */
+  seenAt: string | null;
+  /** What it gets: "Lunch, dinner · Order alerts". */
+  summary: string;
+  /** Only right after a test: what the push service said. */
+  result?: 'ok' | 'gone' | 'failed';
+}
+
+export const AdminPushTestBody = z.object({ email: z.string().trim().toLowerCase().email() });
+
 export interface PushRunDto {
   checked: number;
   sent: number;

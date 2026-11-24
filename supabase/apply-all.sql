@@ -5510,3 +5510,25 @@ alter table public.messes add constraint messes_daily_order_cap check (daily_ord
 $m$;
   insert into supabase_migrations.schema_migrations (version, name) values ('20261125000200', 'owner_devices_and_order_cap');
 end $migration$;
+
+-- ═══ 20261125000300_push_receipts ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261125000300') then
+    raise notice 'skip 20261125000300';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Notification receipts
+--
+-- push_subscriptions.seen_at: the last time this device actually showed one of our notifications
+-- (its service worker reports back after showing it). "Sent" only means the push service accepted
+-- it; "seen" means it reached the screen, so a test can say which devices really work.
+--
+-- Safe to run more than once. Rollback:
+--   alter table public.push_subscriptions drop column if exists seen_at;
+-- ════════════════════════════════════════════════════════════════════════════
+
+alter table public.push_subscriptions add column if not exists seen_at timestamptz;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261125000300', 'push_receipts');
+end $migration$;

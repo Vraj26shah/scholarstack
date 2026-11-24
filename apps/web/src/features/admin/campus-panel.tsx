@@ -18,6 +18,7 @@ import { Button } from '../../shared/ui/button';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { MenuCardEditor } from '../restaurant/menu-card-editor';
 import { WeekChartEditor } from '../restaurant/week-chart-editor';
+import { PersonTest } from './push-test';
 import { Field, Panel, StatusPill, U, input, plural } from './ui';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -731,6 +732,7 @@ export function RemindersAdminPanel() {
             )}
             {run.error && <p className="m-0 text-[14px] text-blush-text">{friendly(run.error)}</p>}
           </div>
+          {s.configured && <PersonTest />}
         </>
       )}
     </Panel>

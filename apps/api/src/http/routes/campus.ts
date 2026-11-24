@@ -1,4 +1,5 @@
 import {
+  AdminPushTestBody,
   ChatBlockBody,
   ChatMessageBody,
   ChatReportBody,
@@ -314,6 +315,17 @@ campusRoutes.post('/push/unsubscribe', async (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * "It reached the screen": the service worker reports each notification it showed. The push
+ * address is the device's secret key, so only that device can report for itself.
+ */
+campusRoutes.post('/push/receipt', async (c) => {
+  await throttle(c, 'push-receipt', (await requestMeta(c)).ipHash);
+  const { endpoint } = PushEndpointBody.parse(await c.req.json());
+  await c.get('container').reminders.receipt(endpoint);
+  return c.json({ ok: true });
+});
+
 /** "Mute today" on a notification (sent by the service worker). */
 campusRoutes.post('/push/mute', async (c) => {
   const { endpoint } = PushEndpointBody.parse(await c.req.json());
@@ -444,6 +456,20 @@ campusRoutes.delete('/admin/mess-blocks/:slug/:userId', async (c) => {
 campusRoutes.post('/admin/mess/:slug/test-alert', async (c) => {
   await requireAdmin(c);
   return c.json(await c.get('container').chats.testAlert(c.req.param('slug')));
+});
+
+/** Every device of these people (comma-separated emails), with when each last showed one. */
+campusRoutes.get('/admin/push/devices', async (c) => {
+  await requireAdmin(c);
+  const emails = (c.req.query('emails') ?? '').split(',').slice(0, 10);
+  return c.json(await c.get('container').reminders.devicesOf(emails));
+});
+
+/** A test notification to every device of one person. */
+campusRoutes.post('/admin/push/test-person', async (c) => {
+  await requireAdmin(c);
+  const { email } = AdminPushTestBody.parse(await c.req.json());
+  return c.json(await c.get('container').reminders.testPerson(email));
 });
 
 /** Sends whatever is due right now (the same as the five-minute cron). */

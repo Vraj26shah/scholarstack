@@ -1,4 +1,5 @@
 import {
+  type AdminPushDeviceDto,
   type AdminPushStatsDto,
   type DuePush,
   MEAL_NAMES,
@@ -31,7 +32,7 @@ import type {
   PushSender,
   PushSubscriptionRecord,
 } from '../domain/campus-ports';
-import type { Clock, FeatureRepository } from '../domain/ports';
+import type { Clock, FeatureRepository, ProfileRepository } from '../domain/ports';
 import { fail } from './errors';
 
 /**
@@ -200,6 +201,8 @@ export class ReminderService {
     private readonly clock: Clock,
     /** Notifications per run: each one is a request, and a Worker run may make only so many. */
     private readonly perRun = 35,
+    /** To find a person's account by email (admin tests). */
+    private readonly profiles?: Pick<ProfileRepository, 'findByEmails'>,
   ) {}
 
   get configured() {
@@ -248,6 +251,72 @@ export class ReminderService {
 
   async setPrefs(endpoint: string, prefs: ReminderPrefs) {
     if (!(await this.push.setPrefs(endpoint, prefs))) throw fail.notFound('Reminders for this device');
+  }
+
+  /** The device's service worker showed a notification: remember when (for "did it arrive?"). */
+  async receipt(endpoint: string) {
+    await this.push.markSeen(endpoint);
+  }
+
+  /** Every device of these accounts (by order-alert address and by account), for admin testing. */
+  async devicesOf(emails: string[]): Promise<AdminPushDeviceDto[]> {
+    const want = [...new Set(emails.map((e) => normaliseEmail(e)).filter(Boolean))];
+    if (!want.length) return [];
+    const accounts = this.profiles ? await this.profiles.findByEmails(want) : [];
+    const lists = await Promise.all([
+      this.push.listForEmails(want),
+      ...accounts.map((a) => this.push.listForUser(a.id)),
+    ]);
+    const byId = new Map<string, PushSubscriptionRecord>();
+    for (const s of lists.flat()) byId.set(s.id, s);
+    return [...byId.values()]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((s) => ({
+        id: s.id,
+        label: s.label || 'A device',
+        email: s.email,
+        createdAt: s.createdAt.toISOString(),
+        seenAt: s.seenAt?.toISOString() ?? null,
+        summary:
+          [prefsSummary(s.prefs), s.email ? 'Order alerts and chat' : '']
+            .filter((x) => x && x !== 'Nothing chosen yet')
+            .join(' · ') || 'Nothing chosen yet',
+      }));
+  }
+
+  /** Admin: a test notification to every device of this person, with what each push service said. */
+  async testPerson(email: string): Promise<AdminPushDeviceDto[]> {
+    if (!this.configured) throw fail.badRequest("Notifications aren't set up on the server yet.");
+    const devices = await this.devicesOf([email]);
+    if (!devices.length)
+      throw fail.badRequest(
+        'No device has notifications on for that address. Ask them to turn on reminders or alerts first.',
+      );
+    const all = await this.push.listAll();
+    const byId = new Map(all.map((s) => [s.id, s]));
+    const gone: string[] = [];
+    const out = await Promise.all(
+      devices.slice(0, 30).map(async (d) => {
+        const sub = byId.get(d.id);
+        if (!sub) return { ...d, result: 'failed' as const };
+        const result = await this.sender
+          .send(
+            sub,
+            {
+              title: 'Test from Scholars Stack ✓',
+              body: 'Notifications work on this device. You can ignore this one.',
+              tag: 'test',
+              url: '/',
+            },
+            300,
+          )
+          .catch(() => 'failed' as const);
+        if (result === 'gone') gone.push(d.id);
+        return { ...d, result };
+      }),
+    );
+    if (gone.length) await this.push.removeIds(gone);
+    return out;
   }
 
   async unsubscribe(endpoint: string) {

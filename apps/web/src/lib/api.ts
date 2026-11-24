@@ -1,6 +1,7 @@
 import type {
   AdminOrderRowDto,
   AdminOrdersOverviewDto,
+  AdminPushDeviceDto,
   AdminPushStatsDto,
   ChatMessageDto,
   ChatMessageInput,
@@ -392,6 +393,13 @@ export class ApiClient {
       `/admin/mess/${encodeURIComponent(slug)}/test-alert`,
     );
   adminPushRun = () => this.request<PushRunDto>('POST', '/admin/push/run');
+  adminPushDevices = (emails: string[]) =>
+    this.request<AdminPushDeviceDto[]>(
+      'GET',
+      `/admin/push/devices?emails=${encodeURIComponent(emails.join(','))}`,
+    );
+  adminPushTestPerson = (email: string) =>
+    this.request<AdminPushDeviceDto[]>('POST', '/admin/push/test-person', { email });
 
   // Catalogue
   catalogue = () => this.request<CatalogueIndexDto>('GET', '/catalogue');

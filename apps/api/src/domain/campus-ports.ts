@@ -57,11 +57,15 @@ export interface PushSubscriptionRecord extends PushTarget {
   email: string;
   label: string;
   createdAt: Date;
+  /** Last time the device reported a notification reached its screen. */
+  seenAt: Date | null;
 }
 
 export interface PushRepository {
   /** Insert, or update the keys and settings of the same push address. */
-  upsert(sub: Omit<PushSubscriptionRecord, 'id' | 'createdAt'>): Promise<PushSubscriptionRecord>;
+  upsert(sub: Omit<PushSubscriptionRecord, 'id' | 'createdAt' | 'seenAt'>): Promise<PushSubscriptionRecord>;
+  /** The device showed a notification just now (its service worker said so). */
+  markSeen(endpoint: string): Promise<boolean>;
   findByEndpoint(endpoint: string): Promise<PushSubscriptionRecord | null>;
   setPrefs(endpoint: string, prefs: ReminderPrefs): Promise<boolean>;
   removeByEndpoint(endpoint: string): Promise<void>;

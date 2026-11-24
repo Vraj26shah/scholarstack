@@ -69,10 +69,11 @@ export class MemoryPush implements PushRepository {
   readonly subs = new Map<string, PushSubscriptionRecord>();
   readonly sent: { subscriptionId: string; key: string; day: string }[] = [];
   constructor(private readonly now: () => Date = () => new Date()) {}
-  async upsert(sub: Omit<PushSubscriptionRecord, 'id' | 'createdAt'>) {
+  async upsert(sub: Omit<PushSubscriptionRecord, 'id' | 'createdAt' | 'seenAt'>) {
     const current = await this.findByEndpoint(sub.endpoint);
     const row: PushSubscriptionRecord = {
       ...sub,
+      seenAt: current?.seenAt ?? null,
       userId: sub.userId ?? current?.userId ?? null,
       email: sub.email || current?.email || '',
       id: current?.id ?? nextId('push'),
@@ -87,6 +88,11 @@ export class MemoryPush implements PushRepository {
   async setPrefs(endpoint: string, prefs: ReminderPrefs) {
     const row = await this.findByEndpoint(endpoint);
     if (row) row.prefs = prefs;
+    return !!row;
+  }
+  async markSeen(endpoint: string) {
+    const row = await this.findByEndpoint(endpoint);
+    if (row) row.seenAt = this.now();
     return !!row;
   }
   async removeByEndpoint(endpoint: string) {

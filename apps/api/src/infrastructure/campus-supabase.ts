@@ -162,11 +162,12 @@ const toSub = (r: Row): PushSubscriptionRecord => ({
   email: (r.email as string) ?? '',
   label: (r.label as string) ?? '',
   createdAt: new Date(r.created_at as string),
+  seenAt: r.seen_at ? new Date(r.seen_at as string) : null,
 });
 
 export class SupabasePush implements PushRepository {
   constructor(private readonly db: SupabaseClient) {}
-  async upsert(sub: Omit<PushSubscriptionRecord, 'id' | 'createdAt'>) {
+  async upsert(sub: Omit<PushSubscriptionRecord, 'id' | 'createdAt' | 'seenAt'>) {
     const row: Row = {
       endpoint: sub.endpoint,
       p256dh: sub.p256dh,
@@ -202,6 +203,16 @@ export class SupabasePush implements PushRepository {
   }
   async removeByEndpoint(endpoint: string) {
     must(await this.db.from('push_subscriptions').delete().eq('endpoint', endpoint));
+  }
+  async markSeen(endpoint: string) {
+    const rows = must(
+      await this.db
+        .from('push_subscriptions')
+        .update({ seen_at: new Date().toISOString() })
+        .eq('endpoint', endpoint)
+        .select('id'),
+    ) as Row[];
+    return rows.length > 0;
   }
   async removeIds(ids: string[]) {
     const ok = ids.filter(isUuid);

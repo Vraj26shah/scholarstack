@@ -107,7 +107,29 @@ self.addEventListener('push', (event) => {
         for (const t of tabs) t.postMessage({ type: 'push', tag: data.tag || '' });
         return undefined;
       }
-      return show();
+      // Shown: tell open pages ("✓ arrived") and the server (the admin sees which devices work).
+      return show().then(
+        () => {
+          for (const t of tabs) t.postMessage({ type: 'shown', tag: data.tag || '' });
+          return myEndpoint().then(
+            (endpoint) =>
+              endpoint &&
+              fetch('/api/push/receipt', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ endpoint }),
+              }).catch(() => {}),
+          );
+        },
+        (error) => {
+          for (const t of tabs)
+            t.postMessage({
+              type: 'show-failed',
+              tag: data.tag || '',
+              error: String(error?.message),
+            });
+        },
+      );
     }),
   );
 });

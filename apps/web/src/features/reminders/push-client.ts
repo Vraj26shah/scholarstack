@@ -71,6 +71,28 @@ export async function subscribeBrowser(publicKey: string) {
   return { endpoint: json.endpoint!, keys: { p256dh: json.keys!.p256dh!, auth: json.keys!.auth! } };
 }
 
+/**
+ * Waits for this device's service worker to say it showed a notification with this tag: 'shown',
+ * 'failed' (the browser refused to show it), or 'timeout' (it never arrived).
+ */
+export function waitForShown(tag: string, ms = 15_000): Promise<'shown' | 'failed' | 'timeout'> {
+  return new Promise((resolve) => {
+    if (!('serviceWorker' in navigator)) return resolve('timeout');
+    const done = (r: 'shown' | 'failed' | 'timeout') => {
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener('message', on);
+      resolve(r);
+    };
+    const on = (e: MessageEvent) => {
+      if (e.data?.tag !== tag) return;
+      if (e.data.type === 'shown') done('shown');
+      if (e.data.type === 'show-failed') done('failed');
+    };
+    const timer = setTimeout(() => done('timeout'), ms);
+    navigator.serviceWorker.addEventListener('message', on);
+  });
+}
+
 export async function unsubscribeBrowser() {
   const sub = await browserSubscription().catch(() => null);
   await sub?.unsubscribe().catch(() => {});

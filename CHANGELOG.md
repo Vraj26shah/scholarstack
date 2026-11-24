@@ -4,6 +4,12 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Notification tests you can trust (25 Nov)
+- **Checked with real Google Chrome against the live site**: the server's push is accepted by Google, reaches the service worker, decrypts correctly, and is handed to the browser to show. When nothing appears, the device is hiding it (Windows/phone notification settings, Do Not Disturb, browser closed).
+- **Delivery receipts**: every device's service worker now reports each notification it actually shows (`POST /push/receipt`, `push_subscriptions.seen_at`, migration `20261125000300_push_receipts`).
+- **"Send a test" says what happened**: "✓ It arrived on this device" (with how to unhide pop-ups), or "✗ It didn't arrive" with the exact fixes (keep the browser open, allow the site, Do Not Disturb, iPhone Home Screen).
+- **Admin › Campus › Reminders › Test anyone's notifications**: type a student's or owner's email; every device of theirs gets a test and shows "✓ Showed it" or "✗ Not confirmed" within seconds. The owner test alert in Orders & chats lists the owner's devices the same way.
+
 ### Mess menu, reminders and restaurant tools, round two (25 Nov)
 - **The week's menu is a real table**: a framed grid with a header band of meals and times, ruled columns, alternating rows, today's row and the meal being served (or next) outlined, and a "With every meal" footer. Dishes you ticked are highlighted with ⭐.
 - **Meal reminders by dish**: choose **Every dish** or **Only dishes I tick**, then tick the mess's own dishes meal by meal (searchable, most common first). With "only", a meal is announced only when it serves a ticked dish. Typed words (paneer, biryani) still work.

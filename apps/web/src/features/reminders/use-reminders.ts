@@ -11,6 +11,7 @@ import {
   pushSupport,
   subscribeBrowser,
   unsubscribeBrowser,
+  waitForShown,
 } from './push-client';
 import {
   type LocalReminders,
@@ -121,10 +122,21 @@ export function useReminders() {
     }, 700);
   };
 
+  /** After "Send a test": did it reach this screen? */
+  const [testResult, setTestResult] = useState<null | 'waiting' | 'shown' | 'failed' | 'timeout'>(null);
   const test = () =>
     run('test', async () => {
       if (!local.endpoint) return false;
-      await api.pushTest(local.endpoint);
+      setTestResult('waiting');
+      // Listen before sending: a fast push can arrive before the request even returns.
+      const arrived = waitForShown('test', 20_000);
+      try {
+        await api.pushTest(local.endpoint);
+      } catch (e) {
+        setTestResult(null);
+        throw e;
+      }
+      setTestResult(await arrived);
       return true;
     });
 
@@ -158,6 +170,7 @@ export function useReminders() {
     update,
     saved,
     test,
+    testResult,
     turnOff,
     snooze,
     unsnooze,

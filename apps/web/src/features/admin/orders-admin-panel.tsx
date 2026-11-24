@@ -11,6 +11,7 @@ import { Button } from '../../shared/ui/button';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { OrderChat } from '../chat/order-chat';
 import { rupees } from '../restaurant/shared';
+import { DeviceReceipts } from './push-test';
 import { Panel, StatusPill, plural } from './ui';
 
 const when = (iso: string) =>
@@ -32,7 +33,11 @@ const STEPS: [MessOrderStatus, string][] = [
 
 /** One restaurant's health: is anyone hearing its orders, how fast it answers, what went wrong. */
 function RestaurantCard({ r }: { r: AdminRestaurantStatsDto }) {
-  const test = useMutation({ mutationFn: () => api.adminTestAlert(r.slug) });
+  const [sentAt, setSentAt] = useState(0);
+  const test = useMutation({
+    mutationFn: () => api.adminTestAlert(r.slug),
+    onSuccess: () => setSentAt(Date.now() - 1_000),
+  });
   const weekTotal = Object.values(r.week).reduce((a, b) => a + b, 0);
   return (
     <article className="flex flex-col gap-3 border-t-2 border-ink pt-3">
@@ -111,6 +116,9 @@ function RestaurantCard({ r }: { r: AdminRestaurantStatsDto }) {
         )}
         {test.error && <span className="text-[13.5px] text-blush-text">{friendly(test.error)}</span>}
       </div>
+      {sentAt > 0 && r.ownerEmails.length > 0 && (
+        <DeviceReceipts emails={r.ownerEmails} sentAt={sentAt} results={{}} />
+      )}
     </article>
   );
 }

@@ -325,3 +325,31 @@ describe('owners, devices and limits', () => {
     expect(env.campus.pushSender.sent.length).toBe(before + 1);
   });
 });
+
+describe('testing notifications', () => {
+  it("an admin sends a test to one person's devices and sees which ones showed it", async () => {
+    const { admin } = await scene(); // student1 and the owner have alerts on
+    const sent = await admin.call('POST', '/admin/push/test-person', { email: 'student1@vitbhopal.ac.in' });
+    expect(sent.status).toBe(200);
+    expect(sent.json).toEqual([expect.objectContaining({ result: 'ok', seenAt: null })]);
+    expect(env.campus.pushSender.sent.at(-1)!.message.title).toBe('Test from Scholars Stack ✓');
+
+    // The device's service worker reports that it showed it.
+    expect(
+      (await new Browser(app).call('POST', '/push/receipt', { endpoint: device(2).endpoint })).status,
+    ).toBe(200);
+    const after = (await admin.call('GET', '/admin/push/devices?emails=student1@vitbhopal.ac.in')).json;
+    expect(after[0].seenAt).toBeTruthy();
+    expect(after[0].summary).toContain('Order alerts');
+
+    // Nobody with that address: a clear answer, not a silent "sent".
+    const none = await admin.call('POST', '/admin/push/test-person', { email: 'nobody@vitbhopal.ac.in' });
+    expect(none.status).toBe(400);
+    expect(none.json.error.message).toMatch(/No device has notifications on/);
+    // Students can't use it.
+    const student = await signedIn('student4@vitbhopal.ac.in');
+    expect(
+      (await student.call('POST', '/admin/push/test-person', { email: 'x@vitbhopal.ac.in' })).status,
+    ).toBe(403);
+  });
+});
