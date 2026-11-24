@@ -124,14 +124,14 @@ export function useReminders() {
 
   /** After "Send a test": did it reach this screen? */
   const [testResult, setTestResult] = useState<null | 'waiting' | 'shown' | 'failed' | 'timeout'>(null);
-  const test = () =>
+  const test = (kind?: 'meal' | 'class') =>
     run('test', async () => {
       if (!local.endpoint) return false;
       setTestResult('waiting');
       // Listen before sending: a fast push can arrive before the request even returns.
       const arrived = waitForShown('test', 20_000);
       try {
-        await api.pushTest(local.endpoint);
+        await api.pushTest(local.endpoint, kind);
       } catch (e) {
         setTestResult(null);
         throw e;

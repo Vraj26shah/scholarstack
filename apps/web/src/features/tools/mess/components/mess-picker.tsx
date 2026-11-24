@@ -123,11 +123,7 @@ export function MessPicker({
   }, [active, open, id]);
 
   return (
-    <div
-      ref={root}
-      // Compact and closed: only as wide as its button, so other controls can sit beside it.
-      className={`relative flex flex-col gap-1.5 min-w-0 ${compact && !open ? 'w-auto' : 'w-full basis-full max-w-[520px]'}`}
-    >
+    <div ref={root} className="relative flex flex-col gap-1.5 min-w-0 w-full max-w-[520px]">
       <span id={`${id}-label`} className={compact ? 'sr-only' : 'text-sm font-semibold text-ink2'}>
         {label}
       </span>

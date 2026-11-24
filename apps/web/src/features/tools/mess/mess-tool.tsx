@@ -1,6 +1,6 @@
 import { DAY_KEYS, MEAL_KEYS, type MealKey, campusClock, weekIndex } from '@ss/contracts';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../../../lib/api';
 import { ErrorState, Skeleton } from '../../../shared/ui/feedback';
@@ -59,9 +59,15 @@ export default function MessTool() {
   const linked = params.get('mess');
   const focusParam = params.get('meal');
   const focus = MEAL_KEYS.includes(focusParam as MealKey) ? (focusParam as MealKey) : null;
+  // A link (?mess=…, e.g. from a reminder) chooses the mess once when it arrives. It must never
+  // undo a mess picked afterwards (picking clears the link a moment later).
+  const appliedLink = useRef<string | null>(null);
   useEffect(() => {
-    if (linked && linked !== choice) setChoice(linked);
-  }, [linked, choice, setChoice]);
+    if (linked && linked !== appliedLink.current) {
+      appliedLink.current = linked;
+      setChoice(linked);
+    }
+  }, [linked, setChoice]);
 
   const list = useQuery({ queryKey: ['messes'], queryFn: api.messes, staleTime: 5 * 60_000 });
   const slug = choice && list.data?.some((m) => m.slug === choice) ? choice : null;
@@ -145,12 +151,8 @@ export default function MessTool() {
           <MessAbout
             mess={m}
             onReport={openReport}
-            picker={
-              <div className="flex flex-wrap items-center gap-3 print:hidden">
-                <MessPicker compact messes={list.data ?? []} value={slug} onChange={pick} />
-                <MealReminderSwitch mess={m} />
-              </div>
-            }
+            picker={<MessPicker compact messes={list.data ?? []} value={slug} onChange={pick} />}
+            aside={<MealReminderSwitch mess={m} />}
           />
 
           <MealNow

@@ -676,6 +676,9 @@ export const PushSubscribeBody = z.object({
 });
 export type PushSubscribeInput = z.infer<typeof PushSubscribeBody>;
 export const PushEndpointBody = z.object({ endpoint });
+/** "Send a test" from a tool: a meal sample from the Mess menu, a class sample from the Timetable. */
+export const PushTestBody = z.object({ endpoint, kind: z.enum(['meal', 'class']).optional() });
+export type PushTestKind = 'meal' | 'class';
 export const PushPrefsBody = z.object({ endpoint, prefs: ReminderPrefs });
 /** The browser replaced a device's push address (sent by the service worker). */
 export const PushRenewBody = z.object({

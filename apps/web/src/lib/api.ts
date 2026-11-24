@@ -255,7 +255,8 @@ export class ApiClient {
     this.request<{ ok: true }>('PUT', '/push/prefs', { endpoint, prefs });
   pushUnsubscribe = (endpoint: string) =>
     this.request<{ ok: true }>('POST', '/push/unsubscribe', { endpoint });
-  pushTest = (endpoint: string) => this.request<{ ok: true }>('POST', '/push/test', { endpoint });
+  pushTest = (endpoint: string, kind?: 'meal' | 'class') =>
+    this.request<{ ok: true }>('POST', '/push/test', { endpoint, kind });
   pushDevices = () => this.request<PushDeviceDto[]>('GET', '/push/devices');
   pushRemoveDevice = (id: string) =>
     this.request<{ ok: true }>('DELETE', `/push/devices/${encodeURIComponent(id)}`);

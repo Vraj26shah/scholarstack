@@ -157,6 +157,7 @@ export function ReminderCard({
   sample,
   preset,
   off,
+  testKind,
   children,
 }: {
   id: string;
@@ -166,6 +167,8 @@ export function ReminderCard({
   sample: { title: string; body: string };
   /** What "Turn on" from here should already have chosen. */
   preset: (r: LocalReminders) => LocalReminders;
+  /** Which sample "Send a test" sends: a meal (Mess menu) or a class (Timetable maker). */
+  testKind?: 'meal' | 'class';
   /** Turning off from this card stops only this kind ("Turn off meal reminders"). */
   off?: {
     label: string;
@@ -221,7 +224,7 @@ export function ReminderCard({
             size="sm"
             disabled={!!r.busy}
             onClick={async () => {
-              await r.test();
+              await r.test(testKind);
             }}
           >
             {r.busy === 'test' ? 'Sending…' : 'Send a test'}

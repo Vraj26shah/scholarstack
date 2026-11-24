@@ -4,6 +4,12 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Glitch fixes from a real click-through (25 Nov)
+- **"Send a test" matches the tool**: from the Timetable maker it sends your next class ("Test · Operating Systems today 10:00 am", room, nudge time) and opens the timetable; from the Mess menu, the next meal.
+- **Changing mess works after opening a reminder link**: a `?mess=` link (from a notification) chose the mess and then undid every new choice, so the picker looked broken. The link now applies once.
+- **No more jumping**: the reminders switch sits beside the mess name instead of in the picker row (it was shoved down when the picker opened), and pages reserve their height while loading so the footer no longer leaps down. Unexpected layout shift on the Mess menu and Timetable: desktop 0.09 / 0.04, phone 0 (was up to 0.6).
+- Clicked through the Mess menu and Timetable on desktop and phone in a real browser: no console errors.
+
 ### Timetable maker polish, separate reminder switches (25 Nov)
 - **Picked slots are unmistakable**: solid dark with "✓ Picked" in the week grid and the day view, and every slot presses visibly when tapped (before, a picked slot was a faint outline that looked like nothing happened).
 - **A floating "N slots picked · Add course · Clear" bar** appears as soon as a slot is picked, so phones don't have to scroll back up for the button.

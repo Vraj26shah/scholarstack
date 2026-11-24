@@ -51,6 +51,7 @@ export function ClassReminders({ courses }: { courses: Course[] }) {
       ask="Tomorrow's classes the night before, and a nudge before each class if you want one. Only for the subjects and days you pick, even when the site is closed."
       sample={sampleFor(courses)}
       preset={(x) => ({ ...x, classes: { ...x.classes, nightly: true } })}
+      testKind="class"
       off={{
         label: 'Turn off class reminders',
         isOn: (x) => x.classes.nightly || x.classes.before,

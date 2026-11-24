@@ -633,3 +633,36 @@ describe("the owner's dashboard", () => {
     );
   });
 });
+
+describe('"Send a test" from each tool', () => {
+  it('sends a class sample from the Timetable maker and a meal sample from the Mess menu', async () => {
+    const a = await admin();
+    const prefs = {
+      mess: { slug: 'safal-hostel-mess', meals: ['lunch', 'dinner'] },
+      classes: {
+        nightly: true,
+        before: true,
+        lead: 10,
+        days: [0, 1, 2, 3, 4, 5],
+        courses: [
+          { code: 'CSE3003', name: 'Operating Systems', room: 'AB1-204', times: [{ day: 0, start: 600 }] },
+        ],
+      },
+    };
+    await a.call('POST', '/push/subscribe', device(1, prefs as Partial<ReminderPrefs>));
+    at('09:00'); // Monday 9 am: OS at 10 am today
+
+    expect((await a.call('POST', '/push/test', { endpoint: device(1).endpoint, kind: 'class' })).status).toBe(
+      200,
+    );
+    expect(env.campus.pushSender.sent.at(-1)!.message).toMatchObject({
+      title: 'Test · Operating Systems today 10:00 am',
+      url: '/tools/timetable',
+    });
+    expect(env.campus.pushSender.sent.at(-1)!.message.body).toContain('AB1-204');
+
+    await a.call('POST', '/push/test', { endpoint: device(1).endpoint, kind: 'meal' });
+    expect(env.campus.pushSender.sent.at(-1)!.message.title).toMatch(/^Test · (Lunch|Dinner)/);
+    expect(env.campus.pushSender.sent.at(-1)!.message.url).toContain('/tools/mess-menu');
+  });
+});

@@ -16,6 +16,7 @@ import {
   PushPrefsBody,
   PushRenewBody,
   PushSubscribeBody,
+  PushTestBody,
   SaveMessBody,
 } from '@ss/contracts';
 import { type Context, Hono } from 'hono';
@@ -362,8 +363,8 @@ campusRoutes.post('/push/renew', async (c) => {
 
 campusRoutes.post('/push/test', async (c) => {
   await throttle(c, 'push-test', (await requestMeta(c)).ipHash);
-  const { endpoint } = PushEndpointBody.parse(await c.req.json());
-  await c.get('container').reminders.test(endpoint);
+  const { endpoint, kind } = PushTestBody.parse(await c.req.json());
+  await c.get('container').reminders.test(endpoint, kind);
   return c.json({ ok: true });
 });
 

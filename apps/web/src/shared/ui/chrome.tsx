@@ -274,7 +274,9 @@ export function Page({ children, wide = false }: { children: React.ReactNode; wi
       <Header />
       <main
         id="main"
-        className={`page-enter mx-auto ${wide ? 'max-w-[1280px]' : 'max-w-[1100px]'} px-5 sm:px-9 pb-16`}
+        // At least a screen tall: while a page's content is still loading, the footer waits below the
+        // fold instead of sitting under the header and jumping down when the content arrives.
+        className={`page-enter mx-auto min-h-[calc(100dvh-180px)] ${wide ? 'max-w-[1280px]' : 'max-w-[1100px]'} px-5 sm:px-9 pb-16`}
       >
         {children}
       </main>

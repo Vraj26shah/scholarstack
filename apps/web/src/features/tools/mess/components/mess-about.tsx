@@ -11,10 +11,13 @@ export function MessAbout({
   mess,
   onReport,
   picker,
+  aside,
 }: {
   mess: MessDto;
   onReport: () => void /** The "Change mess" control, under the name. */;
   picker?: ReactNode;
+  /** Beside the name (the reminders switch), out of the picker's way when it opens. */
+  aside?: ReactNode;
 }) {
   const owner = mess.source === 'owner';
   const restaurant = mess.kind === 'restaurant';
@@ -29,14 +32,17 @@ export function MessAbout({
         : 'Call to order';
   return (
     <div className="flex flex-col gap-3 max-w-[820px]">
-      <div className="flex flex-col gap-1">
-        <h2 className="m-0 font-display font-extrabold text-[clamp(26px,4vw,34px)] leading-none tracking-[-0.04em]">
-          {mess.name}
-        </h2>
-        <p className="m-0 text-[15px] text-ink2">
-          {KIND_LABEL[mess.kind]}
-          {mess.place ? ` · ${mess.place}` : ''}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="flex flex-col gap-1">
+          <h2 className="m-0 font-display font-extrabold text-[clamp(26px,4vw,34px)] leading-none tracking-[-0.04em]">
+            {mess.name}
+          </h2>
+          <p className="m-0 text-[15px] text-ink2">
+            {KIND_LABEL[mess.kind]}
+            {mess.place ? ` · ${mess.place}` : ''}
+          </p>
+        </div>
+        {aside && <div className="print:hidden">{aside}</div>}
       </div>
       {picker}
 

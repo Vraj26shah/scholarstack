@@ -15,14 +15,17 @@ import {
   type PushRunDto,
   type PushStatusDto,
   type PushSubscribeInput,
+  type PushTestKind,
   type ReminderPrefs,
   ReminderPrefs as ReminderPrefsSchema,
   campusClock,
   dishesOn,
   duePushes,
+  formatClock,
   formatSpan,
   isTiffinItem,
   normaliseEmail,
+  toMinutes,
 } from '@ss/contracts';
 import type {
   MessRecord,
@@ -165,6 +168,8 @@ export class MessService {
     for (const m of menus) if (!have.has(m.slug)) await this.messes.save({ ...m, sort: sort++ });
   }
 }
+
+const WEEKDAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /** "Lunch, dinner · Tomorrow's classes · 3 subjects before class". */
 export function prefsSummary(p: ReminderPrefs): string {
@@ -349,16 +354,59 @@ export class ReminderService {
   }
 
   /** A sample right away, built from this device's real choices where it can be. */
-  async test(endpoint: string) {
+  async test(endpoint: string, kind?: PushTestKind) {
     const sub = await this.push.findByEndpoint(endpoint);
     if (!sub) throw fail.notFound('Reminders for this device');
-    const message = await this.sample(sub);
+    const message = kind === 'class' ? this.classSample(sub) : await this.sample(sub);
     const result = await this.sender.send(sub, message, 300);
     if (result === 'gone') {
       await this.push.removeIds([sub.id]);
       throw fail.badRequest('This device stopped accepting notifications. Turn reminders on again.');
     }
     if (result === 'failed') throw fail.badRequest("The test didn't go through. Try again in a minute.");
+  }
+
+  /**
+   * A class reminder as it will really read: the student's next chosen class (today or later this
+   * week), else a plain "they're on" with what was chosen. Opens the timetable.
+   */
+  private classSample(sub: PushSubscriptionRecord): PushMessage {
+    const { day, minutes } = campusClock(this.clock.now());
+    const c = sub.prefs.classes;
+    const next = c.courses
+      .flatMap((course) =>
+        course.times.map((t) => ({ course, t, ahead: ((t.day - day + 7) % 7) * 1440 + t.start - minutes })),
+      )
+      .map((x) => ({ ...x, ahead: x.ahead < 0 ? x.ahead + 7 * 1440 : x.ahead }))
+      .sort((a, b) => a.ahead - b.ahead)[0];
+    if (next) {
+      const when =
+        next.ahead < 1440 && next.t.day === day
+          ? `today ${formatClock(next.t.start)}`
+          : `${WEEKDAY[next.t.day]} ${formatClock(next.t.start)}`;
+      return {
+        title: `Test · ${next.course.name.slice(0, 40)} ${when}`,
+        body: [
+          next.course.code,
+          next.course.room,
+          c.before ? `nudge ${c.lead} min before` : '',
+          c.nightly ? `tomorrow's list at ${formatClock(toMinutes(c.nightlyAt))}` : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        tag: 'test',
+        url: '/tools/timetable',
+      };
+    }
+    return {
+      title: 'Class reminders are on ✓',
+      body:
+        c.nightly || c.before
+          ? `This is how they'll look. ${prefsSummary({ ...sub.prefs, mess: { ...sub.prefs.mess, slug: null } })}.`
+          : 'Add your courses in the Timetable maker to get reminders before them.',
+      tag: 'test',
+      url: '/tools/timetable',
+    };
   }
 
   private async sample(sub: PushSubscriptionRecord): Promise<PushMessage> {
@@ -378,10 +426,12 @@ export class ReminderService {
         url: `/tools/mess-menu?mess=${encodeURIComponent(mess.slug)}`,
       };
     return {
-      title: 'Reminders are on ✓',
-      body: `This is how they'll look. ${prefsSummary(sub.prefs)}.`,
+      title: 'Meal reminders are on ✓',
+      body: mess
+        ? `This is how they'll look: ${mess.name}, before each meal you picked.`
+        : 'Pick your mess in the Mess menu to get meal reminders.',
       tag: 'test',
-      url: sub.prefs.classes.courses.length ? '/tools/timetable' : '/tools/mess-menu',
+      url: mess ? `/tools/mess-menu?mess=${encodeURIComponent(mess.slug)}` : '/tools/mess-menu',
     };
   }
 
