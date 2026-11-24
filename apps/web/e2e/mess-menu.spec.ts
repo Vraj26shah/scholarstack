@@ -83,7 +83,7 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
 
   // Ordering: the current thali, an order slip, a confirmed number, then the restaurant's own screen.
   await expect(page.getByText('Mess thali ₹80')).toBeVisible();
-  await page.getByRole('link', { name: 'Order now' }).click();
+  await page.getByRole('button', { name: 'Order now' }).click();
   await expect(page.getByRole('heading', { name: 'Order', exact: true })).toBeVisible();
   await page.getByRole('button', { name: /^Add .*thali/ }).click();
   await page.getByRole('button', { name: /^One more .*thali/ }).click();

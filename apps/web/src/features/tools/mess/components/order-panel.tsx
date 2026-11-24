@@ -26,6 +26,7 @@ import { ApiError, api } from '../../../../lib/api';
 import { useSession } from '../../../../lib/session';
 import { Button, buttonClass } from '../../../../shared/ui/button';
 import { Minus, Phone, Plus, SearchIcon } from '../../../../shared/ui/icons';
+import { jumpTo } from '../../../../shared/ui/jump';
 import { useLive } from '../../../chat/live';
 import { ChatButton, OrderChat } from '../../../chat/order-chat';
 import { rupees } from '../../../restaurant/shared';
@@ -627,17 +628,19 @@ export function OrderPanel({
         {/* Category rail (desktop) */}
         <nav aria-label="Menu categories" className="hidden lg:flex flex-col gap-0.5 sticky top-24">
           {thali && (
-            <a
-              href="#menu-today"
-              className="rounded-lg px-3 py-2 text-[14px] font-semibold text-marigold-text no-underline hover:bg-sunk"
+            <button
+              type="button"
+              onClick={jumpTo('menu-today')}
+              className="rounded-lg px-3 py-2 text-[14px] font-semibold text-marigold-text no-underline hover:bg-sunk text-left border-0 bg-transparent cursor-pointer"
             >
               Today's thali
-            </a>
+            </button>
           )}
           {sections.map((s) => (
             <a
               key={s.title}
               href={`#${sectionId(s.title)}`}
+              onClick={jumpTo(sectionId(s.title))}
               aria-current={activeSection === s.title ? 'true' : undefined}
               className={`flex items-baseline justify-between gap-2 rounded-lg px-3 py-2 text-[14px] no-underline border-l-[3px] ${
                 activeSection === s.title
@@ -672,6 +675,7 @@ export function OrderPanel({
                   <a
                     key={s.title}
                     href={`#${sectionId(s.title)}`}
+                    onClick={jumpTo(sectionId(s.title))}
                     className={`flex-none h-9 inline-flex items-center gap-1.5 rounded-full px-3.5 text-[13.5px] font-semibold no-underline ${
                       activeSection === s.title ? 'bg-ink text-bg' : 'border border-line text-ink'
                     }`}
@@ -971,15 +975,16 @@ export function OrderPanel({
       </div>
 
       {!readOnly && count > 0 && !showTracker && (
-        <a
-          href="#order-slip"
-          className="lg:hidden fixed inset-x-4 bottom-[calc(84px+env(safe-area-inset-bottom))] z-30 flex items-center justify-between rounded-2xl bg-teal px-5 h-14 text-white no-underline shadow-[0_18px_34px_-18px_rgba(0,0,0,0.6)]"
+        <button
+          type="button"
+          onClick={jumpTo('order-slip')}
+          className="lg:hidden fixed inset-x-4 bottom-[calc(84px+env(safe-area-inset-bottom))] z-30 flex items-center justify-between rounded-2xl bg-teal px-5 h-14 text-white no-underline shadow-[0_18px_34px_-18px_rgba(0,0,0,0.6)] border-0 cursor-pointer"
         >
           <span className="text-[15px] font-semibold">
             {count} item{count === 1 ? '' : 's'} · {rupees(total)}
           </span>
           <span className="text-[15px] font-bold">View order →</span>
-        </a>
+        </button>
       )}
       {chatOpen && current && <OrderChat orderId={current.id} onClose={() => setChatOpen(false)} />}
     </section>

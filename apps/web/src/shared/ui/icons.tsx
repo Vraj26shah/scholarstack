@@ -236,3 +236,23 @@ export const ArrowUp = ({ size, ...p }: P) => (
     <path d="M12 19V5M6 11l6-6 6 6" />
   </svg>
 );
+export const Printer = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M6 9V3h12v6" />
+    <rect x="3" y="9" width="18" height="8" rx="2" />
+    <path d="M6 14h12v7H6z" />
+  </svg>
+);
+export const ShareIcon = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <circle cx="18" cy="5" r="3" />
+    <circle cx="6" cy="12" r="3" />
+    <circle cx="18" cy="19" r="3" />
+    <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+  </svg>
+);
+export const DownloadIcon = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M12 3v12M7 10l5 5 5-5M4 20h16" />
+  </svg>
+);

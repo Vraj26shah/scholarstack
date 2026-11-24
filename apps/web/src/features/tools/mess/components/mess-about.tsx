@@ -1,6 +1,7 @@
 import type { MessDto } from '@ss/contracts';
 import type { ReactNode } from 'react';
 import { buttonClass } from '../../../../shared/ui/button';
+import { jumpTo } from '../../../../shared/ui/jump';
 import { KIND_LABEL } from './mess-picker';
 
 /**
@@ -58,9 +59,9 @@ export function MessAbout({
               </span>
             ))}
           {canOrder && (
-            <a href="#order" className={buttonClass('brand', 'sm')}>
+            <button type="button" onClick={jumpTo('order')} className={buttonClass('brand', 'sm')}>
               {cta}
-            </a>
+            </button>
           )}
         </p>
       )}

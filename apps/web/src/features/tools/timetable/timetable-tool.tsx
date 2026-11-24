@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 import { Button } from '../../../shared/ui/button';
 import { Sheet as Dialog } from '../../../shared/ui/feedback';
+import { Calendar, DownloadIcon, PhotoIcon, Printer, ShareIcon } from '../../../shared/ui/icons';
 import { ClassReminderSwitch, ClassReminders } from '../../reminders/class-reminders';
 import { useSyncTimetableReminders } from '../../reminders/use-reminders';
 import { newId, useToolState } from '../core/storage';
@@ -50,6 +51,16 @@ function useSharedTimetable() {
 }
 
 /** Composes the now card, grid or day list, course list, add/edit dialog, exports and sharing. */
+/** One look for every save and share action: same height, icon first, a clear press. */
+const TOOL_BTN =
+  'inline-flex items-center justify-center gap-2 h-11 px-4 rounded-xl border-[1.5px] text-[14.5px] font-semibold whitespace-nowrap cursor-pointer transition-[transform,filter,border-color] duration-100 active:scale-[0.97] disabled:opacity-45 disabled:cursor-not-allowed disabled:active:scale-100';
+const EXPORT_ICON: Record<string, (p: { size?: number }) => ReactElement> = {
+  png: PhotoIcon,
+  ics: Calendar,
+  print: Printer,
+};
+const EXPORT_LABEL: Record<string, string> = { png: 'Save image' };
+
 export default function TimetableTool({
   exporters = DEFAULT_EXPORTERS,
 }: { exporters?: TimetableExporter[] }) {
@@ -123,31 +134,52 @@ export default function TimetableTool({
         title="Timetable maker"
         lead="Tap your slots or type them (A1, B2…), name the course, and get a clash-free week. Download it as a PDF, put it in your calendar, or share it with friends."
         aside={
-          <div className="flex flex-wrap items-center gap-2 print:hidden">
-            {!courses.length && (
-              <span className="basis-full order-last text-[13px] text-ink2">
-                Add a course first, then download, print or share your timetable.
-              </span>
-            )}
-            {courses.some((c) => !c.tentative) && <ClassReminderSwitch />}
-            {primary && (
-              <Button variant="brand" onClick={() => run(primary)} disabled={!courses.length || !!busy}>
-                {busy === primary.id ? 'Making it…' : primary.label}
-              </Button>
-            )}
-            {others.map((x) => (
-              <Button
-                key={x.id}
-                variant="outline"
-                onClick={() => run(x)}
-                disabled={!courses.length || !!busy}
+          <div className="flex flex-col gap-2.5 print:hidden w-full sm:w-auto">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2">
+              {primary && (
+                <button
+                  type="button"
+                  onClick={() => run(primary)}
+                  disabled={!courses.length || !!busy}
+                  className={`${TOOL_BTN} col-span-2 sm:col-span-1 bg-brand text-white border-brand hover:brightness-110`}
+                >
+                  <DownloadIcon size={18} />
+                  {busy === primary.id ? 'Making it…' : primary.label}
+                </button>
+              )}
+              {others.map((x) => {
+                const Icon = EXPORT_ICON[x.id] ?? DownloadIcon;
+                return (
+                  <button
+                    key={x.id}
+                    type="button"
+                    onClick={() => run(x)}
+                    disabled={!courses.length || !!busy}
+                    className={`${TOOL_BTN} bg-surface text-ink border-line hover:border-ink2`}
+                  >
+                    <Icon size={17} />
+                    {busy === x.id ? 'Making it…' : (EXPORT_LABEL[x.id] ?? x.label)}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={share}
+                disabled={!courses.length}
+                className={`${TOOL_BTN} bg-surface text-ink border-line hover:border-ink2`}
               >
-                {busy === x.id ? 'Making it…' : x.label}
-              </Button>
-            ))}
-            <Button variant="outline" onClick={share} disabled={!courses.length}>
-              Share link
-            </Button>
+                <ShareIcon size={17} />
+                Share link
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {courses.some((c) => !c.tentative) && <ClassReminderSwitch />}
+              {!courses.length && (
+                <span className="text-[13px] text-ink2">
+                  Add a course first, then download, print or share your timetable.
+                </span>
+              )}
+            </div>
           </div>
         }
       />
