@@ -276,12 +276,220 @@ export interface MessOrderDto {
   ownerNote: string;
   createdAt: string;
   updatedAt: string;
+  /** When the restaurant first accepted or declined it (null: not yet, or it never did). */
+  respondedAt: string | null;
+  /** Who closed it when it didn't finish: the student, the owner, the 10-minute timer, an admin. */
+  endedBy: OrderEndedBy;
+  /** Chat messages the person asking hasn't read yet. */
+  unread: number;
+  /** The chat's latest line, for lists ("📷 Photo" for a picture). */
+  last: { sender: ChatSender; body: string; at: string } | null;
+  /** Live updates channel ('' = none: the page asks every few seconds instead). */
+  topic: string;
 }
 
 export interface OwnedMessDto {
   slug: string;
   name: string;
   ordersOpen: boolean;
+  /** Live updates channel for this restaurant's board ('' = none). */
+  topic: string;
+  /** Unread chat messages across this restaurant's open and recent orders. */
+  unread: number;
+}
+
+// ── Order chat (student ⇄ restaurant, per order) ─────────────────────────────
+
+export const CHAT_SENDERS = ['student', 'owner', 'system'] as const;
+export type ChatSender = (typeof CHAT_SENDERS)[number];
+export const ORDER_ENDED_BY = ['', 'student', 'owner', 'auto', 'admin'] as const;
+export type OrderEndedBy = (typeof ORDER_ENDED_BY)[number];
+
+/**
+ * The clock every new order runs on. Owners hear an alarm every minute until they answer; after
+ * three minutes the student gets a one-tap WhatsApp nudge (and the owner a second alert); after
+ * ten the order is cancelled so nobody waits for food that isn't coming.
+ */
+export const ORDER_TIMERS = {
+  alarmEveryMs: 60_000,
+  nudgeAfterMs: 3 * 60_000,
+  autoCancelAfterMs: 10 * 60_000,
+};
+
+export const CHAT_LIMITS = {
+  bodyMax: 1000,
+  /** Messages one person may send in a minute, and in a day (across all their chats). */
+  perMinute: 20,
+  perDay: 300,
+  /** A chat stays open this long after its order finishes, then turns read-only. */
+  openHoursAfterEnd: 12,
+};
+
+/** One-tap replies (free text is always allowed too). */
+export const STUDENT_QUICK_REPLIES = [
+  'Where is my order?',
+  'How long will it take?',
+  "I'm at the gate",
+  'Coming to pick up now',
+  'Please make it less spicy',
+  'Thank you!',
+];
+export const OWNER_QUICK_REPLIES = [
+  'Order received, starting now',
+  'Ready in 10 minutes',
+  'Out for delivery',
+  'Ready, please collect from the counter',
+  'Sorry, one item is sold out. Shall we replace it?',
+  'Reached. Please come down',
+];
+
+const EMAIL_IN_TEXT = /[^\s@]+@[^\s@]+\.[a-z]{2,}/i;
+const LINK_IN_TEXT =
+  /(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]{2,}\.(?:com|in|net|org|io|me|co|app|link|xyz|ly|gl|to|be|info|site|online|shop|store|live|tk|ru|cn)\b/i;
+/** Eight or more digits close together, however they're spaced: a phone number, not a price. */
+const PHONE_IN_TEXT = /(?:\+?\d[\s\-().]*){8,}/;
+
+/**
+ * Why a chat message can't be sent, or null. Links, email addresses and phone numbers stay out of
+ * chats: they are how scams and harassment move off the site. Each side has a Call button instead.
+ */
+export function chatTextProblem(raw: string): string | null {
+  // Full-width digits and letters become plain ones; invisible characters (often used to slip a
+  // number past a filter) are dropped before checking.
+  const text = raw.normalize('NFKC').replace(/[\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g, '');
+  if (EMAIL_IN_TEXT.test(text)) return "Email addresses can't be shared in chat.";
+  if (LINK_IN_TEXT.test(text)) return "Links can't be sent in chat.";
+  if (PHONE_IN_TEXT.test(text)) return "Phone numbers can't be shared in chat. Use the Call button.";
+  return null;
+}
+
+const chatPhoto = z
+  .string()
+  .regex(/^([a-f0-9]{24}\.(webp|jpg|png))?$/)
+  .default('');
+
+export const ChatMessageBody = z
+  .object({
+    body: z.string().trim().max(CHAT_LIMITS.bodyMax).default(''),
+    /** A photo sent first to /chats/:id/photos ('' = none). */
+    photo: chatPhoto,
+  })
+  .refine((m) => m.body.length > 0 || m.photo.length > 0, { message: 'Type a message', path: ['body'] })
+  .superRefine((m, ctx) => {
+    const problem = chatTextProblem(m.body);
+    if (problem) ctx.addIssue({ code: 'custom', message: problem, path: ['body'] });
+  });
+export type ChatMessageInput = z.infer<typeof ChatMessageBody>;
+
+export const ChatReportBody = z.object({
+  reason: z.string().trim().min(3, 'Say what happened').max(500),
+});
+export const ChatBlockBody = z.object({ reason: z.string().trim().max(200).default('') });
+export const ChatReportStatus = z.enum(['new', 'done']);
+export type ChatReportStatus = z.infer<typeof ChatReportStatus>;
+export const ChatReportStatusBody = z.object({ status: ChatReportStatus });
+
+/** A device that wants order alerts and chat messages for the signed-in account. */
+export const PushAccountBody = z.object({
+  endpoint: z
+    .string()
+    .url()
+    .max(1000)
+    .refine((u) => isPushAddress(u), 'Not a push address'),
+  keys: z.object({ p256dh: z.string().min(20).max(200), auth: z.string().min(8).max(100) }),
+  label: z.string().trim().max(60).default(''),
+});
+export type PushAccountInput = z.infer<typeof PushAccountBody>;
+
+export interface ChatMessageDto {
+  id: string;
+  sender: ChatSender;
+  body: string;
+  photo: string;
+  createdAt: string;
+}
+
+export type ChatRole = 'student' | 'owner' | 'admin';
+
+export interface OrderChatDto {
+  order: MessOrderDto;
+  /** Who is looking: their own messages show on the right. */
+  role: ChatRole;
+  messages: ChatMessageDto[];
+  /** When the other side last read the chat (for ✓✓). Admins: null. */
+  otherReadAt: string | null;
+  /** Whether this person may send now, and if not, why ('' when they may). */
+  canSend: boolean;
+  closedReason: string;
+  /** The student is blocked by this restaurant. */
+  blocked: boolean;
+  /** The number the Call button rings ('' = none). */
+  callPhone: string;
+  /** "Clear chat" on this side hid everything before this moment. */
+  clearedAt: string | null;
+}
+
+export interface MessBlockDto {
+  messSlug: string;
+  messName: string;
+  userId: string;
+  name: string;
+  phone: string;
+  reason: string;
+  createdAt: string;
+  /** Admins only ('' for owners). */
+  email: string;
+}
+
+export interface ChatReportDto {
+  id: string;
+  orderId: string;
+  orderCode: string;
+  messSlug: string;
+  messName: string;
+  by: 'student' | 'owner';
+  reason: string;
+  status: ChatReportStatus;
+  createdAt: string;
+  /** Who the order was from (admins only). */
+  studentEmail: string;
+  studentPhone: string;
+}
+
+/** A restaurant's typical time to answer: half of its answers came faster than this. */
+export interface ReplyTimeDto {
+  minutes: number | null;
+  samples: number;
+}
+
+export interface AdminOrderRowDto extends MessOrderDto {
+  email: string;
+  /** What happened to the owner's alert ("Sent to 2 phones", "No phone has alerts on"). */
+  alertNote: string;
+  reports: number;
+}
+
+export type OrderStatusCounts = Record<MessOrderStatus, number>;
+
+export interface AdminRestaurantStatsDto {
+  slug: string;
+  name: string;
+  ordersOpen: boolean;
+  ownerEmails: string[];
+  /** Owner phones/laptops that will get order alerts. 0 = nobody hears new orders when away. */
+  ownerDevices: number;
+  today: OrderStatusCounts;
+  week: OrderStatusCounts;
+  autoCancelledWeek: number;
+  reply: ReplyTimeDto;
+  blocks: number;
+  openReports: number;
+}
+
+export interface AdminOrdersOverviewDto {
+  pushConfigured: boolean;
+  liveConfigured: boolean;
+  restaurants: AdminRestaurantStatsDto[];
 }
 
 // ── "Something changed? Tell us" ─────────────────────────────────────────────
@@ -356,11 +564,22 @@ export const ReminderPrefs = z.object({
 });
 export type ReminderPrefs = z.infer<typeof ReminderPrefs>;
 
-const endpoint = z
-  .string()
-  .url()
-  .max(1000)
-  .refine((u) => u.startsWith('https://'), 'Not a push address');
+/**
+ * The push services browsers actually use. The server sends requests to a device's push address,
+ * so any other host is refused: otherwise anyone could make the server call any URL (SSRF).
+ */
+const PUSH_HOSTS = [
+  /^fcm\.googleapis\.com$/, // Chrome, Edge on Android, Samsung, Opera, Brave
+  /^updates\.push\.services\.mozilla\.com$/, // Firefox
+  /^web\.push\.apple\.com$/, // Safari, iPhone home-screen apps
+  /^[a-z0-9-]+\.notify\.windows\.com$/, // Edge on Windows
+];
+export const isPushAddress = (u: string) => {
+  // "https://" + a bare host name (no port, no user, nothing odd) + "/".
+  const m = /^https:\/\/([a-z0-9.-]+)\//i.exec(u);
+  return !!m && PUSH_HOSTS.some((h) => h.test(m[1]!.toLowerCase()));
+};
+const endpoint = z.string().url().max(1000).refine(isPushAddress, 'Not a push address');
 
 export const PushSubscribeBody = z.object({
   endpoint,

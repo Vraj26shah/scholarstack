@@ -20,6 +20,8 @@ import { EarningsService } from '../application/earnings/earnings-service';
 import { InsightsService } from '../application/insights-service';
 import { StudentMailer } from '../application/notify/student-mailer';
 import { OfferService } from '../application/offer-service';
+import { ChatService } from '../application/order-chat';
+import { OrderEvents } from '../application/order-events';
 import { OrderService } from '../application/order-service';
 import { PackService } from '../application/packs';
 import { PreviewService } from '../application/preview-service';
@@ -35,9 +37,13 @@ import { StorageTreeService } from '../application/storage-tree';
 import { SupportDeskService } from '../application/support/support-desk-service';
 import { SupportService } from '../application/support/support-service';
 import type {
+  ChatReportRepository,
+  LiveSignal,
+  MessBlockRepository,
   MessOrderRepository,
   MessReportRepository,
   MessRepository,
+  OrderChatRepository,
   PushRepository,
   PushSender,
 } from '../domain/campus-ports';
@@ -114,6 +120,12 @@ export interface Ports {
   messes: MessRepository;
   messReports: MessReportRepository;
   messOrders: MessOrderRepository;
+  /** The chat on each order, blocks, and reports from chats. */
+  orderChat: OrderChatRepository;
+  messBlocks: MessBlockRepository;
+  chatReports: ChatReportRepository;
+  /** "Something changed" pings to open pages (Supabase Realtime). */
+  live: LiveSignal;
   push: PushRepository;
   pushSender: PushSender;
   signInStrikes: SignInStrikes;
@@ -201,7 +213,23 @@ export function buildServices(p: Ports, config: AppConfig) {
     prices,
   );
   const admins = new AdminAccess(p.admins, config.adminEmails);
-  const orders = new OrderService(p.messes, p.messOrders, p.features, p.clock, p.uploads);
+  const orderEvents = new OrderEvents(p.messOrders, p.orderChat, p.push, p.pushSender, p.live, p.clock);
+  const orders = new OrderService(p.messes, p.messOrders, p.features, p.clock, p.uploads, {
+    events: orderEvents,
+    blocks: p.messBlocks,
+    chat: p.orderChat,
+  });
+  const chats = new ChatService(
+    p.messes,
+    p.messOrders,
+    p.orderChat,
+    p.messBlocks,
+    p.chatReports,
+    orderEvents,
+    orders,
+    p.clock,
+    p.uploads,
+  );
   /** Admins, and restaurant owners, may sign in with an address outside the college domain. */
   const outsideAllowed = async (email: string) =>
     (await admins.isAdmin(email)) || (await orders.isOwner(email).catch(() => false));
@@ -278,6 +306,7 @@ export function buildServices(p: Ports, config: AppConfig) {
     books: new BookService(p.catalogueReader, p.books),
     mess: new MessService(p.messes, p.messReports, p.features),
     orders,
+    chats,
     outsideAllowed,
     reminders: new ReminderService(p.push, p.messes, p.pushSender, p.features, p.clock, config.pushPerRun),
     housekeeping: p.housekeeping,

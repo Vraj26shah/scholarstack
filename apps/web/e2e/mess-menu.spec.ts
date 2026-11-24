@@ -109,12 +109,34 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await expect(page.getByRole('link', { name: /WhatsApp/ })).toHaveCount(1);
   await shot(page, 'mess-order-placed', info.project.name);
 
+  // The order's chat: a message goes through; a phone number is stopped before sending.
+  await bill.getByRole('button', { name: 'Chat with restaurant' }).click();
+  const chat = page.getByRole('dialog', { name: `Chat about order ${code}` });
+  await chat.getByLabel('Message').fill('Less spicy please');
+  await chat.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(chat.getByText('Less spicy please')).toBeVisible();
+  await chat.getByLabel('Message').fill('call me on 98765 43210');
+  await expect(chat.getByRole('alert')).toContainText("Phone numbers can't be shared");
+  await expect(chat.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+  await chat.getByLabel('Message').fill('');
+  await shot(page, 'order-chat-student', info.project.name);
+  await chat.getByRole('button', { name: 'Back' }).click();
+  await expect(chat).toHaveCount(0);
+
   // The restaurant's screen (admins see every restaurant): accept, and the student sees it.
   await page.goto('/orders');
   const ticket = page.getByRole('article', { name: `Order ${code}` });
   await expect(ticket).toBeVisible();
   await expect(ticket.getByText('Block B, room 214')).toBeVisible();
   await shot(page, 'orders-board', info.project.name);
+  // The restaurant sees the unread message on the ticket and replies (as the restaurant).
+  await ticket.getByRole('button', { name: 'Chat, 1 unread' }).click();
+  const ownerChat = page.getByRole('dialog', { name: `Chat about order ${code}` });
+  await expect(ownerChat.getByText('Less spicy please')).toBeVisible();
+  await ownerChat.getByRole('button', { name: 'Ready in 10 minutes' }).click();
+  await expect(ownerChat.getByText('Ready in 10 minutes').last()).toBeVisible();
+  await shot(page, 'order-chat-owner', info.project.name);
+  await ownerChat.getByRole('button', { name: 'Back' }).click();
   await ticket.getByRole('button', { name: 'Accept · 15 min' }).click();
   await expect(page.getByRole('region', { name: /Making/ }).getByText(code)).toBeVisible();
   // The owner's ticket has the student's number and one WhatsApp button for them.

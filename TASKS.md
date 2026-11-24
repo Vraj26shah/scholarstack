@@ -4,6 +4,10 @@ Status as of 23 Oct 2026 (v0.7.0). **Me** = built here. **You** = an account ste
 Everything marked done is covered by an automated test (see QA_REPORT.md).
 
 ## Done
+- [x] 0.37.0 · Order chat (photos, quick replies, read ticks, unread badges, Call), per-side clear + admin clear for everyone, owner block/unblock, reports to admin, new-order alarm every minute, 3-min alert + WhatsApp nudge, 10-min auto-cancel, push for every message, live updates, public reply time, /my-orders, Admin › Orders & chats; notifications root cause fixed (failed deploy kept VAPID keys off the Worker)
+- [ ] 0.37.0 · **You:** apply migration `20261125000100_order_chat` (`pnpm ops db:apply` or paste the new block of supabase/apply-all.sql), then deploy; check `https://…/api/push/status` says `"configured": true`
+- [ ] 0.37.0 · **You:** Supabase › Realtime settings: allow public broadcast channels (otherwise pages poll every few seconds, which still works)
+- [ ] 0.37.0 · **You:** on the owner's phone open My restaurant › "Turn on alerts", then Admin › Orders & chats › "Send a test alert to the owner"
 - [x] 0.24.0 · Courses offered to many batches and branches (course list + filing + admin choice), Course list view, Emails bulk delete, smooth Inbox, per-line marker lines, calmer doodles
 - [ ] 0.24.0 · **You:** run supabase/apply-all.sql (adds courses.offered_to); make sure each course has its course code so the list can place it
 - [x] 0.23.0 · Readable watermark with identity bands; Clean-up for R2 + Supabase (off-sale courses, missing files, orphan pages/uploads, unpaid checkouts); Folders scoped to drive-imports/; badges clear on open; uploads name the exact file/folder over a limit; Contribute layout and earnings explainer

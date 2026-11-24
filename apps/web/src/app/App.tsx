@@ -58,6 +58,9 @@ const ContributePage = lazy(
 const OrdersPage = lazy(
   loadScreen(() => import('../features/orders/orders-page').then((m) => ({ default: m.OrdersPage }))),
 );
+const MyOrdersPage = lazy(
+  loadScreen(() => import('../features/orders/my-orders-page').then((m) => ({ default: m.MyOrdersPage }))),
+);
 const HelpPage = lazy(
   loadScreen(() => import('../features/help/help-page').then((m) => ({ default: m.HelpPage }))),
 );
@@ -415,6 +418,7 @@ function Shell() {
             <Route path="/account" element={guard(<AccountPage />)} />
             <Route path="/admin" element={guard(<AdminPage />)} />
             <Route path="/orders" element={guard(<OrdersPage />)} />
+            <Route path="/my-orders" element={guard(<MyOrdersPage />)} />
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/contact" element={<ContactPage />} />

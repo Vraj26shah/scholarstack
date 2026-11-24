@@ -5,9 +5,13 @@ import type { Clock, ConversionJob, IdGenerator } from '../domain/ports';
 import type { Container } from '../http/container';
 import { DemoAuth } from '../infrastructure/auth';
 import {
+  MemoryChatReports,
+  MemoryLiveSignal,
+  MemoryMessBlocks,
   MemoryMessOrders,
   MemoryMessReports,
   MemoryMesses,
+  MemoryOrderChat,
   MemoryPush,
 } from '../infrastructure/campus-memory';
 import { InstantConversionQueue, MemoryRateLimiter } from '../infrastructure/cloudflare';
@@ -107,10 +111,15 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
   const sources = new MemoryObjectStore();
   const pages = new MemoryObjectStore(options.pageProducer);
   if (options.seed !== false) seedDemo(db, sources, pages);
+  const messOrders = new MemoryMessOrders(() => clock.now());
   const campus = {
     messes: new MemoryMesses(() => clock.now()),
     messReports: new MemoryMessReports(() => clock.now()),
-    messOrders: new MemoryMessOrders(() => clock.now()),
+    messOrders,
+    orderChat: new MemoryOrderChat(messOrders, () => clock.now()),
+    messBlocks: new MemoryMessBlocks(() => clock.now()),
+    chatReports: new MemoryChatReports(() => clock.now()),
+    live: new MemoryLiveSignal(),
     push: new MemoryPush(() => clock.now()),
     // A real (demo-only) key, so a browser on the demo site can subscribe; nothing is sent.
     pushSender: new MemoryPushSender(DEMO_VAPID_PUBLIC_KEY),

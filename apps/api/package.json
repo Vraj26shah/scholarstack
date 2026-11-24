@@ -19,7 +19,7 @@
     "@sentry/cloudflare": "11.13.0",
     "@ss/contracts": "workspace:*",
     "@supabase/supabase-js": "^2.49.0",
-    "hono": "^4.7.0",
+    "hono": "^4.13.21",
     "jose": "^5.9.0",
     "zod": "^3.24.0"
   },

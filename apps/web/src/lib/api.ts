@@ -1,5 +1,12 @@
 import type {
+  AdminOrderRowDto,
+  AdminOrdersOverviewDto,
   AdminPushStatsDto,
+  ChatMessageDto,
+  ChatMessageInput,
+  ChatReportDto,
+  ChatReportStatus,
+  MessBlockDto,
   MessDto,
   MessInput,
   MessOrderDto,
@@ -8,14 +15,17 @@ import type {
   MessReportInput,
   MessReportStatus,
   MessSummaryDto,
+  OrderChatDto,
   OwnedMessDto,
   OwnerMessInput,
   PlaceMessOrderInput,
+  PushAccountInput,
   PushDeviceDto,
   PushRunDto,
   PushStatusDto,
   PushSubscribeInput,
   ReminderPrefs,
+  ReplyTimeDto,
 } from '@ss/contracts';
 import type {
   AcademicDto,
@@ -278,6 +288,109 @@ export class ApiClient {
   adminSetMessReport = (id: string, status: MessReportStatus) =>
     this.request<{ ok: true }>('PUT', `/admin/mess-reports/${encodeURIComponent(id)}`, { status });
   adminPushStats = () => this.request<AdminPushStatsDto>('GET', '/admin/push');
+  // Order chat (student and restaurant), blocks, reports, and the admin's view of it all
+  /** `side`: 'owner' when the chat is opened from the restaurant's dashboard. */
+  private chatSide = (side?: 'owner'): Record<string, string> => (side ? { 'x-chat-side': side } : {});
+  chat = (orderId: string, side?: 'owner') =>
+    this.request<OrderChatDto>(
+      'GET',
+      `/chats/${encodeURIComponent(orderId)}`,
+      undefined,
+      this.chatSide(side),
+    );
+  chatSend = (orderId: string, m: ChatMessageInput, side?: 'owner') =>
+    this.request<ChatMessageDto>(
+      'POST',
+      `/chats/${encodeURIComponent(orderId)}/messages`,
+      m,
+      this.chatSide(side),
+    );
+  chatUploadPhoto = (orderId: string, image: Blob, side?: 'owner') =>
+    this.request<{ photo: string }>(
+      'POST',
+      `/chats/${encodeURIComponent(orderId)}/photos`,
+      image,
+      this.chatSide(side),
+    );
+  chatRead = (orderId: string, side?: 'owner') =>
+    this.request<{ ok: true }>(
+      'POST',
+      `/chats/${encodeURIComponent(orderId)}/read`,
+      undefined,
+      this.chatSide(side),
+    );
+  chatClear = (orderId: string, side?: 'owner') =>
+    this.request<{ ok: true }>(
+      'POST',
+      `/chats/${encodeURIComponent(orderId)}/clear`,
+      undefined,
+      this.chatSide(side),
+    );
+  chatReport = (orderId: string, reason: string, side?: 'owner') =>
+    this.request<{ ok: true }>(
+      'POST',
+      `/chats/${encodeURIComponent(orderId)}/report`,
+      { reason },
+      this.chatSide(side),
+    );
+  chatBlock = (orderId: string, reason = '') =>
+    this.request<{ ok: true }>(
+      'POST',
+      `/chats/${encodeURIComponent(orderId)}/block`,
+      { reason },
+      this.chatSide('owner'),
+    );
+  chatUnblock = (orderId: string) =>
+    this.request<{ ok: true }>(
+      'DELETE',
+      `/chats/${encodeURIComponent(orderId)}/block`,
+      undefined,
+      this.chatSide('owner'),
+    );
+  /** A private chat photo, as a local address for an <img> (it needs the sign-in token). */
+  async chatPhoto(orderId: string, file: string): Promise<string> {
+    const token = await this.tokenSource();
+    const res = await fetch(
+      `${this.base}/chats/${encodeURIComponent(orderId)}/photos/${encodeURIComponent(file)}`,
+      { credentials: 'same-origin', headers: token ? { authorization: `Bearer ${token}` } : {} },
+    );
+    if (!res.ok) throw new ApiError(res.status, 'INTERNAL', 'Could not load that photo.');
+    return URL.createObjectURL(await res.blob());
+  }
+  ownerBlocks = (slug: string) =>
+    this.request<MessBlockDto[]>('GET', `/owner/messes/${encodeURIComponent(slug)}/blocks`);
+  ownerUnblock = (slug: string, userId: string) =>
+    this.request<{ ok: true }>(
+      'DELETE',
+      `/owner/messes/${encodeURIComponent(slug)}/blocks/${encodeURIComponent(userId)}`,
+    );
+  replyTime = (slug: string) =>
+    this.request<ReplyTimeDto>('GET', `/mess/${encodeURIComponent(slug)}/reply-time`);
+  pushAccount = (s: PushAccountInput) => this.request<{ ok: true }>('POST', '/push/account', s);
+  adminOrdersOverview = () => this.request<AdminOrdersOverviewDto>('GET', '/admin/orders/overview');
+  adminOrders = (mess?: string) =>
+    this.request<AdminOrderRowDto[]>(
+      'GET',
+      `/admin/orders${mess ? `?mess=${encodeURIComponent(mess)}` : ''}`,
+    );
+  adminOrderChat = (orderId: string) =>
+    this.request<OrderChatDto>('GET', `/admin/orders/${encodeURIComponent(orderId)}/chat`);
+  adminClearChat = (orderId: string) =>
+    this.request<{ ok: true }>('DELETE', `/admin/orders/${encodeURIComponent(orderId)}/chat`);
+  adminChatReports = () => this.request<ChatReportDto[]>('GET', '/admin/chat-reports');
+  adminSetChatReport = (id: string, status: ChatReportStatus) =>
+    this.request<{ ok: true }>('PUT', `/admin/chat-reports/${encodeURIComponent(id)}`, { status });
+  adminBlocks = () => this.request<MessBlockDto[]>('GET', '/admin/mess-blocks');
+  adminUnblock = (slug: string, userId: string) =>
+    this.request<{ ok: true }>(
+      'DELETE',
+      `/admin/mess-blocks/${encodeURIComponent(slug)}/${encodeURIComponent(userId)}`,
+    );
+  adminTestAlert = (slug: string) =>
+    this.request<{ devices: number; sent: number }>(
+      'POST',
+      `/admin/mess/${encodeURIComponent(slug)}/test-alert`,
+    );
   adminPushRun = () => this.request<PushRunDto>('POST', '/admin/push/run');
 
   // Catalogue

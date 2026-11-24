@@ -34,7 +34,7 @@ const at = (hhmm: string) => {
   clock.t = Date.UTC(2026, 10, 23, h!, m!) - 330 * 60_000;
 };
 const device = (n = 1, prefs: Partial<ReminderPrefs> = {}) => ({
-  endpoint: `https://push.example.com/send/device-${n}`,
+  endpoint: `https://fcm.googleapis.com/fcm/send/device-${n}`,
   keys: { p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) },
   prefs: ReminderPrefs.parse({ mess: { slug: 'safal-hostel-mess' }, ...prefs }),
   label: 'Android · Chrome',

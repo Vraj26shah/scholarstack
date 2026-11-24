@@ -84,16 +84,30 @@ self.addEventListener('push', (event) => {
     data = { title: 'Scholars Stack', body: event.data ? event.data.text() : '' };
   }
   const title = data.title || 'Scholars Stack';
-  event.waitUntil(
+  const show = () =>
     self.registration.showNotification(title, {
       body: data.body || '',
       tag: data.tag || 'ss',
       renotify: true,
+      requireInteraction: !!data.requireInteraction,
+      vibrate: data.requireInteraction ? [300, 120, 300, 120, 300] : [120, 60, 120],
       icon: '/apple-touch-icon.png',
       badge: '/favicon.svg',
       lang: 'en-IN',
       data: { url: data.url || '/' },
       actions: Array.isArray(data.actions) ? data.actions.slice(0, 2) : [],
+    });
+  // A chat message for a chat that's open and in front of the person: the page shows it already.
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((tabs) => {
+      const quiet =
+        data.quietWhen &&
+        tabs.some((t) => t.focused && t.visibilityState === 'visible' && t.url.includes(data.quietWhen));
+      if (quiet) {
+        for (const t of tabs) t.postMessage({ type: 'push', tag: data.tag || '' });
+        return undefined;
+      }
+      return show();
     }),
   );
 });

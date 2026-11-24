@@ -4,6 +4,7 @@ import {
   type MessDto,
   type MessOrderDto,
   OPEN_MESS_ORDER,
+  ORDER_TIMERS,
   dishesOn,
   formatClock,
   formatMobile,
@@ -18,6 +19,8 @@ import { ApiError, api } from '../../../../lib/api';
 import { useSession } from '../../../../lib/session';
 import { Button } from '../../../../shared/ui/button';
 import { Minus, Plus, WhatsAppIcon } from '../../../../shared/ui/icons';
+import { useLive } from '../../../chat/live';
+import { ChatButton, OrderChat } from '../../../chat/order-chat';
 import { WA_BUTTON, orderMessage, rupees, waLink } from '../../../restaurant/shared';
 import { useToolState } from '../../core/storage';
 import { field } from '../../core/ui';
@@ -179,13 +182,25 @@ function Tracker({
   mess,
   onCancel,
   cancelling,
+  onChat,
 }: {
   order: MessOrderDto;
   mess: MessDto;
   onCancel: () => void;
   cancelling: boolean;
+  onChat: () => void;
 }) {
   const stopped = order.status === 'rejected' || order.status === 'cancelled';
+  // A tick every 15 s, so the 3-minute WhatsApp nudge appears on time.
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (order.status !== 'placed') return;
+    const t = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, [order.status]);
+  const waited = now - Date.parse(order.createdAt);
+  const [nudged, setNudged] = useState(false);
+  const nudge = `Hi, I placed order ${order.code} on Scholars Stack ${Math.floor(waited / 60_000)} minutes ago and it's still waiting. Please open your orders: ${window.location.origin}/orders`;
   const at = STEPS.indexOf(order.status as (typeof STEPS)[number]);
   const message = orderMessage({
     restaurant: mess.name,
@@ -253,6 +268,35 @@ function Tracker({
           {order.mode === 'delivery' ? `To ${order.address}` : 'Pickup'} · {formatMobile(order.phone)}
         </li>
       </ul>
+
+      <div className="flex flex-wrap gap-2">
+        <ChatButton unread={order.unread} onClick={onChat} label="Chat with restaurant" />
+        {mess.phone && (
+          <a
+            href={`tel:${mess.phone.replace(/[^\d+]/g, '')}`}
+            className="inline-flex items-center gap-2 h-10 px-4 rounded-full border-[1.5px] border-line text-[14px] font-semibold text-ink no-underline hover:border-ink2"
+          >
+            📞 Call
+          </a>
+        )}
+      </div>
+      {order.status === 'placed' && waited >= ORDER_TIMERS.nudgeAfterMs && mess.phone && !nudged && (
+        <div className="flex flex-col gap-1.5 rounded-xl bg-marigold-soft px-3 py-2.5">
+          <p className="m-0 text-[14px] text-marigold-text">
+            <strong>Not answered yet.</strong> Send the restaurant one WhatsApp nudge with a link to their
+            orders. Unanswered orders cancel by themselves at 10 minutes.
+          </p>
+          <a
+            href={waLink(mess.phone, nudge)}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => setNudged(true)}
+            className={`${WA_BUTTON} h-10 px-4 text-[14px] self-start`}
+          >
+            <WhatsAppIcon size={17} /> Nudge on WhatsApp
+          </a>
+        </div>
+      )}
 
       {!stopped && mess.phone && (
         <div className="flex flex-col gap-1.5">
@@ -464,6 +508,14 @@ export function OrderPanel({
     mutationFn: (id: string) => api.cancelMessOrder(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['my-mess-orders'] }),
   });
+  const [chatOpen, setChatOpen] = useState(false);
+  useLive(current?.topic, () => void qc.invalidateQueries({ queryKey: ['my-mess-orders'] }));
+  const reply = useQuery({
+    queryKey: ['reply-time', mess.slug],
+    queryFn: () => api.replyTime(mess.slug),
+    enabled: mess.ordersOpen,
+    staleTime: 600_000,
+  });
 
   /** WhatsApp-only: open the chat with the slip typed in. */
   const sendOnWhatsApp = () => {
@@ -491,14 +543,23 @@ export function OrderPanel({
           Order
         </h2>
         <p className="m-0 text-[15px] text-ink2">
-          {[mess.orderNote, 'Pay when it arrives'].filter(Boolean).join(' · ')}
+          {[
+            mess.orderNote,
+            'Pay when it arrives',
+            reply.data?.minutes ? `Usually replies in ${reply.data.minutes} min` : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </p>
       </header>
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px] items-start">
         <div className="flex flex-col gap-8 min-w-0">
-          {sections.length > 2 && (
-            <nav aria-label="Menu sections" className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-1">
+          {sections.length > 1 && (
+            <nav
+              aria-label="Menu sections"
+              className="sticky top-0 z-10 flex gap-2 overflow-x-auto -mx-1 px-1 py-2 bg-bg/95 backdrop-blur"
+            >
               {sections.map((s) => (
                 <a
                   key={s.title}
@@ -578,6 +639,7 @@ export function OrderPanel({
                 mess={mess}
                 onCancel={() => cancel.mutate(current.id)}
                 cancelling={cancel.isPending}
+                onChat={() => setChatOpen(true)}
               />
               {!OPEN_MESS_ORDER.includes(current.status) && (
                 <Button
@@ -827,6 +889,7 @@ export function OrderPanel({
           <span className="text-[15px] font-bold">View slip →</span>
         </a>
       )}
+      {chatOpen && current && <OrderChat orderId={current.id} onClose={() => setChatOpen(false)} />}
     </section>
   );
 }

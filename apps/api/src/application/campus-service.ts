@@ -8,16 +8,19 @@ import {
   type MessReportInput,
   type MessReportStatus,
   type MessSummaryDto,
+  type PushAccountInput,
   type PushDeviceDto,
   type PushRenewInput,
   type PushRunDto,
   type PushStatusDto,
   type PushSubscribeInput,
   type ReminderPrefs,
+  ReminderPrefs as ReminderPrefsSchema,
   campusClock,
   dishesOn,
   duePushes,
   formatSpan,
+  normaliseEmail,
 } from '@ss/contracts';
 import type {
   MessRecord,
@@ -220,7 +223,26 @@ export class ReminderService {
       auth: input.keys.auth,
       prefs: input.prefs,
       userId,
+      email: '',
       label: input.label,
+    });
+  }
+
+  /**
+   * This device gets order alerts and chat messages for the signed-in account (students and
+   * restaurant owners alike). A device that already has reminders keeps them.
+   */
+  async subscribeAccount(input: PushAccountInput, p: { userId: string; email: string }) {
+    if (!this.configured) throw fail.badRequest("Notifications aren't set up on the server yet.");
+    const current = await this.push.findByEndpoint(input.endpoint);
+    await this.push.upsert({
+      endpoint: input.endpoint,
+      p256dh: input.keys.p256dh,
+      auth: input.keys.auth,
+      prefs: current?.prefs ?? ReminderPrefsSchema.parse({ mess: { meals: [] } }),
+      userId: p.userId,
+      email: normaliseEmail(p.email),
+      label: input.label || current?.label || '',
     });
   }
 
@@ -242,6 +264,7 @@ export class ReminderService {
       auth: input.subscription.keys.auth,
       prefs: old.prefs,
       userId: old.userId,
+      email: old.email,
       label: old.label,
     });
     if (input.subscription.endpoint !== old.endpoint) await this.push.removeIds([old.id]);

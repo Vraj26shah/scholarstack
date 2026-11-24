@@ -172,6 +172,26 @@ export class SupabaseAuthGateway implements AuthGateway {
     await (await this.client).auth.signOut({ scope: 'local' });
   }
 
+  listen(topic: string, onChange: () => void, onReady?: (ready: boolean) => void) {
+    let stop = () => {};
+    if (!this.configured || !topic) return stop;
+    let stopped = false;
+    void this.client.then((c) => {
+      if (stopped) return;
+      const channel = c
+        .channel(topic)
+        .on('broadcast', { event: 'changed' }, () => onChange())
+        .subscribe((status) => onReady?.(status === 'SUBSCRIBED'));
+      stop = () => {
+        void c.removeChannel(channel);
+      };
+    });
+    return () => {
+      stopped = true;
+      stop();
+    };
+  }
+
   subscribe(listener: (signedIn: boolean) => void) {
     let stop = () => {};
     if (!this.configured) return stop;

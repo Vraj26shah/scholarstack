@@ -4,6 +4,7 @@ import {
   ReminderPrefs,
   SaveMessBody,
   campusClock,
+  chatTextProblem,
   dishesOn,
   duePushes,
   favouritesIn,
@@ -148,11 +149,28 @@ describe('restaurant ordering', () => {
       phone: '+91 85179 03810',
       order: [{ title: 'Thali', items: [{ name: 'Mess thali', price: 80 }] }],
     });
-    expect(m.order[0]!.items[0]).toEqual({ name: 'Mess thali', price: 80, note: '' });
+    // No photo yet, and on sale unless the owner marks it sold out.
+    expect(m.order[0]!.items[0]).toEqual({
+      name: 'Mess thali',
+      price: 80,
+      note: '',
+      photo: '',
+      available: true,
+    });
     expect(SaveMessBody.safeParse({ ...base, phone: 'call me' }).success).toBe(false);
     expect(
       SaveMessBody.safeParse({ ...base, order: [{ title: 'T', items: [{ name: 'X', price: 9.5 }] }] })
         .success,
     ).toBe(false);
+  });
+});
+
+describe('chat text rules', () => {
+  it('lets prices, codes and times through, stops numbers, links and emails', () => {
+    for (const ok of ['₹120 x 2', 'Order K7Q2 at 7:30', 'Room 214, block B', 'Ready in 15 min'])
+      expect(chatTextProblem(ok)).toBeNull();
+    expect(chatTextProblem('+91-98765-43210')).toMatch(/Phone/);
+    expect(chatTextProblem('insta.com/me')).toMatch(/Links/);
+    expect(chatTextProblem('me@x.in')).toMatch(/Email/);
   });
 });

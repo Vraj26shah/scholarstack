@@ -37,9 +37,37 @@ function useRunsRestaurant(accountId: string | null) {
   return owner;
 }
 
+/** A signed-in student with restaurant orders: a "My orders" link with their unread messages. */
+function useMyOrderCount(enabled: boolean) {
+  const [state, setState] = useState({ has: false, unread: 0 });
+  useEffect(() => {
+    if (!enabled) return setState({ has: false, unread: 0 });
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = () =>
+      api
+        .myMessOrders()
+        .then((list) => {
+          if (!live) return;
+          setState({ has: list.length > 0, unread: list.reduce((n, o) => n + o.unread, 0) });
+          // Check again while an order is still going (new replies show up on the badge).
+          if (list.some((o) => ['placed', 'accepted', 'ready'].includes(o.status)))
+            timer = setTimeout(load, 20_000);
+        })
+        .catch(() => {});
+    void load();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [enabled]);
+  return state;
+}
+
 export function Header({ onDark = false }: { onDark?: boolean }) {
   const { status, me } = useSession();
   const owner = useRunsRestaurant(status === 'ready' && me && !me.isAdmin ? me.id : null);
+  const myOrders = useMyOrderCount(status === 'ready' && !!me && !owner);
   const link = `no-underline font-medium ${onDark ? 'text-white' : 'text-ink'} hover:opacity-80`;
   return (
     <header className="mx-auto max-w-[1280px] px-4 sm:px-9 py-5 flex items-center justify-between gap-3">
@@ -77,6 +105,25 @@ export function Header({ onDark = false }: { onDark?: boolean }) {
             }`}
           >
             My restaurant
+          </NavLink>
+        )}
+        {myOrders.has && (
+          <NavLink
+            to="/my-orders"
+            aria-label={myOrders.unread ? `My orders, ${myOrders.unread} unread` : 'My orders'}
+            className={`relative inline-flex items-center justify-center h-9 w-9 sm:w-auto sm:px-3 rounded-full text-[13px] font-semibold no-underline border ${
+              onDark ? 'border-white/40 text-white' : 'border-line text-ink'
+            }`}
+          >
+            <span aria-hidden="true" className="sm:hidden text-[16px]">
+              🧾
+            </span>
+            <span className="hidden sm:inline">My orders</span>
+            {myOrders.unread > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] grid place-items-center rounded-full bg-[#25d366] px-1 text-[11px] font-bold text-white">
+                {myOrders.unread}
+              </span>
+            )}
           </NavLink>
         )}
         {me?.isAdmin && (

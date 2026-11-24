@@ -11,4 +11,9 @@ export interface AuthGateway {
   signOut(): Promise<void>;
   /** Fires when the session appears or disappears (e.g. token refresh fails). */
   subscribe(listener: (signedIn: boolean) => void): () => void;
+  /**
+   * Live updates: calls back when the server says this channel changed (no content, just "fetch
+   * again"). Absent where there is no realtime service (demo): pages poll instead.
+   */
+  listen?(topic: string, onChange: () => void, onReady?: (ready: boolean) => void): () => void;
 }

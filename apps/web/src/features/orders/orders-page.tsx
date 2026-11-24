@@ -1,7 +1,9 @@
 import {
+  type MessBlockDto,
   type MessDto,
   type MessOrderDto,
   type MessOrderStatus,
+  ORDER_TIMERS,
   type OwnedMessDto,
   type OwnerMessInput,
   formatMobile,
@@ -13,7 +15,10 @@ import { api, friendly } from '../../lib/api';
 import { Button } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
-import { WhatsAppIcon } from '../../shared/ui/icons';
+import { Bell, WhatsAppIcon } from '../../shared/ui/icons';
+import { useAccountAlerts } from '../chat/alerts';
+import { useLive, usePushWhileOpen } from '../chat/live';
+import { ChatButton, OrderChat } from '../chat/order-chat';
 import { DetailsEditor } from '../restaurant/details-editor';
 import { MenuCardEditor, menuCardProblems } from '../restaurant/menu-card-editor';
 import { WA_BUTTON, rupees, waLink } from '../restaurant/shared';
@@ -59,7 +64,7 @@ const DECLINE = ['Sold out', 'Closed now', 'Too far to deliver'];
 const ACCEPT = ['Ready in 15 min', 'Ready in 30 min'];
 
 /** One kitchen ticket: what, for whom, the student's number, and the next step. */
-function Ticket({ order, fresh }: { order: MessOrderDto; fresh: boolean }) {
+function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean; onChat: () => void }) {
   const qc = useQueryClient();
   const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState('');
@@ -68,7 +73,11 @@ function Ticket({ order, fresh }: { order: MessOrderDto; fresh: boolean }) {
       api.ownerSetOrder(order.id, status, note),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['owner-orders', order.messSlug] }),
   });
-  const late = order.status === 'placed' && minsAgo(order.createdAt) >= 5;
+  const late = order.status === 'placed' && minsAgo(order.createdAt) >= 3;
+  const cancelsIn = Math.max(
+    0,
+    Math.ceil((Date.parse(order.createdAt) + ORDER_TIMERS.autoCancelAfterMs - Date.now()) / 60_000),
+  );
 
   return (
     <article
@@ -83,8 +92,13 @@ function Ticket({ order, fresh }: { order: MessOrderDto; fresh: boolean }) {
           {clock(order.createdAt)} · {minsAgo(order.createdAt)} min
         </span>
       </header>
-      <p className="m-0 text-[12px] font-semibold uppercase tracking-[0.12em] text-ink">
+      <p className="m-0 flex flex-wrap gap-x-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-ink">
         {order.mode === 'delivery' ? 'Delivery' : 'Pickup'}
+        {order.status === 'placed' && (
+          <span className={late ? 'text-marigold-text' : 'text-ink2'}>
+            Answer within {cancelsIn} min or it cancels
+          </span>
+        )}
       </p>
       <ul className="m-0 p-0 list-none flex flex-col gap-1 text-[15px] text-ink">
         {order.lines.map((l) => (
@@ -116,16 +130,31 @@ function Ticket({ order, fresh }: { order: MessOrderDto; fresh: boolean }) {
             {formatMobile(order.phone)}
           </a>
         </div>
-        <a
-          href={waLink(order.phone, `Hi ${order.name}, about your order ${order.code} from Scholars Stack: `)}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={`WhatsApp ${order.name}`}
-          className={`${WA_BUTTON} h-10 px-4 text-[14px]`}
-        >
-          <WhatsAppIcon size={17} /> WhatsApp
-        </a>
+        <div className="flex items-center gap-3">
+          <ChatButton unread={order.unread} onClick={onChat} />
+          <a
+            href={waLink(
+              order.phone,
+              `Hi ${order.name}, about your order ${order.code} from Scholars Stack: `,
+            )}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`WhatsApp ${order.name}`}
+            className={`${WA_BUTTON} h-10 px-4 text-[14px]`}
+          >
+            <WhatsAppIcon size={17} />
+          </a>
+        </div>
       </div>
+      {order.last && order.last.sender !== 'system' && (
+        <button
+          type="button"
+          onClick={onChat}
+          className="text-left border-0 bg-sunk rounded-lg px-3 py-2 text-[13.5px] text-ink truncate cursor-pointer"
+        >
+          <strong>{order.last.sender === 'owner' ? 'You' : order.name}:</strong> {order.last.body}
+        </button>
+      )}
 
       {move.error && (
         <p role="alert" className="m-0 text-[13px] text-blush-text">
@@ -223,8 +252,58 @@ function Ticket({ order, fresh }: { order: MessOrderDto; fresh: boolean }) {
 }
 
 /** The live order board: new → making → ready, with today's count and takings. */
-function Board({ mess, orders }: { mess: OwnedMessDto; orders: ReturnType<typeof useOwnerOrders> }) {
-  const [sound, setSound] = useState(false);
+/** "Alerts on this phone": push notifications for new orders and messages, even with the page closed. */
+function AlertsCard() {
+  const a = useAccountAlerts();
+  if (!a.configured || a.support === 'unsupported') return null;
+  return (
+    <div
+      className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl px-4 py-3 text-[14.5px] ${a.on ? 'bg-sunk text-ink' : 'bg-marigold-soft text-marigold-text'}`}
+    >
+      <Bell size={18} />
+      <span className="flex-1 min-w-[220px]">
+        {a.on ? (
+          <>
+            <strong>Alerts are on for this device.</strong> New orders and messages reach you even when this
+            page is closed.
+          </>
+        ) : a.support === 'ios-install' ? (
+          <>
+            <strong>On iPhone:</strong> tap Share › Add to Home Screen, open the site from there, then turn
+            alerts on.
+          </>
+        ) : a.support === 'blocked' ? (
+          <>
+            <strong>Notifications are blocked</strong> for this site. Allow them in your browser's site
+            settings to hear new orders.
+          </>
+        ) : (
+          <>
+            <strong>Turn on alerts on this phone</strong> so you never miss an order, even with the page
+            closed.
+          </>
+        )}
+      </span>
+      {!a.on && a.support === 'ok' && (
+        <Button size="sm" variant="ink" disabled={a.busy} onClick={() => void a.enable()}>
+          {a.busy ? 'Turning on…' : 'Turn on alerts'}
+        </Button>
+      )}
+      {a.error && <span className="basis-full text-blush-text">{a.error}</span>}
+    </div>
+  );
+}
+
+function Board({
+  mess,
+  orders,
+  onChat,
+}: {
+  mess: OwnedMessDto;
+  orders: ReturnType<typeof useOwnerOrders>;
+  onChat: (id: string) => void;
+}) {
+  const [sound, setSound] = useState(() => localStorage.getItem('ss_owner_sound') === '1');
   const seen = useRef<Set<string> | null>(null);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -241,6 +320,14 @@ function Board({ mess, orders }: { mess: OwnedMessDto; orders: ReturnType<typeof
     }
     seen.current = ids;
   }, [orders.data, sound]);
+
+  // Until every new order is accepted or declined: the alarm again every minute.
+  const waiting = (orders.data ?? []).some((o) => o.status === 'placed');
+  useEffect(() => {
+    if (!sound || !waiting) return;
+    const t = setInterval(chime, ORDER_TIMERS.alarmEveryMs);
+    return () => clearInterval(t);
+  }, [sound, waiting]);
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const todays = (orders.data ?? []).filter(
@@ -272,13 +359,15 @@ function Board({ mess, orders }: { mess: OwnedMessDto; orders: ReturnType<typeof
             checked={sound}
             onChange={(e) => {
               setSound(e.target.checked);
+              localStorage.setItem('ss_owner_sound', e.target.checked ? '1' : '0');
               if (e.target.checked) chime();
             }}
             className="w-5 h-5 accent-[var(--teal)]"
           />
-          Sound on new orders
+          Sound on new orders (repeats every minute until answered)
         </label>
       </div>
+      <AlertsCard />
       {!mess.ordersOpen && (
         <p className="m-0 rounded-2xl bg-marigold-soft px-4 py-3 text-[15px] text-marigold-text">
           <strong>You're not taking orders on the site.</strong> Students can still send you their order on
@@ -314,7 +403,9 @@ function Board({ mess, orders }: { mess: OwnedMessDto; orders: ReturnType<typeof
                   <span className="tabular-nums text-ink2">{list.length}</span>
                 </h2>
                 {list.length ? (
-                  list.map((o) => <Ticket key={o.id} order={o} fresh={fresh.has(o.id)} />)
+                  list.map((o) => (
+                    <Ticket key={o.id} order={o} fresh={fresh.has(o.id)} onChat={() => onChat(o.id)} />
+                  ))
                 ) : (
                   <p className="m-0 text-[14px] text-ink2">{col.empty}</p>
                 )}
@@ -342,9 +433,12 @@ function Board({ mess, orders }: { mess: OwnedMessDto; orders: ReturnType<typeof
                     ? 'Delivered'
                     : o.status === 'rejected'
                       ? `Declined: ${o.ownerNote}`
-                      : 'Cancelled by student'}
+                      : o.endedBy === 'auto'
+                        ? 'Cancelled: not answered in 10 min'
+                        : 'Cancelled by student'}
                 </span>
                 <span className="font-semibold tabular-nums text-ink">{rupees(o.total)}</span>
+                <ChatButton unread={o.unread} onClick={() => onChat(o.id)} className="h-8 px-3 text-[13px]" />
               </li>
             ))}
           </ul>
@@ -354,14 +448,78 @@ function Board({ mess, orders }: { mess: OwnedMessDto; orders: ReturnType<typeof
   );
 }
 
-function useOwnerOrders(slug: string) {
+function useOwnerOrders(slug: string, topic = '') {
+  const qc = useQueryClient();
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['owner-orders', slug] });
+    void qc.invalidateQueries({ queryKey: ['owned-messes'] });
+  };
+  const live = useLive(topic, refresh);
+  usePushWhileOpen(refresh);
   return useQuery({
     queryKey: ['owner-orders', slug],
     queryFn: () => api.ownerOrders(slug),
     enabled: !!slug,
-    refetchInterval: 8_000,
+    // Live updates arrive at once; the slow check is a safety net (and runs the 3/10-minute timers).
+    refetchInterval: live ? 30_000 : 8_000,
     refetchIntervalInBackground: true,
   });
+}
+
+/** Students this restaurant blocked, with Unblock. */
+function BlockedList({ mess }: { mess: OwnedMessDto }) {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ['owner-blocks', mess.slug], queryFn: () => api.ownerBlocks(mess.slug) });
+  const unblock = useMutation({
+    mutationFn: (b: MessBlockDto) => api.ownerUnblock(mess.slug, b.userId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['owner-blocks', mess.slug] }),
+  });
+  if (q.isLoading) return <Skeleton className="h-32" />;
+  if (q.isError)
+    return (
+      <ErrorState
+        title="Couldn't load blocked students"
+        message={friendly(q.error)}
+        onRetry={() => q.refetch()}
+      />
+    );
+  return (
+    <div className="flex flex-col gap-3 max-w-[760px]">
+      <p className="m-0 text-[15px] text-ink2">
+        Blocked students can't order from you or message you. Block someone from the ⋮ menu in their order's
+        chat.
+      </p>
+      {!q.data?.length ? (
+        <p className="m-0 text-[15px] text-ink">Nobody is blocked.</p>
+      ) : (
+        <ul className="m-0 p-0 list-none divide-y divide-line">
+          {q.data.map((b) => (
+            <li key={b.userId} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3">
+              <div className="flex-1 min-w-[200px]">
+                <p className="m-0 font-semibold text-ink">
+                  {b.name || 'Student'} · {formatMobile(b.phone)}
+                </p>
+                <p className="m-0 text-[13px] text-ink2">
+                  Blocked{' '}
+                  {new Date(b.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                  {b.reason ? ` · ${b.reason}` : ''}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={unblock.isPending}
+                onClick={() => unblock.mutate(b)}
+              >
+                Unblock
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {unblock.error && <p className="m-0 text-[13px] text-blush-text">{friendly(unblock.error)}</p>}
+    </div>
+  );
 }
 
 /** The "Taking orders" switch, in the dashboard's header so it's always in reach. */
@@ -402,12 +560,13 @@ function OpenSwitch({ mess }: { mess: OwnedMessDto }) {
   );
 }
 
-type Tab = 'orders' | 'menu' | 'week' | 'details';
+type Tab = 'orders' | 'menu' | 'week' | 'details' | 'blocked';
 const TABS: [Tab, string][] = [
   ['orders', 'Orders'],
   ['menu', 'Menu card'],
   ['week', 'Weekly menu'],
   ['details', 'Details & timings'],
+  ['blocked', 'Blocked'],
 ];
 
 const toForm = (m: MessDto): OwnerMessInput => ({
@@ -427,7 +586,7 @@ const toForm = (m: MessDto): OwnerMessInput => ({
  * The owner's editing tabs share one draft: change anything, then "Save changes" once. Saved
  * changes show on the restaurant's page straight away.
  */
-function Editors({ tab, mess }: { tab: Exclude<Tab, 'orders'>; mess: OwnedMessDto }) {
+function Editors({ tab, mess }: { tab: Exclude<Tab, 'orders' | 'blocked'>; mess: OwnedMessDto }) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['owner-mess', mess.slug], queryFn: () => api.ownerMess(mess.slug) });
   const [draft, setDraft] = useState<OwnerMessInput | null>(null);
@@ -547,21 +706,25 @@ export function OrdersPage() {
   const tab: Tab = TABS.some(([k]) => k === tabParam) ? (tabParam as Tab) : 'orders';
   const pickSlug = params.get('mess');
   const mess = owned.data?.find((m) => m.slug === pickSlug) ?? owned.data?.[0];
-  const go = (next: { tab?: Tab; mess?: string }) =>
+  const chatId = params.get('chat');
+  const go = (next: { tab?: Tab; mess?: string; chat?: string | null }) =>
     setParams(
       {
         ...((next.mess ?? mess?.slug) ? { mess: next.mess ?? mess!.slug } : {}),
         ...((next.tab ?? tab) !== 'orders' ? { tab: next.tab ?? tab } : {}),
+        ...((next.chat === undefined ? chatId : next.chat) ? { chat: (next.chat ?? chatId)! } : {}),
       },
       { replace: true },
     );
 
-  const orders = useOwnerOrders(mess?.slug ?? '');
+  const orders = useOwnerOrders(mess?.slug ?? '', mess?.topic);
   const placed = orders.data?.filter((o) => o.status === 'placed').length ?? 0;
+  const unread = orders.data?.reduce((n, o) => n + o.unread, 0) ?? 0;
   useEffect(() => {
     const base = `${mess?.name ?? 'My restaurant'} · Scholars Stack`;
-    document.title = placed ? `(${placed}) New order${placed === 1 ? '' : 's'} · ${base}` : base;
-  }, [placed, mess?.name]);
+    const parts = [placed && `${placed} new`, unread && `${unread} unread`].filter(Boolean);
+    document.title = parts.length ? `(${parts.join(', ')}) ${base}` : base;
+  }, [placed, unread, mess?.name]);
 
   return (
     <Page wide>
@@ -639,15 +802,23 @@ export function OrdersPage() {
                       {placed} new
                     </span>
                   )}
+                  {k === 'orders' && unread > 0 && (
+                    <span className="ml-1.5 rounded-full bg-[#25d366] px-2 py-0.5 text-[12px] text-white tabular-nums">
+                      💬 {unread}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
 
             {tab === 'orders' ? (
-              <Board key={mess.slug} mess={mess} orders={orders} />
+              <Board key={mess.slug} mess={mess} orders={orders} onChat={(id) => go({ chat: id })} />
+            ) : tab === 'blocked' ? (
+              <BlockedList key={mess.slug} mess={mess} />
             ) : (
               <Editors key={mess.slug} tab={tab} mess={mess} />
             )}
+            {chatId && <OrderChat orderId={chatId} asOwner onClose={() => go({ chat: null })} />}
           </>
         )}
       </div>

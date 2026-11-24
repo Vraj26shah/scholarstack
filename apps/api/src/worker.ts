@@ -97,6 +97,12 @@ const handler = {
               console.log(JSON.stringify({ level: 'info', event: 'packs.cron', ...r.totals }));
           }),
         );
+      // Restaurant orders nobody answered: a second alert at 3 minutes, cancelled at 10.
+      job('order-timers', () =>
+        container.orders.sweepAll().then((n) => {
+          if (n > 0) console.log(JSON.stringify({ level: 'info', event: 'orders.timers', changed: n }));
+        }),
+      );
       // Reminders (meals, classes) due in the next few minutes go out on every run.
       job('reminders', () =>
         container.reminders.run().then((r) => {

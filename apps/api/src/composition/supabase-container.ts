@@ -2,9 +2,13 @@ import type { ConversionQueue, ObjectStore, RateLimiter, UploadStore } from '../
 import type { Container } from '../http/container';
 import { SupabaseJwtVerifier } from '../infrastructure/auth';
 import {
+  SupabaseChatReports,
+  SupabaseLiveSignal,
+  SupabaseMessBlocks,
   SupabaseMessOrders,
   SupabaseMessReports,
   SupabaseMesses,
+  SupabaseOrderChat,
   SupabasePush,
 } from '../infrastructure/campus-supabase';
 import { MemoryRateLimiter } from '../infrastructure/cloudflare';
@@ -101,6 +105,10 @@ export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): C
       messes: new SupabaseMesses(db),
       messReports: new SupabaseMessReports(db),
       messOrders: new SupabaseMessOrders(db),
+      orderChat: new SupabaseOrderChat(db),
+      messBlocks: new SupabaseMessBlocks(db),
+      chatReports: new SupabaseChatReports(db),
+      live: new SupabaseLiveSignal(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY),
       push: new SupabasePush(db),
       // Without keys, reminders stay off (the site says so) and nothing is sent.
       pushSender:

@@ -17,6 +17,7 @@ import type { DiscountReportService } from '../application/discount-report';
 import type { EarningsService } from '../application/earnings/earnings-service';
 import type { InsightsService } from '../application/insights-service';
 import type { OfferService } from '../application/offer-service';
+import type { ChatService } from '../application/order-chat';
 import type { OrderService } from '../application/order-service';
 import type { PackService } from '../application/packs';
 import type { PreviewService } from '../application/preview-service';
@@ -69,6 +70,8 @@ export interface Container {
   reminders: ReminderService;
   /** Orders to restaurants for day scholars, and the owners' board. */
   orders: OrderService;
+  /** The chat on each order (student ⇄ restaurant), blocks, reports, and the admin's view. */
+  chats: ChatService;
   /** Admins and restaurant owners may sign in from outside the college domain. */
   outsideAllowed: (email: string) => Promise<boolean>;
   /** Daily trims of history tables (cron). */

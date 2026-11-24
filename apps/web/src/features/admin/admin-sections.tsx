@@ -12,6 +12,7 @@ import { FolderExplorer } from './folder-explorer';
 import { InsightsPanel } from './insights-panel';
 import { MailPanel } from './mail-panel';
 import { OffersPanel } from './offers-panel';
+import { OrdersAdminPanel } from './orders-admin-panel';
 import { PageJobsPanel } from './page-jobs-panel';
 import { ProblemsPanel } from './problems-panel';
 import { PromoCodesPanel } from './promo-codes-panel';
@@ -226,6 +227,17 @@ export const GROUPS: Group[] = [
           </>
         ),
         render: () => <MessMenusPanel />,
+      },
+      {
+        key: 'orders',
+        label: 'Orders & chats',
+        note: (
+          <>
+            Restaurant orders end to end: <U>who hears new orders</U>, reply times, every chat, reports and
+            blocks.
+          </>
+        ),
+        render: () => <OrdersAdminPanel />,
       },
       {
         key: 'mess-reports',
