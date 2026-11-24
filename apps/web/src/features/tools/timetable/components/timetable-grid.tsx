@@ -75,14 +75,14 @@ export function TimetableGrid({
                         aria-label={
                           c ? `${slot}: ${c.name}. Edit` : `${slot}${plan ? `, planned ${plan.name}` : ''}`
                         }
-                        className={`w-full min-h-[68px] rounded-lg p-2 text-left flex flex-col gap-0.5 border transition-colors ${
+                        className={`w-full min-h-[68px] rounded-lg p-2 text-left flex flex-col gap-0.5 border transition-[transform,background-color,border-color] duration-100 active:scale-[0.96] cursor-pointer ${
                           c
-                            ? 'border-transparent text-[#161B3A]'
+                            ? 'border-transparent text-[#161B3A] hover:brightness-95'
                             : isPicked
-                              ? 'border-2 border-teal bg-mist/40'
+                              ? 'border-2 border-ink bg-ink text-bg shadow-[0_8px_18px_-10px_rgba(0,0,0,0.6)]'
                               : plan
-                                ? 'border-dashed border-ink2/40'
-                                : 'border-line hover:border-teal'
+                                ? 'border-dashed border-ink2/40 hover:border-teal'
+                                : 'border-line bg-card hover:border-teal hover:bg-mist/30'
                         }`}
                         style={
                           c
@@ -95,6 +95,11 @@ export function TimetableGrid({
                         }
                       >
                         <span className="font-mono text-[11px] opacity-75">{slot}</span>
+                        {isPicked && !c && (
+                          <span className="mt-auto text-[12.5px] font-bold" aria-hidden="true">
+                            ✓ Picked
+                          </span>
+                        )}
                         {shown && (
                           <>
                             <span className="text-[13px] font-semibold leading-tight [overflow-wrap:anywhere]">

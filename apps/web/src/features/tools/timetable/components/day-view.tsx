@@ -56,12 +56,12 @@ export function DayView({
                 type="button"
                 onClick={() => (c ? onOpen(c) : onPick(slot))}
                 aria-pressed={c ? undefined : isPicked}
-                className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left ${
+                className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-[transform,background-color] duration-100 active:scale-[0.98] cursor-pointer ${
                   c
                     ? 'border-transparent text-[#161B3A]'
                     : isPicked
-                      ? 'border-2 border-teal bg-mist/40'
-                      : 'border-line bg-card'
+                      ? 'border-2 border-ink bg-ink text-bg'
+                      : 'border-line bg-card hover:bg-mist/30'
                 }`}
                 style={c ? { backgroundColor: c.color, color: inkOn(c.color) } : undefined}
               >
@@ -84,7 +84,9 @@ export function DayView({
                       </span>
                     </>
                   ) : (
-                    <span className="text-ink2">{isPicked ? 'Picked' : 'Free'}</span>
+                    <span className={isPicked ? 'font-bold' : 'text-ink2'}>
+                      {isPicked ? '✓ Picked' : 'Free · tap to pick'}
+                    </span>
                   )}
                 </span>
               </button>

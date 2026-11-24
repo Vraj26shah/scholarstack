@@ -124,6 +124,11 @@ export default function TimetableTool({
         lead="Tap your slots or type them (A1, B2…), name the course, and get a clash-free week. Download it as a PDF, put it in your calendar, or share it with friends."
         aside={
           <div className="flex flex-wrap items-center gap-2 print:hidden">
+            {!courses.length && (
+              <span className="basis-full order-last text-[13px] text-ink2">
+                Add a course first, then download, print or share your timetable.
+              </span>
+            )}
             {courses.some((c) => !c.tentative) && <ClassReminderSwitch />}
             {primary && (
               <Button variant="brand" onClick={() => run(primary)} disabled={!courses.length || !!busy}>
@@ -232,6 +237,33 @@ export default function TimetableTool({
           Type slots instead
         </Button>
       </div>
+
+      {picked.length > 0 && !draft && (
+        <div
+          role="region"
+          aria-label="Picked slots"
+          className="print:hidden fixed inset-x-3 sm:inset-x-auto sm:right-6 bottom-[calc(80px+env(safe-area-inset-bottom))] md:bottom-6 z-30 flex items-center gap-3 rounded-2xl bg-ink px-4 py-3 text-bg shadow-[0_18px_40px_-16px_rgba(0,0,0,0.7)]"
+        >
+          <span className="flex-1 sm:flex-none text-[14.5px] font-semibold">
+            {picked.length} slot{picked.length === 1 ? '' : 's'} picked
+            <span className="block text-[12px] font-normal opacity-75">{picked.join(', ')}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setDraft(emptyDraft(courses, picked))}
+            className="h-10 rounded-full bg-bg px-4 text-[14px] font-bold text-ink border-0 cursor-pointer"
+          >
+            Add course
+          </button>
+          <button
+            type="button"
+            onClick={() => setPicked([])}
+            className="h-10 rounded-full px-3 text-[14px] font-semibold text-bg/80 bg-transparent border-0 underline underline-offset-2 cursor-pointer"
+          >
+            Clear
+          </button>
+        </div>
+      )}
 
       {view === 'week' ? (
         <TimetableGrid courses={courses} picked={picked} onPick={pick} onOpen={setDraft} />

@@ -75,6 +75,11 @@ export function MealReminders({ mess, otherName }: { mess: MessDto; otherName?: 
       ask={`What's on at ${mess.name}, ${m.lead} min before each meal you pick. On this device, even when the site is closed.`}
       sample={sampleFor(mess, m.lead)}
       preset={forMess(mess)}
+      off={{
+        label: 'Turn off meal reminders',
+        isOn: (x) => x.mess.slug === mess.slug && (x.mess.meals.length > 0 || x.mess.favourites.length > 0),
+        disable: (x) => ({ ...x, mess: { ...x.mess, slug: null } }),
+      }}
     >
       {!mine ? (
         <div className="flex flex-wrap items-center gap-3 rounded-xl bg-sunk px-4 py-3">

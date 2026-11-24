@@ -155,6 +155,20 @@ export function useReminders() {
       return true;
     });
 
+  /**
+   * Stops one kind of reminder (meals, or classes) and keeps the other. When nothing is left the
+   * device is let go (order alerts, if on, stay).
+   */
+  const stopKind = (disable: (r: LocalReminders) => LocalReminders) => {
+    const rest = disable(getLocalReminders());
+    const anyLeft =
+      (!!rest.mess.slug && (rest.mess.meals.length > 0 || rest.mess.favourites.length > 0)) ||
+      rest.classes.nightly ||
+      rest.classes.before;
+    update(() => rest);
+    if (!anyLeft) void turnOff();
+  };
+
   const snooze = () => setLocalReminders((r) => ({ ...r, snoozedUntil: Date.now() + WEEK }));
   const unsnooze = () => setLocalReminders((r) => ({ ...r, snoozedUntil: null }));
   const snoozed = !!local.snoozedUntil && local.snoozedUntil > Date.now();
@@ -172,6 +186,7 @@ export function useReminders() {
     test,
     testResult,
     turnOff,
+    stopKind,
     snooze,
     unsnooze,
     snoozed,

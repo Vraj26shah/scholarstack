@@ -4,6 +4,13 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Timetable maker polish, separate reminder switches (25 Nov)
+- **Picked slots are unmistakable**: solid dark with "✓ Picked" in the week grid and the day view, and every slot presses visibly when tapped (before, a picked slot was a faint outline that looked like nothing happened).
+- **A floating "N slots picked · Add course · Clear" bar** appears as soon as a slot is picked, so phones don't have to scroll back up for the button.
+- The export buttons say why they're off until a course is added.
+- **Meal and class reminders are separate**: "Turn off class reminders" in the Timetable maker and "Turn off meal reminders" in the Mess menu stop only their own kind; the device is let go only when neither is on (order alerts stay).
+- **Chat fixes**: a message is never shown twice when the background refresh beats the send, and the next message you're typing is no longer wiped when the previous one finishes sending.
+
 ### Ordering without WhatsApp, tiffin plans, customers (25 Nov)
 - **WhatsApp is gone**: orders go to the restaurant's screen and ring there; students track them and chat with the restaurant on the site; both sides have a Call button. The 3-minute nudge now re-alerts the owner and offers the student Call.
 - **The ordering screen, redesigned**: a category rail (chips on phones), dish search, food-app style rows with the photo on the right and Add on it, no stand-in letters for dishes without photos, sold-out dishes greyed, today's thali first.

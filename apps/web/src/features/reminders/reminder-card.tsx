@@ -156,6 +156,7 @@ export function ReminderCard({
   ask,
   sample,
   preset,
+  off,
   children,
 }: {
   id: string;
@@ -165,6 +166,12 @@ export function ReminderCard({
   sample: { title: string; body: string };
   /** What "Turn on" from here should already have chosen. */
   preset: (r: LocalReminders) => LocalReminders;
+  /** Turning off from this card stops only this kind ("Turn off meal reminders"). */
+  off?: {
+    label: string;
+    disable: (r: LocalReminders) => LocalReminders;
+    isOn: (r: LocalReminders) => boolean;
+  };
   /** The choices, shown once reminders are on for this device. */
   children: ReactNode;
 }) {
@@ -219,14 +226,20 @@ export function ReminderCard({
           >
             {r.busy === 'test' ? 'Sending…' : 'Send a test'}
           </Button>
-          <button
-            type="button"
-            disabled={!!r.busy}
-            onClick={() => r.turnOff()}
-            className="h-9 px-3 text-[14px] font-semibold text-blush-text underline underline-offset-4"
-          >
-            {r.busy === 'off' ? 'Turning off…' : 'Turn off on this device'}
-          </button>
+          {off && !off.isOn(r.local) ? (
+            <Button variant="brand" size="sm" disabled={!!r.busy} onClick={() => r.update(preset)}>
+              Turn {title.toLowerCase()} on
+            </Button>
+          ) : (
+            <button
+              type="button"
+              disabled={!!r.busy}
+              onClick={() => (off ? r.stopKind(off.disable) : r.turnOff())}
+              className="h-9 px-3 text-[14px] font-semibold text-blush-text underline underline-offset-4"
+            >
+              {r.busy === 'off' ? 'Turning off…' : (off?.label ?? 'Turn off on this device')}
+            </button>
+          )}
         </div>
         {r.error && (
           <p role="alert" className="m-0 text-[14px] text-blush-text">
@@ -237,7 +250,7 @@ export function ReminderCard({
         <OtherDevices />
         <p className="m-0 text-[12.5px] leading-relaxed text-ink2">
           Only this device's notification address and what you pick here are saved, never your whole
-          timetable. Turning off stops meal and class reminders on this device.
+          timetable. Meal and class reminders are switched on and off separately.
         </p>
       </>,
       true,

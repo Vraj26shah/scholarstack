@@ -214,15 +214,20 @@ export function OrderChat({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, panel, zoom]);
 
+  // The background refresh may already have brought this message in: never show it twice.
   const append = (m: ChatMessageDto) =>
-    qc.setQueryData<OrderChatDto>(key, (old) => (old ? { ...old, messages: [...old.messages, m] } : old));
+    qc.setQueryData<OrderChatDto>(key, (old) =>
+      old && !old.messages.some((x) => x.id === m.id) ? { ...old, messages: [...old.messages, m] } : old,
+    );
+  // Clear the box only if it still holds what was sent (the next message may already be typed).
+  const clearIfSent = (body: string) => setText((t) => (t.trim() === body.trim() ? '' : t));
 
   const send = useMutation({
     mutationFn: (m: { body: string; photo?: string }) =>
       api.chatSend(orderId, { body: m.body, photo: m.photo ?? '' }, side),
     onSuccess: (m) => {
       append(m);
-      setText('');
+      clearIfSent(m.body);
       refreshLists();
       inputRef.current?.focus();
     },
@@ -234,7 +239,7 @@ export function OrderChat({
     },
     onSuccess: (m) => {
       append(m);
-      setText('');
+      clearIfSent(m.body);
       refreshLists();
     },
   });

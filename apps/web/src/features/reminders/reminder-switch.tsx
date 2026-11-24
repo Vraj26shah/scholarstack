@@ -39,16 +39,7 @@ export function ReminderSwitch({
       else void r.turnOn(enable);
       return;
     }
-    const rest = disable(r.local);
-    const anyLeft =
-      (rest.mess.slug && (rest.mess.meals.length || rest.mess.favourites.length)) ||
-      rest.classes.nightly ||
-      rest.classes.before;
-    if (anyLeft) r.update(() => rest);
-    else {
-      r.update(() => rest);
-      void r.turnOff();
-    }
+    r.stopKind(disable);
   };
 
   return (
