@@ -6,6 +6,7 @@ import {
   type MessReportStatus,
   OPEN_MESS_ORDER,
   ReminderPrefs,
+  type TiffinPlan,
 } from '@ss/contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
@@ -258,7 +259,7 @@ export class SupabasePush implements PushRepository {
 }
 
 const ORDER_COLS =
-  'id, code, mess_slug, user_id, email, lines, total, mode, address, name, phone, note, status, owner_note, ip_hash, created_at, updated_at, student_unread, owner_unread, student_read_at, owner_read_at, student_cleared_at, owner_cleared_at, last_body, last_sender, last_at, responded_at, nudged_at, ended_by, alert_note';
+  'id, code, mess_slug, user_id, email, lines, total, mode, address, name, phone, note, status, owner_note, ip_hash, created_at, updated_at, student_unread, owner_unread, student_read_at, owner_read_at, student_cleared_at, owner_cleared_at, last_body, last_sender, last_at, responded_at, nudged_at, ended_by, alert_note, tiffin_plan, tiffin_starts, tiffin_ends';
 
 const when = (v: unknown) => (v ? new Date(v as string) : null);
 
@@ -313,6 +314,13 @@ const toOrder = (r: Row): MessOrderRecord => ({
   createdAt: new Date(r.created_at as string),
   updatedAt: new Date(r.updated_at as string),
   chat: toChatState(r),
+  tiffin: r.tiffin_plan
+    ? {
+        plan: r.tiffin_plan as TiffinPlan,
+        startsOn: String(r.tiffin_starts).slice(0, 10),
+        endsOn: String(r.tiffin_ends).slice(0, 10),
+      }
+    : null,
 });
 
 const count = (res: { count: number | null; error: { message: string } | null }) => {
@@ -340,6 +348,9 @@ export class SupabaseMessOrders implements MessOrderRepository {
             phone: o.phone,
             note: o.note,
             ip_hash: o.ipHash,
+            tiffin_plan: o.tiffin?.plan ?? null,
+            tiffin_starts: o.tiffin?.startsOn ?? null,
+            tiffin_ends: o.tiffin?.endsOn ?? null,
           })
           .select(ORDER_COLS)
           .single(),

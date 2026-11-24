@@ -1,4 +1,4 @@
-import { MESS_ORDER_STATUS_TEXT, type MessOrderDto, OPEN_MESS_ORDER } from '@ss/contracts';
+import { MESS_ORDER_STATUS_TEXT, type MessOrderDto, OPEN_MESS_ORDER, TIFFIN_PLAN_TEXT } from '@ss/contracts';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -94,6 +94,12 @@ export function MyOrdersPage() {
                       {MESS_ORDER_STATUS_TEXT[o.status]}
                       {o.ownerNote ? ` · “${o.ownerNote}”` : ''}
                     </p>
+                    {o.tiffin && (
+                      <p className="m-0 text-[13.5px] font-semibold text-marigold-text">
+                        Tiffin · {TIFFIN_PLAN_TEXT[o.tiffin.plan]} · {o.tiffin.startsOn} to {o.tiffin.endsOn}
+                        {o.status === 'done' ? ' · On' : ''}
+                      </p>
+                    )}
                     <p className="m-0 text-[13.5px] text-ink2">
                       {when(o.createdAt)} · {o.lines.reduce((n, l) => n + l.qty, 0)} items · {rupees(o.total)}
                     </p>

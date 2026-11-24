@@ -1,7 +1,6 @@
 import { MEAL_KEYS, MEAL_NAMES, type MealKey, type MessMeal, type OwnerMessInput } from '@ss/contracts';
 import type { ReactNode } from 'react';
-import { WhatsAppIcon } from '../../shared/ui/icons';
-import { waLink } from './shared';
+import { Phone } from '../../shared/ui/icons';
 
 const box =
   'h-12 w-full rounded-xl bg-surface border-[1.5px] border-line px-3.5 text-[16px] text-ink outline-none focus:border-teal';
@@ -60,8 +59,8 @@ export function DetailsEditor({
         />
       </Row>
       <Row
-        label="WhatsApp number for orders"
-        hint="Every order on your page comes to this number on WhatsApp, with the full order slip."
+        label="Phone number for orders"
+        hint="Students tap Call on your page and in the order chat. Orders themselves arrive on your Orders screen."
       >
         <span className="flex gap-2">
           <input
@@ -74,12 +73,10 @@ export function DetailsEditor({
           />
           {digits.length >= 10 && (
             <a
-              href={waLink(form.phone, 'Testing my Scholars Stack order number')}
-              target="_blank"
-              rel="noreferrer"
+              href={`tel:${digits.length === 10 ? `+91${digits}` : `+${digits}`}`}
               className="shrink-0 inline-flex items-center gap-1.5 h-12 rounded-xl border-[1.5px] border-line px-3 text-[14px] font-semibold text-ink no-underline hover:border-ink2"
             >
-              <WhatsAppIcon size={17} /> Test
+              <Phone size={17} /> Test
             </a>
           )}
         </span>

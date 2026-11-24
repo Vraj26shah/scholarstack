@@ -115,6 +115,27 @@ campusRoutes.get('/owner/messes/:slug/orders', async (c) => {
   return c.json(await k.orders.board(principal, await k.account.isAdmin(principal), c.req.param('slug')));
 });
 
+/** The owner's customers: everyone who ordered in the last 90 days. */
+campusRoutes.get('/owner/messes/:slug/customers', async (c) => {
+  const { principal } = await requireLive(c);
+  const k = c.get('container');
+  return c.json(await k.orders.customers(principal, await k.account.isAdmin(principal), c.req.param('slug')));
+});
+
+/** The tiffin delivery sheet for a day (?date=YYYY-MM-DD, default today on campus). */
+campusRoutes.get('/owner/messes/:slug/tiffin', async (c) => {
+  const { principal } = await requireLive(c);
+  const k = c.get('container');
+  return c.json(
+    await k.orders.tiffinSheet(
+      principal,
+      await k.account.isAdmin(principal),
+      c.req.param('slug'),
+      c.req.query('date'),
+    ),
+  );
+});
+
 campusRoutes.put('/owner/messes/:slug/open', async (c) => {
   const { principal } = await requireLive(c);
   const { open } = MessOrdersOpenBody.parse(await c.req.json());
@@ -427,6 +448,12 @@ campusRoutes.delete('/admin/orders/:id/chat', async (c) => {
   await requireAdmin(c);
   await c.get('container').chats.adminClear(c.req.param('id'));
   return c.json({ ok: true });
+});
+
+/** Clears every chat (?mess=slug for one restaurant) for everyone. Admins only. */
+campusRoutes.delete('/admin/chats', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').chats.adminClearAll(c.req.query('mess') || undefined));
 });
 
 campusRoutes.get('/admin/chat-reports', async (c) => {

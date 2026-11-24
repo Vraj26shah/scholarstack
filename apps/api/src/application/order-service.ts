@@ -5,12 +5,18 @@ import {
   type MessOrderDto,
   type MessOrderStatus,
   type OwnedMessDto,
+  type OwnerCustomerDto,
   type OwnerMessInput,
   type PlaceMessOrderInput,
   type ReplyTimeDto,
+  TIFFIN_START_WITHIN_DAYS,
+  type TiffinRowDto,
+  type TiffinSheetDto,
   campusClock,
+  isTiffinItem,
   normaliseEmail,
   normaliseMobile,
+  tiffinEnds,
 } from '@ss/contracts';
 import type {
   MessBlockRepository,
@@ -85,6 +91,7 @@ export const toDto = (
       ? { sender: c.lastSender as 'student', body: c.lastBody, at: c.lastAt!.toISOString() }
       : null,
     topic,
+    tiffin: o.tiffin ?? null,
   };
 };
 
@@ -293,7 +300,13 @@ export class OrderService {
     if (!MESS_ORDER_NEXT[order.status].includes(status))
       throw fail.badRequest(`This order is already ${order.status}; it can't be moved to ${status}.`);
     if (status === 'rejected' && note.length < 3) throw fail.badRequest('Say why, so the student knows.');
-    let saved = await this.orders.setStatus(id, status, note);
+    // A tiffin plan has no kitchen steps: accepting it switches it on for its 30 days.
+    const to = order.tiffin && status === 'accepted' ? 'done' : status;
+    const why =
+      order.tiffin && status === 'accepted' && !note
+        ? `Tiffin on from ${order.tiffin.startsOn} to ${order.tiffin.endsOn}`
+        : note;
+    let saved = await this.orders.setStatus(id, to, why);
     if (!saved) throw fail.notFound('That order');
     if (order.status === 'placed')
       saved = (await this.orders.patch(id, { respondedAt: this.clock.now() })) ?? saved;
@@ -302,6 +315,86 @@ export class OrderService {
     saved = (await this.orders.find(id)) ?? saved;
     this.replyCache.delete(mess.slug);
     return toDto(saved, mess.name, 'owner', await this.topic(saved));
+  }
+
+  /** Everyone who ordered here in the last 90 days, newest first: the owner's customer list. */
+  async customers(p: Principal, admin: boolean, slug: string): Promise<OwnerCustomerDto[]> {
+    await this.ownedMess(p, admin, slug);
+    const since = new Date(this.clock.now().getTime() - 90 * DAY_MS);
+    const [orders, blocks] = await Promise.all([
+      this.orders.listSince(since, 2000, slug),
+      this.extras.blocks ? this.extras.blocks.list(slug) : Promise.resolve([]),
+    ]);
+    const today = campusClock(this.clock.now()).date;
+    const blocked = new Set(blocks.map((b) => b.userId));
+    const by = new Map<string, OwnerCustomerDto>();
+    // Oldest first, so the latest order's name and number win.
+    for (const o of [...orders].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())) {
+      const c = by.get(o.userId) ?? {
+        userId: o.userId,
+        name: o.name,
+        phone: o.phone,
+        orders: 0,
+        spent: 0,
+        firstOrderAt: o.createdAt.toISOString(),
+        lastOrderAt: o.createdAt.toISOString(),
+        lastOrderId: o.id,
+        tiffin: null,
+        blocked: blocked.has(o.userId),
+      };
+      c.orders++;
+      if (o.status !== 'rejected' && o.status !== 'cancelled') c.spent += o.total;
+      c.name = o.name || c.name;
+      c.phone = o.phone || c.phone;
+      c.lastOrderAt = o.createdAt.toISOString();
+      c.lastOrderId = o.id;
+      if (o.tiffin && o.status === 'done' && o.tiffin.endsOn >= today) c.tiffin = o.tiffin;
+      by.set(o.userId, c);
+    }
+    return [...by.values()].sort((a, b) => b.lastOrderAt.localeCompare(a.lastOrderAt));
+  }
+
+  /** The tiffin delivery sheet for a day: who gets lunch, who gets dinner, and plans ending soon. */
+  async tiffinSheet(p: Principal, admin: boolean, slug: string, date?: string): Promise<TiffinSheetDto> {
+    await this.ownedMess(p, admin, slug);
+    const day = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : campusClock(this.clock.now()).date;
+    const since = new Date(this.clock.now().getTime() - 60 * DAY_MS);
+    const plans = (await this.orders.listSince(since, 2000, slug)).filter((o) => o.tiffin);
+    const soon = new Date(`${day}T00:00:00Z`);
+    soon.setUTCDate(soon.getUTCDate() + 3);
+    const soonDay = soon.toISOString().slice(0, 10);
+    const row = (o: MessOrderRecord): TiffinRowDto => ({
+      orderId: o.id,
+      code: o.code,
+      name: o.name,
+      phone: o.phone,
+      mode: o.mode,
+      address: o.address,
+      plan: o.tiffin!.plan,
+      startsOn: o.tiffin!.startsOn,
+      endsOn: o.tiffin!.endsOn,
+      note: o.note,
+      unread: o.chat.ownerUnread,
+    });
+    const on = plans.filter(
+      (o) => o.status === 'done' && o.tiffin!.startsOn <= day && o.tiffin!.endsOn >= day,
+    );
+    const byName = (a: TiffinRowDto, b: TiffinRowDto) =>
+      a.address.localeCompare(b.address) || a.name.localeCompare(b.name);
+    return {
+      date: day,
+      lunch: on
+        .filter((o) => o.tiffin!.plan !== 'dinner')
+        .map(row)
+        .sort(byName),
+      dinner: on
+        .filter((o) => o.tiffin!.plan !== 'lunch')
+        .map(row)
+        .sort(byName),
+      ending: on.filter((o) => o.tiffin!.endsOn <= soonDay).map(row),
+      waiting: plans.filter((o) => o.status === 'placed').length,
+      active: on.length,
+    };
   }
 
   /**
@@ -356,6 +449,28 @@ export class OrderService {
 
     // Prices come from the restaurant's own list, never from the browser.
     const items = new Map(mess.order.flatMap((s) => s.items).map((i) => [i.name.toLowerCase(), i]));
+    const tiffinLines = input.lines.filter((l) => {
+      const it = items.get(l.name.toLowerCase());
+      return it ? isTiffinItem(it) : false;
+    });
+    let tiffin: MessOrderRecord['tiffin'] = null;
+    if (tiffinLines.length) {
+      if (input.lines.length > 1 || tiffinLines[0]!.qty !== 1)
+        throw fail.badRequest('Order a tiffin plan on its own, one at a time.');
+      if (!input.tiffin) throw fail.badRequest('Choose lunch, dinner or both, and the first day.');
+      const today = campusClock(this.clock.now()).date;
+      const latest = new Date(`${today}T00:00:00Z`);
+      latest.setUTCDate(latest.getUTCDate() + TIFFIN_START_WITHIN_DAYS);
+      if (input.tiffin.startsOn < today || input.tiffin.startsOn > latest.toISOString().slice(0, 10))
+        throw fail.badRequest(
+          `Pick a first day between today and ${TIFFIN_START_WITHIN_DAYS} days from now.`,
+        );
+      tiffin = {
+        plan: input.tiffin.plan,
+        startsOn: input.tiffin.startsOn,
+        endsOn: tiffinEnds(input.tiffin.startsOn),
+      };
+    }
     const lines = input.lines.map((l) => {
       const item = items.get(l.name.toLowerCase());
       if (!item) throw fail.badRequest(`"${l.name}" isn't on ${mess.name}'s list any more.`);
@@ -385,6 +500,7 @@ export class OrderService {
       phone,
       note: input.note,
       ipHash,
+      tiffin,
     });
     await this.events?.placed(order, mess);
     return toDto(order, mess.name, 'student', await this.topic(order));

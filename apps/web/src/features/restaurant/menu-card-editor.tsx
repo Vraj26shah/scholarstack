@@ -1,4 +1,4 @@
-import type { MessOrderItem, MessOrderSection } from '@ss/contracts';
+import { type MessOrderItem, type MessOrderSection, isTiffinItem } from '@ss/contracts';
 import { useRef, useState } from 'react';
 import { ApiError, api, friendly } from '../../lib/api';
 import { ArrowUp, PhotoIcon, Plus, Trash } from '../../shared/ui/icons';
@@ -169,6 +169,16 @@ function ItemRow({
             <span className={item.available ? 'text-ink' : 'text-blush-text'}>
               {item.available ? 'Available' : 'Sold out'}
             </span>
+          </label>
+          <label className="inline-flex items-center gap-2 cursor-pointer text-[13.5px] font-semibold text-ink2">
+            <input
+              type="checkbox"
+              checked={isTiffinItem(item)}
+              onChange={(e) => onChange({ tiffin: e.target.checked })}
+              className="w-[18px] h-[18px] accent-[var(--teal)]"
+              aria-label={`${label} is a monthly tiffin plan`}
+            />
+            Monthly tiffin plan
           </label>
           <span className="flex items-center">
             <button

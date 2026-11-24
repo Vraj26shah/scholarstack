@@ -18,6 +18,7 @@ import type {
   MessSummaryDto,
   OrderChatDto,
   OwnedMessDto,
+  OwnerCustomerDto,
   OwnerMessInput,
   PlaceMessOrderInput,
   PushAccountInput,
@@ -27,6 +28,7 @@ import type {
   PushSubscribeInput,
   ReminderPrefs,
   ReplyTimeDto,
+  TiffinSheetDto,
 } from '@ss/contracts';
 import type {
   AcademicDto,
@@ -358,6 +360,13 @@ export class ApiClient {
     if (!res.ok) throw new ApiError(res.status, 'INTERNAL', 'Could not load that photo.');
     return URL.createObjectURL(await res.blob());
   }
+  ownerCustomers = (slug: string) =>
+    this.request<OwnerCustomerDto[]>('GET', `/owner/messes/${encodeURIComponent(slug)}/customers`);
+  ownerTiffin = (slug: string, date?: string) =>
+    this.request<TiffinSheetDto>(
+      'GET',
+      `/owner/messes/${encodeURIComponent(slug)}/tiffin${date ? `?date=${encodeURIComponent(date)}` : ''}`,
+    );
   ownerBlocks = (slug: string) =>
     this.request<MessBlockDto[]>('GET', `/owner/messes/${encodeURIComponent(slug)}/blocks`);
   ownerUnblock = (slug: string, userId: string) =>
@@ -378,6 +387,11 @@ export class ApiClient {
     this.request<OrderChatDto>('GET', `/admin/orders/${encodeURIComponent(orderId)}/chat`);
   adminClearChat = (orderId: string) =>
     this.request<{ ok: true }>('DELETE', `/admin/orders/${encodeURIComponent(orderId)}/chat`);
+  adminClearAllChats = (mess?: string) =>
+    this.request<{ cleared: number }>(
+      'DELETE',
+      `/admin/chats${mess ? `?mess=${encodeURIComponent(mess)}` : ''}`,
+    );
   adminChatReports = () => this.request<ChatReportDto[]>('GET', '/admin/chat-reports');
   adminSetChatReport = (id: string, status: ChatReportStatus) =>
     this.request<{ ok: true }>('PUT', `/admin/chat-reports/${encodeURIComponent(id)}`, { status });

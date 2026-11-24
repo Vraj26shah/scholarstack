@@ -21,6 +21,7 @@ import {
   dishesOn,
   duePushes,
   formatSpan,
+  isTiffinItem,
   normaliseEmail,
 } from '@ss/contracts';
 import type {
@@ -57,6 +58,7 @@ export const withItemDefaults = (order: MessRecord['order']): MessRecord['order'
       note: i.note ?? '',
       photo: i.photo ?? '',
       available: i.available !== false,
+      tiffin: isTiffinItem(i),
     })),
   }));
 

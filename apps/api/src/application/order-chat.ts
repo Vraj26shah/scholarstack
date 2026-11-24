@@ -341,6 +341,17 @@ export class ChatService {
     await this.events.ping(order);
   }
 
+  /**
+   * "Clear all chats" (admins only): every chat with messages, at one restaurant or everywhere, is
+   * deleted for both sides. Returns how many chats were cleared.
+   */
+  async adminClearAll(slug?: string): Promise<{ cleared: number }> {
+    const since = new Date(this.clock.now().getTime() - 400 * DAY);
+    const orders = (await this.orders.listSince(since, 2000, slug)).filter((o) => o.chat.lastAt);
+    for (const o of orders) await this.adminClear(o.id);
+    return { cleared: orders.length };
+  }
+
   async adminOrders(slug?: string): Promise<AdminOrderRowDto[]> {
     const since = new Date(this.clock.now().getTime() - 14 * DAY);
     const [list, messes, reports] = await Promise.all([

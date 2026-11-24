@@ -17,7 +17,16 @@ export function MessAbout({
   picker?: ReactNode;
 }) {
   const owner = mess.source === 'owner';
-  const canOrder = mess.kind === 'restaurant' && (!!mess.phone || mess.order.length > 0);
+  const restaurant = mess.kind === 'restaurant';
+  const hasCard = mess.order.some((s) => s.items.length > 0);
+  const canOrder = restaurant && (!!mess.phone || hasCard);
+  const cta = !restaurant
+    ? ''
+    : mess.ordersOpen && hasCard
+      ? 'Order now'
+      : hasCard
+        ? 'Menu & prices'
+        : 'Call to order';
   return (
     <div className="flex flex-col gap-3 max-w-[820px]">
       <div className="flex flex-col gap-1">
@@ -44,7 +53,7 @@ export function MessAbout({
             ))}
           {canOrder && (
             <a href="#order" className={buttonClass('brand', 'sm')}>
-              Order now
+              {cta}
             </a>
           )}
         </p>

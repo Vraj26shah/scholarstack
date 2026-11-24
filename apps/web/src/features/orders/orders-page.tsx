@@ -6,6 +6,8 @@ import {
   ORDER_TIMERS,
   type OwnedMessDto,
   type OwnerMessInput,
+  TIFFIN_PLAN_TEXT,
+  type TiffinRowDto,
   formatMobile,
 } from '@ss/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -15,13 +17,13 @@ import { api, friendly } from '../../lib/api';
 import { Button } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
-import { Bell, WhatsAppIcon } from '../../shared/ui/icons';
+import { Bell, Phone } from '../../shared/ui/icons';
 import { useAccountAlerts } from '../chat/alerts';
 import { useLive, usePushWhileOpen } from '../chat/live';
 import { ChatButton, OrderChat } from '../chat/order-chat';
 import { DetailsEditor } from '../restaurant/details-editor';
 import { MenuCardEditor, menuCardProblems } from '../restaurant/menu-card-editor';
-import { WA_BUTTON, rupees, waLink } from '../restaurant/shared';
+import { rupees } from '../restaurant/shared';
 import { WeekChartEditor } from '../restaurant/week-chart-editor';
 
 const clock = (iso: string) =>
@@ -92,6 +94,12 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
           {clock(order.createdAt)} · {minsAgo(order.createdAt)} min
         </span>
       </header>
+      {order.tiffin && (
+        <p className="m-0 rounded-lg bg-marigold-soft px-3 py-2 text-[13.5px] font-semibold text-marigold-text">
+          Tiffin plan · {TIFFIN_PLAN_TEXT[order.tiffin.plan]} · {order.tiffin.startsOn} to{' '}
+          {order.tiffin.endsOn}
+        </p>
+      )}
       <p className="m-0 flex flex-wrap gap-x-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-ink">
         {order.mode === 'delivery' ? 'Delivery' : 'Pickup'}
         {order.status === 'placed' && (
@@ -133,16 +141,11 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
         <div className="flex items-center gap-3">
           <ChatButton unread={order.unread} onClick={onChat} />
           <a
-            href={waLink(
-              order.phone,
-              `Hi ${order.name}, about your order ${order.code} from Scholars Stack: `,
-            )}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`WhatsApp ${order.name}`}
-            className={`${WA_BUTTON} h-10 px-4 text-[14px]`}
+            href={`tel:+91${order.phone}`}
+            aria-label={`Call ${order.name}`}
+            className="grid place-items-center w-10 h-10 rounded-full border-[1.5px] border-line text-ink no-underline hover:border-ink2"
           >
-            <WhatsAppIcon size={17} />
+            <Phone size={17} />
           </a>
         </div>
       </div>
@@ -169,13 +172,13 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
               disabled={move.isPending}
               onClick={() => move.mutate({ status: 'accepted' })}
             >
-              Accept
+              {order.tiffin ? 'Accept tiffin plan' : 'Accept'}
             </Button>
             <Button variant="outline" disabled={move.isPending} onClick={() => setDeclining(true)}>
               Decline
             </Button>
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className={`flex flex-wrap gap-1.5 ${order.tiffin ? 'hidden' : ''}`}>
             {ACCEPT.map((n) => (
               <button
                 key={n}
@@ -370,8 +373,8 @@ function Board({
       <AlertsCard />
       {!mess.ordersOpen && (
         <p className="m-0 rounded-2xl bg-marigold-soft px-4 py-3 text-[15px] text-marigold-text">
-          <strong>You're not taking orders on the site.</strong> Students can still send you their order on
-          WhatsApp. Switch on <em>Taking orders</em> above to get them here too.
+          <strong>You're not taking orders on the site.</strong> Students see your menu and prices and can
+          call you. Switch on <em>Taking orders</em> above to get orders here, with chat.
         </p>
       )}
 
@@ -466,6 +469,245 @@ function useOwnerOrders(slug: string, topic = '') {
   });
 }
 
+const dayLabel = (iso: string) =>
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+const shiftDay = (iso: string, n: number) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/** One person on the delivery sheet: where it goes, who, their number, chat. */
+function TiffinRow({ r, onChat }: { r: TiffinRowDto; onChat: (id: string) => void }) {
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3">
+      <div className="flex-1 min-w-[200px]">
+        <p className="m-0 text-[15px] font-semibold text-ink">
+          {r.mode === 'delivery' ? r.address || 'Delivery' : 'Pickup at the counter'}
+        </p>
+        <p className="m-0 text-[13.5px] text-ink2">
+          {r.name} · <span className="tabular-nums">{formatMobile(r.phone)}</span> ·{' '}
+          {TIFFIN_PLAN_TEXT[r.plan]} · till {dayLabel(r.endsOn)}
+          {r.note ? ` · “${r.note}”` : ''}
+        </p>
+      </div>
+      <a
+        href={`tel:+91${r.phone}`}
+        aria-label={`Call ${r.name}`}
+        className="grid place-items-center w-9 h-9 rounded-full border-[1.5px] border-line text-ink no-underline hover:border-ink2"
+      >
+        <Phone size={16} />
+      </a>
+      <ChatButton unread={r.unread} onClick={() => onChat(r.orderId)} className="h-9 px-3 text-[13px]" />
+    </li>
+  );
+}
+
+/**
+ * The tiffin sheet: for any day, who gets lunch and who gets dinner (by address, so a delivery
+ * round is easy), plans ending soon, and how many wait to be accepted. Prints cleanly.
+ */
+function TiffinSheet({ mess, onChat }: { mess: OwnedMessDto; onChat: (id: string) => void }) {
+  const [date, setDate] = useState<string | undefined>(undefined);
+  const q = useQuery({
+    queryKey: ['owner-tiffin', mess.slug, date ?? 'today'],
+    queryFn: () => api.ownerTiffin(mess.slug, date),
+    refetchInterval: 60_000,
+  });
+  if (q.isLoading) return <Skeleton className="h-48" />;
+  if (q.isError || !q.data)
+    return (
+      <ErrorState
+        title="Couldn't load the tiffin sheet"
+        message={friendly(q.error)}
+        onRetry={() => q.refetch()}
+      />
+    );
+  const s = q.data;
+  const list = (title: string, rows: TiffinRowDto[], empty: string) => (
+    <section aria-label={title} className="flex flex-col min-w-0">
+      <h2 className="m-0 flex items-baseline gap-2 border-b-2 border-ink pb-1.5 text-[13px] font-semibold uppercase tracking-[0.12em] text-ink">
+        {title} <span className="tabular-nums text-ink2">{rows.length}</span>
+      </h2>
+      {rows.length ? (
+        <ul className="m-0 p-0 list-none divide-y divide-line">
+          {rows.map((r) => (
+            <TiffinRow key={r.orderId} r={r} onChat={onChat} />
+          ))}
+        </ul>
+      ) : (
+        <p className="m-0 py-3 text-[14px] text-ink2">{empty}</p>
+      )}
+    </section>
+  );
+  return (
+    <div className="flex flex-col gap-7">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div className="flex items-center gap-1 print:hidden">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setDate(shiftDay(s.date, -1))}
+            aria-label="Day before"
+          >
+            ←
+          </Button>
+          <input
+            type="date"
+            value={s.date}
+            onChange={(e) => e.target.value && setDate(e.target.value)}
+            aria-label="Day"
+            className="h-10 rounded-lg border-[1.5px] border-line bg-surface px-3 text-[14px] outline-none focus:border-teal"
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setDate(shiftDay(s.date, 1))}
+            aria-label="Day after"
+          >
+            →
+          </Button>
+        </div>
+        <p className="m-0 font-display text-[24px] font-bold text-ink">{dayLabel(s.date)}</p>
+        <dl className="m-0 flex gap-8 sm:ml-auto">
+          <div>
+            <dt className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink2">Active plans</dt>
+            <dd className="m-0 font-display text-[30px] leading-none font-extrabold tabular-nums">
+              {s.active}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink2">To accept</dt>
+            <dd
+              className={`m-0 font-display text-[30px] leading-none font-extrabold tabular-nums ${s.waiting ? 'text-marigold-text' : ''}`}
+            >
+              {s.waiting}
+            </dd>
+          </div>
+        </dl>
+        <Button size="sm" variant="outline" className="print:hidden" onClick={() => window.print()}>
+          Print the list
+        </Button>
+      </div>
+      {s.waiting > 0 && (
+        <p className="m-0 rounded-2xl bg-marigold-soft px-4 py-3 text-[15px] text-marigold-text">
+          <strong>
+            {s.waiting} new tiffin plan{s.waiting === 1 ? '' : 's'}
+          </strong>{' '}
+          waiting on the Orders tab. Accept to start {s.waiting === 1 ? 'it' : 'them'}.
+        </p>
+      )}
+      <div className="grid gap-8 lg:grid-cols-2 items-start">
+        {list('Lunch', s.lunch, 'No lunch tiffins on this day.')}
+        {list('Dinner', s.dinner, 'No dinner tiffins on this day.')}
+      </div>
+      {s.ending.length > 0 && list('Ending in the next 3 days', s.ending, '')}
+      {!s.active && !s.waiting && (
+        <p className="m-0 text-[15px] text-ink2 max-w-[640px]">
+          No tiffin plans yet. Mark your tiffin dish as <strong>Monthly tiffin plan</strong> in the Menu card;
+          students then pick lunch, dinner or both and a first day, and plans you accept show up here every
+          day.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Everyone who ordered in the last 90 days: who they are, how often, and a way to reach them. */
+function Customers({ mess, onChat }: { mess: OwnedMessDto; onChat: (id: string) => void }) {
+  const q = useQuery({
+    queryKey: ['owner-customers', mess.slug],
+    queryFn: () => api.ownerCustomers(mess.slug),
+  });
+  const [search, setSearch] = useState('');
+  if (q.isLoading) return <Skeleton className="h-48" />;
+  if (q.isError)
+    return (
+      <ErrorState
+        title="Couldn't load your customers"
+        message={friendly(q.error)}
+        onRetry={() => q.refetch()}
+      />
+    );
+  const n = search.trim().toLowerCase();
+  const rows = (q.data ?? []).filter((c) => !n || c.name.toLowerCase().includes(n) || c.phone.includes(n));
+  const repeat = (q.data ?? []).filter((c) => c.orders > 1).length;
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-end gap-x-10 gap-y-3">
+        <dl className="m-0 flex gap-10">
+          <div>
+            <dt className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink2">
+              Customers (90 days)
+            </dt>
+            <dd className="m-0 font-display text-[34px] leading-none font-extrabold tabular-nums">
+              {q.data?.length ?? 0}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink2">Came back</dt>
+            <dd className="m-0 font-display text-[34px] leading-none font-extrabold tabular-nums">
+              {repeat}
+            </dd>
+          </div>
+        </dl>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name or number"
+          aria-label="Search customers"
+          className="sm:ml-auto h-10 w-full sm:w-[260px] rounded-lg border-[1.5px] border-line bg-surface px-3 text-[14px] outline-none focus:border-teal"
+        />
+      </div>
+      {!rows.length ? (
+        <p className="m-0 text-[15px] text-ink2">
+          {q.data?.length ? 'Nobody matches.' : 'Customers appear here after their first order.'}
+        </p>
+      ) : (
+        <ul className="m-0 p-0 list-none divide-y divide-line">
+          {rows.map((c) => (
+            <li key={c.userId} className="flex flex-wrap items-center gap-x-5 gap-y-1.5 py-3.5">
+              <div className="flex-1 min-w-[220px]">
+                <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-[16px] font-semibold text-ink">
+                  {c.name || 'Student'}
+                  {c.blocked && (
+                    <span className="rounded-full bg-blush px-2 py-0.5 text-[11.5px] font-bold uppercase text-blush-text">
+                      Blocked
+                    </span>
+                  )}
+                  {c.tiffin && (
+                    <span className="rounded-full bg-marigold-soft px-2 py-0.5 text-[11.5px] font-bold text-marigold-text">
+                      Tiffin · {TIFFIN_PLAN_TEXT[c.tiffin.plan]} till {dayLabel(c.tiffin.endsOn)}
+                    </span>
+                  )}
+                </p>
+                <p className="m-0 text-[13.5px] text-ink2">
+                  <span className="tabular-nums">{formatMobile(c.phone)}</span> · {c.orders} order
+                  {c.orders === 1 ? '' : 's'} · {rupees(c.spent)} · last {clock(c.lastOrderAt)},{' '}
+                  {new Date(c.lastOrderAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                </p>
+              </div>
+              <a
+                href={`tel:+91${c.phone}`}
+                aria-label={`Call ${c.name}`}
+                className="grid place-items-center w-9 h-9 rounded-full border-[1.5px] border-line text-ink no-underline hover:border-ink2"
+              >
+                <Phone size={16} />
+              </a>
+              <ChatButton unread={0} onClick={() => onChat(c.lastOrderId)} className="h-9 px-3 text-[13px]" />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** Students this restaurant blocked, with Unblock. */
 function BlockedList({ mess }: { mess: OwnedMessDto }) {
   const qc = useQueryClient();
@@ -553,16 +795,18 @@ function OpenSwitch({ mess }: { mess: OwnedMessDto }) {
           {mess.ordersOpen ? 'Taking orders' : 'Not taking orders'}
         </span>
         <span className="text-[13px] text-ink2">
-          {mess.ordersOpen ? 'Students can order on your page.' : 'Students can only WhatsApp you.'}
+          {mess.ordersOpen ? 'Students can order on your page.' : 'Students see your menu and can call you.'}
         </span>
       </span>
     </label>
   );
 }
 
-type Tab = 'orders' | 'menu' | 'week' | 'details' | 'blocked';
+type Tab = 'orders' | 'tiffin' | 'customers' | 'menu' | 'week' | 'details' | 'blocked';
 const TABS: [Tab, string][] = [
   ['orders', 'Orders'],
+  ['tiffin', 'Tiffin'],
+  ['customers', 'Customers'],
   ['menu', 'Menu card'],
   ['week', 'Weekly menu'],
   ['details', 'Details & timings'],
@@ -587,7 +831,10 @@ const toForm = (m: MessDto): OwnerMessInput => ({
  * The owner's editing tabs share one draft: change anything, then "Save changes" once. Saved
  * changes show on the restaurant's page straight away.
  */
-function Editors({ tab, mess }: { tab: Exclude<Tab, 'orders' | 'blocked'>; mess: OwnedMessDto }) {
+function Editors({
+  tab,
+  mess,
+}: { tab: Exclude<Tab, 'orders' | 'blocked' | 'tiffin' | 'customers'>; mess: OwnedMessDto }) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['owner-mess', mess.slug], queryFn: () => api.ownerMess(mess.slug) });
   const [draft, setDraft] = useState<OwnerMessInput | null>(null);
@@ -613,7 +860,7 @@ function Editors({ tab, mess }: { tab: Exclude<Tab, 'orders' | 'blocked'>; mess:
         ...(form.name.trim().length < 2 ? ['Give your restaurant a name (Details).'] : []),
         ...(form.meals.some((m) => m.start >= m.end) ? ['A meal ends before it starts (Details).'] : []),
         ...(form.phone && !/^\+?\d[\d ]{6,17}$/.test(form.phone.trim())
-          ? ['The WhatsApp number should be digits only, e.g. +91 98765 43210 (Details).']
+          ? ['The phone number should be digits only, e.g. +91 98765 43210 (Details).']
           : []),
       ]
     : [];
@@ -816,6 +1063,10 @@ export function OrdersPage() {
               <Board key={mess.slug} mess={mess} orders={orders} onChat={(id) => go({ chat: id })} />
             ) : tab === 'blocked' ? (
               <BlockedList key={mess.slug} mess={mess} />
+            ) : tab === 'tiffin' ? (
+              <TiffinSheet key={mess.slug} mess={mess} onChat={(id) => go({ chat: id })} />
+            ) : tab === 'customers' ? (
+              <Customers key={mess.slug} mess={mess} onChat={(id) => go({ chat: id })} />
             ) : (
               <Editors key={mess.slug} tab={tab} mess={mess} />
             )}

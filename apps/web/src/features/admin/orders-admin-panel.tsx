@@ -150,7 +150,7 @@ function Workflow() {
         </li>
         <li className="text-ink2">
           New orders alert every owner device, repeat each minute on the open dashboard, alert again at 3
-          minutes (and the student gets a WhatsApp nudge button), and cancel at 10 minutes.
+          minutes (and the student is told and offered Call), and cancel at 10 minutes.
         </li>
       </ul>
       {!d.restaurants.length ? (
@@ -163,7 +163,15 @@ function Workflow() {
 }
 
 function OrdersList({ onOpen }: { onOpen: (id: string) => void }) {
+  const qc = useQueryClient();
   const [search, setSearch] = useState('');
+  const clearAll = useMutation({
+    mutationFn: () => api.adminClearAllChats(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin-orders'] });
+      void qc.invalidateQueries({ queryKey: ['chat'] });
+    },
+  });
   const q = useQuery({
     queryKey: ['admin-orders'],
     queryFn: () => api.adminOrders(),
@@ -176,6 +184,33 @@ function OrdersList({ onOpen }: { onOpen: (id: string) => void }) {
   );
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="m-0 flex-1 min-w-[260px] text-[14px] text-ink2">
+          You see every chat in full, even ones a student or owner cleared for themselves. They only ever see
+          their own.
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={clearAll.isPending}
+          onClick={() => {
+            if (
+              window.confirm(
+                'Delete every message in every order chat, for students and owners? This cannot be undone.',
+              )
+            )
+              clearAll.mutate();
+          }}
+        >
+          {clearAll.isPending ? 'Clearing…' : 'Clear all chats'}
+        </Button>
+        {clearAll.data && (
+          <span role="status" className="text-[13.5px] text-teal-text font-semibold">
+            Cleared {plural(clearAll.data.cleared, 'chat')}.
+          </span>
+        )}
+        {clearAll.error && <span className="text-[13.5px] text-blush-text">{friendly(clearAll.error)}</span>}
+      </div>
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}

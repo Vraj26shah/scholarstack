@@ -103,10 +103,9 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await expect(bill.getByText('Sent, waiting for the restaurant')).toBeVisible();
   const code = (await bill.locator('p.font-display').textContent())!.trim();
   expect(code).toMatch(/^[A-Z0-9]{4}$/);
-  // One WhatsApp button, with the whole slip (and the code) typed in.
-  const wa = bill.getByRole('link', { name: 'Send order on WhatsApp' });
-  await expect(wa).toHaveAttribute('href', new RegExp(`^https://wa\\.me/\\d+\\?text=.*${code}`));
-  await expect(page.getByRole('link', { name: /WhatsApp/ })).toHaveCount(1);
+  // No WhatsApp: the order lives on the site, with its chat and a Call button.
+  await expect(page.getByRole('link', { name: /WhatsApp/ })).toHaveCount(0);
+  await expect(bill.getByRole('link', { name: 'Call' })).toHaveAttribute('href', /^tel:\+91\d{10}$/);
   await shot(page, 'mess-order-placed', info.project.name);
 
   // The order's chat: a message goes through; a phone number is stopped before sending.
@@ -116,7 +115,7 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await chat.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(chat.getByText('Less spicy please')).toBeVisible();
   await chat.getByLabel('Message').fill('call me on 98765 43210');
-  await expect(chat.getByRole('alert')).toContainText("Phone numbers can't be shared");
+  await expect(chat.getByText("Phone numbers can't be shared in chat.")).toBeVisible();
   await expect(chat.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
   await chat.getByLabel('Message').fill('');
   await shot(page, 'order-chat-student', info.project.name);
@@ -139,11 +138,16 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await ownerChat.getByRole('button', { name: 'Back' }).click();
   await ticket.getByRole('button', { name: 'Accept · 15 min' }).click();
   await expect(page.getByRole('region', { name: /Making/ }).getByText(code)).toBeVisible();
-  // The owner's ticket has the student's number and one WhatsApp button for them.
-  await expect(ticket.getByRole('link', { name: 'WhatsApp Asha' })).toHaveAttribute(
-    'href',
-    /wa\.me\/919876543210/,
-  );
+  // The owner's ticket has the student's number and a Call button.
+  await expect(ticket.getByRole('link', { name: 'Call Asha' })).toHaveAttribute('href', 'tel:+919876543210');
+  // Customers and the tiffin sheet.
+  await page.getByRole('tab', { name: 'Customers' }).click();
+  await expect(page.getByText('Asha').first()).toBeVisible();
+  await shot(page, 'owner-customers', info.project.name);
+  await page.getByRole('tab', { name: 'Tiffin' }).click();
+  await expect(page.getByText('Active plans')).toBeVisible();
+  await shot(page, 'owner-tiffin', info.project.name);
+  await page.getByRole('tab', { name: 'Orders' }).click();
 
   // The owner's own menu card (a dish this test doesn't order): a new price and a photo, saved, and on the student page at once.
   await page.getByRole('tab', { name: 'Menu card' }).click();
@@ -167,7 +171,7 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText('Saved. Your page shows it now.')).toBeVisible();
   await page.getByRole('tab', { name: 'Details & timings' }).click();
-  await expect(page.getByLabel('WhatsApp number for orders')).toBeVisible();
+  await expect(page.getByLabel('Phone number for orders')).toBeVisible();
   await shot(page, 'owner-details', info.project.name);
 
   await page.goto('/tools/mess-menu#order');

@@ -5,10 +5,17 @@ import {
   type MessOrderDto,
   OPEN_MESS_ORDER,
   ORDER_TIMERS,
+  TIFFIN_DAYS,
+  TIFFIN_PLANS,
+  TIFFIN_PLAN_TEXT,
+  TIFFIN_START_WITHIN_DAYS,
+  type TiffinPlan,
   dishesOn,
   formatClock,
   formatMobile,
+  isTiffinItem,
   normaliseMobile,
+  tiffinEnds,
   toMinutes,
 } from '@ss/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -17,11 +24,11 @@ import { Link } from 'react-router-dom';
 import { signal, track } from '../../../../lib/analytics';
 import { ApiError, api } from '../../../../lib/api';
 import { useSession } from '../../../../lib/session';
-import { Button } from '../../../../shared/ui/button';
-import { Minus, Plus, WhatsAppIcon } from '../../../../shared/ui/icons';
+import { Button, buttonClass } from '../../../../shared/ui/button';
+import { Minus, Phone, Plus, SearchIcon } from '../../../../shared/ui/icons';
 import { useLive } from '../../../chat/live';
 import { ChatButton, OrderChat } from '../../../chat/order-chat';
-import { WA_BUTTON, orderMessage, rupees, waLink } from '../../../restaurant/shared';
+import { rupees } from '../../../restaurant/shared';
 import { useToolState } from '../../core/storage';
 import { field } from '../../core/ui';
 import { mealState } from './mess-grid';
@@ -37,6 +44,8 @@ interface Item {
   detail: string;
   photo: string;
   available: boolean;
+  /** A monthly tiffin plan: ordered alone, with a meal plan and a first day. */
+  tiffin: boolean;
 }
 
 interface Details {
@@ -60,6 +69,12 @@ const slipTime = () =>
     minute: '2-digit',
     timeZone: 'Asia/Kolkata',
   });
+/** A dialable number from what the owner typed ("+91 85179 03810" → "+918517903810"). */
+const telOf = (phone: string) => {
+  const d = phone.replace(/\D/g, '');
+  return d.length === 10 ? `+91${d}` : d ? `+${d}` : '';
+};
+const sectionId = (title: string) => `menu-${encodeURIComponent(title)}`;
 
 /** Which thali to offer: the meal on now, else the next one today, else tomorrow's first. */
 function thaliFor(mess: MessDto, today: string, tomorrow: string, nowMinutes: number) {
@@ -69,42 +84,36 @@ function thaliFor(mess: MessDto, today: string, tomorrow: string, nowMinutes: nu
   return first ? { meal: first, date: tomorrow, when: 'Tomorrow' } : null;
 }
 
-function Stepper({
-  label,
-  qty,
-  onChange,
-  disabled,
-}: { label: string; qty: number; onChange: (q: number) => void; disabled?: boolean }) {
+function Stepper({ label, qty, onChange }: { label: string; qty: number; onChange: (q: number) => void }) {
   if (!qty)
     return (
       <button
         type="button"
         onClick={() => onChange(1)}
-        disabled={disabled}
         aria-label={`Add ${label}`}
-        className="inline-flex items-center gap-1 h-9 shrink-0 rounded-full border-[1.5px] border-ink/80 px-3.5 text-[14px] font-bold text-ink hover:bg-ink hover:text-bg transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink"
+        className="inline-flex items-center justify-center gap-1 h-9 min-w-[92px] shrink-0 rounded-lg border-[1.5px] border-teal bg-surface px-3 text-[14px] font-extrabold uppercase tracking-[0.04em] text-teal-text shadow-[0_6px_14px_-8px_rgba(0,0,0,0.35)] hover:bg-teal hover:text-white transition-colors"
       >
-        <Plus size={15} /> Add
+        Add <Plus size={14} />
       </button>
     );
   return (
-    <span className="inline-flex items-center shrink-0 h-9 rounded-full bg-ink text-bg">
+    <span className="inline-flex items-center justify-between h-9 min-w-[92px] shrink-0 rounded-lg bg-teal text-white shadow-[0_6px_14px_-8px_rgba(0,0,0,0.35)]">
       <button
         type="button"
         onClick={() => onChange(qty - 1)}
         aria-label={`One less ${label}`}
-        className="grid place-items-center w-9 h-9 rounded-full"
+        className="grid place-items-center w-8 h-9 rounded-lg border-0 bg-transparent text-white cursor-pointer"
       >
         <Minus size={14} />
       </button>
-      <span aria-live="polite" className="w-5 text-center text-[15px] font-bold tabular-nums">
+      <span aria-live="polite" className="w-6 text-center text-[15px] font-bold tabular-nums">
         {qty}
       </span>
       <button
         type="button"
         onClick={() => onChange(Math.min(20, qty + 1))}
         aria-label={`One more ${label}`}
-        className="grid place-items-center w-9 h-9 rounded-full"
+        className="grid place-items-center w-8 h-9 rounded-lg border-0 bg-transparent text-white cursor-pointer"
       >
         <Plus size={14} />
       </button>
@@ -112,63 +121,74 @@ function Stepper({
   );
 }
 
-/** A dish's photo, or (without one) its first letter on a warm tint, so the card still looks set. */
-function Picture({ src, name, className }: { src: string; name: string; className: string }) {
-  const [broken, setBroken] = useState(false);
-  return (
-    <span className={`relative overflow-hidden bg-marigold-soft grid place-items-center ${className}`}>
-      {src && !broken ? (
-        <img
-          src={src}
-          alt=""
-          loading="lazy"
-          decoding="async"
-          onError={() => setBroken(true)}
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-      ) : (
-        <span aria-hidden="true" className="font-display text-[34px] font-extrabold text-marigold-text/70">
-          {name.trim().charAt(0).toUpperCase()}
-        </span>
-      )}
-    </span>
-  );
-}
-
-/** One dish as a card: photo, name, note, price and Add. Sold-out dishes stay visible, greyed. */
-function DishCard({
+/**
+ * One dish on the menu card, the way food apps lay it out: name, price and description on the left,
+ * the photo on the right with the Add button sitting on it. No photo: no stand-in picture, just Add.
+ * Sold-out dishes stay listed, greyed. `readOnly`: the restaurant isn't taking orders on the site.
+ */
+function DishRow({
   item,
   photo,
   qty,
   onChange,
-}: { item: Item; photo: string; qty: number; onChange: (q: number) => void }) {
+  readOnly,
+  featured,
+}: {
+  item: Item;
+  photo: string;
+  qty: number;
+  onChange: (q: number) => void;
+  readOnly?: boolean;
+  featured?: string;
+}) {
+  const [broken, setBroken] = useState(false);
+  const hasPhoto = !!photo && !broken;
+  const control = !item.available ? (
+    <span className="inline-flex h-9 items-center rounded-lg bg-sunk px-3 text-[12px] font-bold uppercase tracking-[0.08em] text-ink2">
+      Sold out
+    </span>
+  ) : readOnly ? null : (
+    <Stepper label={item.label} qty={qty} onChange={onChange} />
+  );
   return (
     <li
-      className={`flex gap-3.5 rounded-2xl bg-surface p-2.5 pr-3.5 [box-shadow:inset_0_0_0_1px_var(--line)] ${qty ? '[box-shadow:inset_0_0_0_2px_var(--ink)]' : ''} ${item.available ? '' : 'opacity-60'}`}
+      aria-label={item.label}
+      className={`flex gap-4 py-5 ${item.available ? '' : 'opacity-60'} ${featured ? 'rounded-2xl bg-marigold-soft/60 px-4 -mx-4' : ''}`}
     >
-      <Picture src={photo} name={item.label} className="w-[92px] h-[92px] shrink-0 rounded-xl" />
-      <div className="flex-1 min-w-0 flex flex-col justify-between gap-1.5 py-0.5">
-        <div className="min-w-0">
-          <p className="m-0 text-[16px] font-semibold leading-snug text-ink [overflow-wrap:anywhere]">
-            {item.label}
-          </p>
-          {(item.detail || item.note) && (
-            <p className="m-0 mt-0.5 text-[13px] leading-snug text-ink2 line-clamp-2">
-              {item.detail || item.note}
-            </p>
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        {featured && (
+          <span className="self-start text-[11px] font-bold uppercase tracking-[0.12em] text-marigold-text">
+            {featured}
+          </span>
+        )}
+        <p className="m-0 text-[16.5px] font-bold leading-snug text-ink [overflow-wrap:anywhere]">
+          {item.label}
+        </p>
+        <p className="m-0 text-[15px] font-semibold tabular-nums text-ink">
+          {rupees(item.price)}
+          {item.tiffin && (
+            <span className="ml-2 text-[12.5px] font-semibold text-marigold-text">Monthly plan</span>
           )}
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[17px] font-bold tabular-nums text-ink">{rupees(item.price)}</span>
-          {item.available ? (
-            <Stepper label={item.label} qty={qty} onChange={onChange} />
-          ) : (
-            <span className="text-[13px] font-semibold uppercase tracking-[0.1em] text-blush-text">
-              Sold out
-            </span>
-          )}
-        </div>
+        </p>
+        {(item.detail || item.note) && (
+          <p className="m-0 text-[13.5px] leading-snug text-ink2 line-clamp-2">{item.detail || item.note}</p>
+        )}
       </div>
+      {hasPhoto ? (
+        <div className="relative shrink-0 w-[118px] sm:w-[140px] pb-4">
+          <img
+            src={photo}
+            alt={item.label}
+            loading="lazy"
+            decoding="async"
+            onError={() => setBroken(true)}
+            className="block w-full aspect-[7/6] rounded-xl object-cover bg-sunk"
+          />
+          {control && <span className="absolute inset-x-0 -bottom-0.5 flex justify-center">{control}</span>}
+        </div>
+      ) : (
+        control && <div className="shrink-0 self-center">{control}</div>
+      )}
     </li>
   );
 }
@@ -176,7 +196,7 @@ function DishCard({
 const STEPS = ['placed', 'accepted', 'ready', 'done'] as const;
 const STEP_LABEL = { placed: 'Sent', accepted: 'Accepted', ready: 'Ready', done: 'Delivered' };
 
-/** A placed order: its code, where it's got to, and the WhatsApp button to send the slip. */
+/** A placed order: its code, where it's got to, and the chat and Call buttons. */
 function Tracker({
   order,
   mess,
@@ -191,7 +211,9 @@ function Tracker({
   onChat: () => void;
 }) {
   const stopped = order.status === 'rejected' || order.status === 'cancelled';
-  // A tick every 15 s, so the 3-minute WhatsApp nudge appears on time.
+  const at = STEPS.indexOf(order.status as (typeof STEPS)[number]);
+  const tiffinOn = !!order.tiffin && order.status === 'done';
+  // A tick every 15 s, so "not answered yet" appears on time.
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (order.status !== 'placed') return;
@@ -199,24 +221,9 @@ function Tracker({
     return () => clearInterval(t);
   }, [order.status]);
   const waited = now - Date.parse(order.createdAt);
-  const [nudged, setNudged] = useState(false);
-  const nudge = `Hi, I placed order ${order.code} on Scholars Stack ${Math.floor(waited / 60_000)} minutes ago and it's still waiting. Please open your orders: ${window.location.origin}/orders`;
-  const at = STEPS.indexOf(order.status as (typeof STEPS)[number]);
-  const message = orderMessage({
-    restaurant: mess.name,
-    code: order.code,
-    lines: order.lines.map((l) => ({
-      qty: l.qty,
-      label: l.detail ? l.detail.split(':')[0]! : l.name,
-      price: l.price,
-    })),
-    total: order.total,
-    mode: order.mode,
-    address: order.address,
-    name: order.name,
-    phone: order.phone,
-    note: order.note,
-  });
+  const cancelsIn = Math.max(1, Math.ceil((ORDER_TIMERS.autoCancelAfterMs - waited) / 60_000));
+  const tel = telOf(mess.phone);
+
   return (
     <div className="flex flex-col gap-4" aria-live="polite">
       <div className="flex items-start justify-between gap-3">
@@ -232,7 +239,7 @@ function Tracker({
         <span className="text-[18px] font-bold tabular-nums text-ink">{rupees(order.total)}</span>
       </div>
 
-      {stopped ? (
+      {tiffinOn ? null : stopped ? (
         <p className="m-0 border-l-[3px] border-blush-text pl-3 text-[15px] text-ink">
           <strong>{MESS_ORDER_STATUS_TEXT[order.status]}.</strong>
           {order.ownerNote ? ` “${order.ownerNote}”` : ''}
@@ -258,6 +265,18 @@ function Tracker({
         </>
       )}
 
+      {order.tiffin && (
+        <p className="m-0 rounded-xl bg-marigold-soft px-3 py-2.5 text-[14px] text-marigold-text">
+          <strong>
+            Tiffin · {TIFFIN_PLAN_TEXT[order.tiffin.plan]} · {order.tiffin.startsOn} to {order.tiffin.endsOn}
+          </strong>
+          {order.status === 'done'
+            ? ' · On'
+            : order.status === 'placed'
+              ? ' · Waiting for the restaurant'
+              : ''}
+        </p>
+      )}
       <ul className="m-0 p-0 list-none text-[14px] leading-relaxed text-ink2">
         {order.lines.map((l) => (
           <li key={`${l.name}${l.detail}`}>
@@ -271,54 +290,28 @@ function Tracker({
 
       <div className="flex flex-wrap gap-2">
         <ChatButton unread={order.unread} onClick={onChat} label="Chat with restaurant" />
-        {mess.phone && (
+        {tel && (
           <a
-            href={`tel:${mess.phone.replace(/[^\d+]/g, '')}`}
+            href={`tel:${tel}`}
             className="inline-flex items-center gap-2 h-10 px-4 rounded-full border-[1.5px] border-line text-[14px] font-semibold text-ink no-underline hover:border-ink2"
           >
-            📞 Call
+            <Phone size={16} /> Call
           </a>
         )}
       </div>
-      {order.status === 'placed' && waited >= ORDER_TIMERS.nudgeAfterMs && mess.phone && !nudged && (
-        <div className="flex flex-col gap-1.5 rounded-xl bg-marigold-soft px-3 py-2.5">
-          <p className="m-0 text-[14px] text-marigold-text">
-            <strong>Not answered yet.</strong> Send the restaurant one WhatsApp nudge with a link to their
-            orders. Unanswered orders cancel by themselves at 10 minutes.
-          </p>
-          <a
-            href={waLink(mess.phone, nudge)}
-            target="_blank"
-            rel="noreferrer"
-            onClick={() => setNudged(true)}
-            className={`${WA_BUTTON} h-10 px-4 text-[14px] self-start`}
-          >
-            <WhatsAppIcon size={17} /> Nudge on WhatsApp
-          </a>
-        </div>
-      )}
-
-      {!stopped && mess.phone && (
-        <div className="flex flex-col gap-1.5">
-          <a
-            href={waLink(mess.phone, message)}
-            target="_blank"
-            rel="noreferrer"
-            className={`${WA_BUTTON} h-12 text-[16px]`}
-          >
-            <WhatsAppIcon size={20} /> Send order on WhatsApp
-          </a>
-          <p className="m-0 text-[12.5px] text-ink2">
-            Opens WhatsApp with your order slip typed in. Press send so they see it straight away.
-          </p>
-        </div>
+      {order.status === 'placed' && waited >= ORDER_TIMERS.nudgeAfterMs && (
+        <p className="m-0 rounded-xl bg-marigold-soft px-3 py-2.5 text-[14px] text-marigold-text">
+          <strong>Not answered yet.</strong> We've alerted the restaurant again.
+          {tel ? ' Call them if it is urgent.' : ''} If nobody answers, the order cancels by itself in{' '}
+          {cancelsIn} min.
+        </p>
       )}
       {order.status === 'placed' && (
         <button
           type="button"
           onClick={onCancel}
           disabled={cancelling}
-          className="self-start text-[14px] font-semibold text-blush-text underline underline-offset-4"
+          className="self-start border-0 bg-transparent p-0 text-[14px] font-semibold text-blush-text underline underline-offset-4 cursor-pointer"
         >
           {cancelling ? 'Cancelling…' : 'Cancel order'}
         </button>
@@ -331,11 +324,38 @@ function Tracker({
 const TORN =
   '[clip-path:polygon(0_0,100%_0,100%_calc(100%-8px),95%_100%,90%_calc(100%-8px),85%_100%,80%_calc(100%-8px),75%_100%,70%_calc(100%-8px),65%_100%,60%_calc(100%-8px),55%_100%,50%_calc(100%-8px),45%_100%,40%_calc(100%-8px),35%_100%,30%_calc(100%-8px),25%_100%,20%_calc(100%-8px),15%_100%,10%_calc(100%-8px),5%_100%,0_calc(100%-8px))]';
 
+/** A restaurant that only shares its weekly menu here: who to call, nothing to order. */
+function MenuOnly({ mess }: { mess: MessDto }) {
+  const tel = telOf(mess.phone);
+  if (!tel) return null;
+  return (
+    <section
+      id="order"
+      aria-label="Ordering"
+      className="scroll-mt-24 flex flex-wrap items-center justify-between gap-4 border-t-2 border-ink pt-6"
+    >
+      <div className="flex flex-col gap-1 max-w-[620px]">
+        <h2 className="m-0 font-display text-[26px] leading-none font-extrabold tracking-[-0.03em] text-ink">
+          Ordering
+        </h2>
+        <p className="m-0 text-[15px] text-ink2">
+          {mess.name} shares its weekly menu here but doesn't take orders on the site. Call them to order
+          {mess.orderNote ? ` · ${mess.orderNote}` : ''}.
+        </p>
+      </div>
+      <a href={`tel:${tel}`} className={buttonClass('brand', 'md')}>
+        <Phone size={18} /> Call {formatMobile(tel.replace(/^\+91/, ''))}
+      </a>
+    </section>
+  );
+}
+
 /**
- * Ordering from a restaurant for day scholars: today's thali first, then the owner's menu card
- * with photos. The order slip collects delivery or pickup, a name and a mobile number. When the
- * restaurant takes orders on the site (and the student is signed in) "Confirm order" lands on the
- * owner's screen; either way the one WhatsApp button sends the whole slip to the restaurant.
+ * Ordering from a restaurant for day scholars, in three shapes:
+ * - taking orders on the site: the menu card by category (photos, search, Add), an order slip, and
+ *   the order's own chat once placed (no WhatsApp);
+ * - a menu card but not taking orders right now: the card to read, with prices, and Call;
+ * - only a weekly menu: nothing to order, just Call (see MenuOnly).
  */
 export function OrderPanel({
   mess,
@@ -365,8 +385,9 @@ export function OrderPanel({
   const [confirmed, setConfirmed] = useState(false);
   const [tried, setTried] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null);
-  /** A WhatsApp-only order just sent: the slip shows "sent" with a way to send it again. */
-  const [sentByWa, setSentByWa] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [chatOpen, setChatOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<string | null>(null);
 
   const mine = useQuery({
     queryKey: ['my-mess-orders'],
@@ -384,6 +405,13 @@ export function OrderPanel({
       o.id !== dismissed &&
       (OPEN_MESS_ORDER.includes(o.status) || Date.now() - Date.parse(o.updatedAt) < 3 * 3600_000),
   );
+  useLive(current?.topic, () => void qc.invalidateQueries({ queryKey: ['my-mess-orders'] }));
+  const reply = useQuery({
+    queryKey: ['reply-time', mess.slug],
+    queryFn: () => api.replyTime(mess.slug),
+    enabled: mess.ordersOpen,
+    staleTime: 600_000,
+  });
 
   const thali = useMemo(() => {
     const priced = mess.order.flatMap((s) => s.items).find((i) => /thali/i.test(i.name));
@@ -400,11 +428,14 @@ export function OrderPanel({
       detail: dishes.join(', '),
       photo: priced.photo ?? '',
       available: priced.available !== false,
+      tiffin: false,
     };
     return {
       item,
-      start: at.meal.start,
-      serving: at.date === today && mealState(at.meal, nowMinutes) === 'now',
+      label:
+        at.date === today && mealState(at.meal, nowMinutes) === 'now'
+          ? 'Serving now'
+          : `From ${formatClock(toMinutes(at.meal.start))}`,
     };
   }, [mess, today, tomorrow, nowMinutes]);
 
@@ -424,62 +455,96 @@ export function OrderPanel({
               detail: '',
               photo: it.photo ?? '',
               available: it.available !== false,
+              tiffin: isTiffinItem(it),
             }))
             .filter((it) => !(thali && /thali/i.test(it.name))),
         }))
         .filter((s) => s.items.length),
     [mess.order, thali],
   );
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? sections
+        .map((s) => ({
+          ...s,
+          items: s.items.filter((i) => `${i.label} ${i.note}`.toLowerCase().includes(q)),
+        }))
+        .filter((s) => s.items.length)
+    : sections;
   const all = useMemo(
     () => [...(thali ? [thali.item] : []), ...sections.flatMap((s) => s.items)],
     [thali, sections],
   );
+
+  // Which category is on screen (for the rail).
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+    const els = sections
+      .map((s) => document.getElementById(sectionId(s.title)))
+      .filter(Boolean) as HTMLElement[];
+    const io = new IntersectionObserver(
+      (entries) => {
+        const top = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (top) setActiveSection(decodeURIComponent(top.target.id.slice(5)));
+      },
+      { rootMargin: '-90px 0px -60% 0px' },
+    );
+    for (const el of els) io.observe(el);
+    return () => io.disconnect();
+  }, [sections]);
+
   const lines = all.filter((i) => cart[i.key] && i.available).map((i) => ({ ...i, qty: cart[i.key]! }));
   const total = lines.reduce((n, l) => n + l.qty * l.price, 0);
   const count = lines.reduce((n, l) => n + l.qty, 0);
-  const setQty = (key: string, qty: number) => {
-    setSentByWa(null);
+  const byKey = useMemo(() => new Map(all.map((i) => [i.key, i])), [all]);
+  const setQty = (key: string, qty: number) =>
     setCart((c) => {
-      const next = { ...c };
-      if (qty > 0) next[key] = qty;
+      const item = byKey.get(key);
+      // A tiffin plan is ordered on its own (and only one), so adding one clears the rest and
+      // adding a dish clears a plan.
+      let next: Record<string, number> = { ...c };
+      if (qty > 0 && item?.tiffin) next = {};
+      if (qty > 0 && item && !item.tiffin)
+        for (const k of Object.keys(next)) if (byKey.get(k)?.tiffin) delete next[k];
+      if (qty > 0) next[key] = item?.tiffin ? 1 : qty;
       else delete next[key];
       return next;
     });
-  };
+  const tiffinLine = all.find((i) => i.tiffin && cart[i.key]);
+  const todayIso = today;
+  const lastStart = (() => {
+    const d = new Date(`${today}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + TIFFIN_START_WITHIN_DAYS);
+    return d.toISOString().slice(0, 10);
+  })();
+  const [plan, setPlan] = useState<TiffinPlan>('both');
+  const [startsOn, setStartsOn] = useState(tomorrow);
   const set = (p: Partial<Details>) => setDetails((d) => ({ ...details, ...d, ...p }));
   const photo = (i: Item) => api.messPhotoUrl(mess.slug, i.photo);
 
-  const open = mess.ordersOpen;
-  const onSite = open && signedIn;
+  const hasCard = all.length > 0;
+  const taking = mess.ordersOpen && hasCard;
+  const tel = telOf(mess.phone);
   const phone = normaliseMobile(details.phone);
   const problem = !lines.length
     ? 'Add something first.'
-    : details.mode === 'delivery' && details.address.trim().length < 3
-      ? 'Add where to deliver it.'
-      : details.name.trim().length < 2
-        ? 'Add your name.'
-        : !phone
-          ? 'Add a 10-digit mobile number.'
-          : onSite && !confirmed
-            ? 'Tick to confirm your number.'
-            : null;
+    : tiffinLine && (startsOn < todayIso || startsOn > lastStart)
+      ? 'Pick a first day for the tiffin within the next two weeks.'
+      : details.mode === 'delivery' && details.address.trim().length < 3
+        ? 'Add where to deliver it.'
+        : details.name.trim().length < 2
+          ? 'Add your name.'
+          : !phone
+            ? 'Add a 10-digit mobile number.'
+            : !confirmed
+              ? 'Tick to confirm your number.'
+              : null;
   // A student pressed Confirm and was told something's missing: counted as stuck on a form.
   useEffect(() => {
     if (tried && problem) signal('stuck_form');
   }, [tried, problem]);
-
-  const slip = (code?: string) =>
-    orderMessage({
-      restaurant: mess.name,
-      code,
-      lines: lines.map((l) => ({ qty: l.qty, label: l.label, price: l.price })),
-      total,
-      mode: details.mode,
-      address: details.address.trim(),
-      name: details.name.trim(),
-      phone: phone ?? details.phone,
-      note: details.note.trim(),
-    });
 
   const place = useMutation({
     mutationFn: () =>
@@ -495,6 +560,7 @@ export function OrderPanel({
         phone: phone ?? '',
         note: details.note.trim(),
         phoneConfirmed: true,
+        ...(tiffinLine ? { tiffin: { plan, startsOn } } : {}),
       }),
     onSuccess: (o) => {
       track('mess_order_placed', { items: count, total: o.total });
@@ -508,26 +574,10 @@ export function OrderPanel({
     mutationFn: (id: string) => api.cancelMessOrder(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['my-mess-orders'] }),
   });
-  const [chatOpen, setChatOpen] = useState(false);
-  useLive(current?.topic, () => void qc.invalidateQueries({ queryKey: ['my-mess-orders'] }));
-  const reply = useQuery({
-    queryKey: ['reply-time', mess.slug],
-    queryFn: () => api.replyTime(mess.slug),
-    enabled: mess.ordersOpen,
-    staleTime: 600_000,
-  });
 
-  /** WhatsApp-only: open the chat with the slip typed in. */
-  const sendOnWhatsApp = () => {
-    const message = slip();
-    window.open(waLink(mess.phone, message), '_blank', 'noopener');
-    track('mess_order_placed', { items: count, total, via: 'whatsapp' });
-    setSentByWa(message);
-    setTried(false);
-  };
-
-  if (!mess.phone && !mess.order.length) return null;
+  if (!hasCard) return <MenuOnly mess={mess} />;
   const showTracker = !!current && !count;
+  const readOnly = !taking;
 
   return (
     <section
@@ -535,358 +585,400 @@ export function OrderPanel({
       aria-labelledby="order-h"
       className="scroll-mt-24 flex flex-col gap-6 border-t-2 border-ink pt-6"
     >
-      <header className="flex flex-col gap-1.5">
-        <h2
-          id="order-h"
-          className="m-0 font-display text-[clamp(28px,4vw,38px)] leading-none font-extrabold tracking-[-0.03em] text-ink"
-        >
-          Order
-        </h2>
-        <p className="m-0 text-[15px] text-ink2">
-          {[
-            mess.orderNote,
-            'Pay when it arrives',
-            reply.data?.minutes ? `Usually replies in ${reply.data.minutes} min` : '',
-          ]
-            .filter(Boolean)
-            .join(' · ')}
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div className="flex flex-col gap-1.5">
+          <h2
+            id="order-h"
+            className="m-0 font-display text-[clamp(28px,4vw,38px)] leading-none font-extrabold tracking-[-0.03em] text-ink"
+          >
+            {taking ? 'Order' : 'Menu & prices'}
+          </h2>
+          <p className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-[15px] text-ink2">
+            {taking ? (
+              <span className="inline-flex items-center gap-1.5 font-semibold text-teal-text">
+                <span aria-hidden="true" className="w-2 h-2 rounded-full bg-teal" /> Taking orders now
+              </span>
+            ) : (
+              <span className="font-semibold text-marigold-text">
+                Not taking orders on the site right now
+              </span>
+            )}
+            {[
+              mess.orderNote,
+              taking ? 'Pay when it arrives' : '',
+              taking && reply.data?.minutes ? `Usually replies in ${reply.data.minutes} min` : '',
+            ]
+              .filter(Boolean)
+              .map((t) => (
+                <span key={t}>· {t}</span>
+              ))}
+          </p>
+        </div>
+        {readOnly && tel && (
+          <a href={`tel:${tel}`} className={buttonClass('brand', 'md')}>
+            <Phone size={18} /> Call to order
+          </a>
+        )}
       </header>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px] items-start">
-        <div className="flex flex-col gap-8 min-w-0">
-          {sections.length > 1 && (
-            <nav
-              aria-label="Menu sections"
-              className="sticky top-0 z-10 flex gap-2 overflow-x-auto -mx-1 px-1 py-2 bg-bg/95 backdrop-blur"
-            >
-              {sections.map((s) => (
-                <a
-                  key={s.title}
-                  href={`#menu-${encodeURIComponent(s.title)}`}
-                  className="flex-none h-9 inline-flex items-center rounded-full border border-line px-3.5 text-[14px] font-semibold text-ink no-underline hover:border-ink2"
-                >
-                  {s.title}
-                </a>
-              ))}
-            </nav>
-          )}
-
+      <div
+        className={`grid gap-8 items-start ${readOnly ? 'lg:grid-cols-[190px_minmax(0,1fr)]' : 'lg:grid-cols-[190px_minmax(0,1fr)_360px]'}`}
+      >
+        {/* Category rail (desktop) */}
+        <nav aria-label="Menu categories" className="hidden lg:flex flex-col gap-0.5 sticky top-24">
           {thali && (
-            <div className="flex flex-col gap-2.5">
-              <h3 className="m-0 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-marigold-text">
-                {thali.serving && (
-                  <span aria-hidden="true" className="w-2 h-2 rounded-full bg-marigold animate-pulse" />
-                )}
-                {thali.serving ? 'Serving now' : `From ${formatClock(toMinutes(thali.start))}`}
-              </h3>
-              <ul className="m-0 p-0 list-none">
-                <DishCard
-                  item={thali.item}
-                  photo={photo(thali.item)}
-                  qty={cart[thali.item.key] ?? 0}
-                  onChange={(q) => setQty(thali.item.key, q)}
-                />
-              </ul>
-            </div>
+            <a
+              href="#menu-today"
+              className="rounded-lg px-3 py-2 text-[14px] font-semibold text-marigold-text no-underline hover:bg-sunk"
+            >
+              Today's thali
+            </a>
           )}
           {sections.map((s) => (
-            <div
+            <a
               key={s.title}
-              id={`menu-${encodeURIComponent(s.title)}`}
-              className="flex flex-col gap-3 scroll-mt-24"
+              href={`#${sectionId(s.title)}`}
+              aria-current={activeSection === s.title ? 'true' : undefined}
+              className={`flex items-baseline justify-between gap-2 rounded-lg px-3 py-2 text-[14px] no-underline border-l-[3px] ${
+                activeSection === s.title
+                  ? 'border-teal bg-mist/40 font-bold text-ink'
+                  : 'border-transparent font-semibold text-ink2 hover:text-ink hover:bg-sunk'
+              }`}
             >
-              <h3 className="m-0 font-display italic text-[22px] font-semibold text-ink">{s.title}</h3>
-              <ul className="m-0 p-0 list-none grid gap-3 xl:grid-cols-2">
+              <span className="truncate">{s.title}</span>
+              <span className="text-[12px] font-normal tabular-nums">{s.items.length}</span>
+            </a>
+          ))}
+        </nav>
+
+        <div className="flex flex-col min-w-0">
+          {/* Search, and the categories as chips on phones */}
+          <div className="sticky top-0 z-20 -mx-4 px-4 sm:mx-0 sm:px-0 pt-1 pb-3 bg-bg/95 backdrop-blur flex flex-col gap-2.5">
+            <label className="relative block">
+              <span className="sr-only">Search the menu</span>
+              <span aria-hidden="true" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink2">
+                <SearchIcon size={17} />
+              </span>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={`Search ${all.length} dishes`}
+                className={`${field} h-11 pl-10`}
+              />
+            </label>
+            {sections.length > 1 && (
+              <div className="lg:hidden flex gap-2 overflow-x-auto -mx-1 px-1">
+                {sections.map((s) => (
+                  <a
+                    key={s.title}
+                    href={`#${sectionId(s.title)}`}
+                    className={`flex-none h-9 inline-flex items-center gap-1.5 rounded-full px-3.5 text-[13.5px] font-semibold no-underline ${
+                      activeSection === s.title ? 'bg-ink text-bg' : 'border border-line text-ink'
+                    }`}
+                  >
+                    {s.title}
+                    <span className="text-[11.5px] opacity-70 tabular-nums">{s.items.length}</span>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {thali && !q && (
+            <ul id="menu-today" className="m-0 p-0 list-none scroll-mt-28">
+              <DishRow
+                item={thali.item}
+                photo={photo(thali.item)}
+                qty={cart[thali.item.key] ?? 0}
+                onChange={(n) => setQty(thali.item.key, n)}
+                readOnly={readOnly}
+                featured={thali.label}
+              />
+            </ul>
+          )}
+          {shown.map((s) => (
+            <section key={s.title} id={sectionId(s.title)} aria-label={s.title} className="scroll-mt-28 pt-4">
+              <h3 className="m-0 flex items-baseline justify-between gap-3 border-b-2 border-ink pb-2 font-display text-[22px] font-bold tracking-[-0.01em] text-ink">
+                {s.title}
+                <span className="font-sans text-[13px] font-normal text-ink2">
+                  {s.items.length} item{s.items.length === 1 ? '' : 's'}
+                </span>
+              </h3>
+              <ul className="m-0 p-0 list-none divide-y divide-dashed divide-line">
                 {s.items.map((it) => (
-                  <DishCard
+                  <DishRow
                     key={it.key}
                     item={it}
                     photo={photo(it)}
                     qty={cart[it.key] ?? 0}
-                    onChange={(q) => setQty(it.key, q)}
+                    onChange={(n) => setQty(it.key, n)}
+                    readOnly={readOnly}
                   />
                 ))}
               </ul>
-            </div>
+            </section>
           ))}
-          {!mess.order.length && (
-            <div className="flex flex-col gap-3 items-start">
-              <p className="m-0 text-[15px] text-ink2">The menu card isn't in yet. Message them to order.</p>
-              {mess.phone && (
-                <a
-                  href={waLink(mess.phone)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={`${WA_BUTTON} h-11 px-5 text-[15px]`}
-                >
-                  <WhatsAppIcon size={19} /> WhatsApp {mess.name}
-                </a>
-              )}
-            </div>
+          {q && !shown.length && (
+            <p className="m-0 py-8 text-[15px] text-ink2">Nothing called “{query.trim()}” on the menu.</p>
           )}
         </div>
 
-        <aside
-          id="order-slip"
-          aria-label="Order slip"
-          className={`scroll-mt-24 lg:sticky lg:top-24 flex flex-col gap-4 bg-surface p-5 pb-9 [box-shadow:inset_0_0_0_1px_var(--line)] ${TORN} ${showTracker ? 'order-first lg:order-none' : ''}`}
-        >
-          {showTracker ? (
-            <>
-              <Tracker
-                order={current}
-                mess={mess}
-                onCancel={() => cancel.mutate(current.id)}
-                cancelling={cancel.isPending}
-                onChat={() => setChatOpen(true)}
-              />
-              {!OPEN_MESS_ORDER.includes(current.status) && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="self-start"
-                  onClick={() => setDismissed(current.id)}
-                >
-                  New order
-                </Button>
-              )}
-            </>
-          ) : sentByWa ? (
-            <div className="flex flex-col gap-3" aria-live="polite">
-              <p className="m-0 text-[12px] font-semibold uppercase tracking-[0.12em] text-teal-text">
-                Order slip ready
-              </p>
-              <p className="m-0 font-display text-[26px] leading-tight font-extrabold text-ink">
-                Press send in WhatsApp
-              </p>
-              <p className="m-0 text-[14px] leading-relaxed text-ink2">
-                Your order is typed into the chat with {mess.name}. It's ordered once you press send there;
-                they'll reply on WhatsApp.
-              </p>
-              <a
-                href={waLink(mess.phone, sentByWa)}
-                target="_blank"
-                rel="noreferrer"
-                className={`${WA_BUTTON} h-12 text-[16px]`}
-              >
-                <WhatsAppIcon size={20} /> Open WhatsApp again
-              </a>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="self-start"
-                onClick={() => {
-                  setSentByWa(null);
-                  setCart({});
-                }}
-              >
-                Start a new order
-              </Button>
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-col gap-0.5 border-b border-dashed border-ink2/40 pb-3">
-                <div className="flex items-baseline justify-between gap-3">
-                  <h3 className="m-0 text-[13px] font-semibold uppercase tracking-[0.14em] text-ink">
-                    Order slip
-                  </h3>
-                  <span className="text-[13px] text-ink2">
-                    {count ? `${count} item${count === 1 ? '' : 's'}` : 'Empty'}
-                  </span>
-                </div>
-                <p className="m-0 font-display text-[19px] font-bold text-ink">{mess.name}</p>
-                <p className="m-0 text-[12.5px] text-ink2">{slipTime()}</p>
-              </div>
-              {lines.length ? (
-                <ul className="m-0 p-0 list-none flex flex-col gap-2 text-[14px] tabular-nums">
-                  {lines.map((l) => (
-                    <li key={l.key} className="flex items-center justify-between gap-3">
-                      <span className="min-w-0 text-ink">
-                        <strong>{l.qty} ×</strong> {l.label}
-                        <span className="block text-[12.5px] text-ink2">{rupees(l.price)} each</span>
-                      </span>
-                      <span className="shrink-0 font-semibold text-ink">{rupees(l.qty * l.price)}</span>
-                    </li>
-                  ))}
-                  <li className="mt-1 flex justify-between gap-3 border-t border-dashed border-ink2/40 pt-2 text-[19px] font-bold text-ink">
-                    <span>Total</span>
-                    <span>{rupees(total)}</span>
-                  </li>
-                </ul>
-              ) : (
-                <p className="m-0 text-[14px] text-ink2">Tap Add on a dish to start your order.</p>
-              )}
-
-              <form
-                noValidate
-                className="flex flex-col gap-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  setTried(true);
-                  if (problem) return;
-                  if (onSite) place.mutate();
-                  else if (mess.phone) sendOnWhatsApp();
-                }}
-              >
-                <div
-                  role="radiogroup"
-                  aria-label="Delivery or pickup"
-                  className="grid grid-cols-2 border-[1.5px] border-ink rounded-full overflow-hidden"
-                >
-                  {(
-                    [
-                      ['delivery', 'Delivery'],
-                      ['pickup', 'Pickup'],
-                    ] as const
-                  ).map(([k, label]) => (
-                    <button
-                      key={k}
-                      type="button"
-                      role="radio"
-                      aria-checked={details.mode === k}
-                      onClick={() => set({ mode: k })}
-                      className={`h-10 text-[14px] font-semibold ${details.mode === k ? 'bg-ink text-bg' : 'text-ink'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {details.mode === 'delivery' && (
-                  <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
-                    Deliver to
-                    <input
-                      className={field}
-                      value={details.address}
-                      maxLength={120}
-                      onChange={(e) => set({ address: e.target.value })}
-                      placeholder="Hostel block & room, or address"
-                      aria-invalid={tried && details.address.trim().length < 3}
-                    />
-                  </label>
-                )}
-                <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
-                  Name
-                  <input
-                    className={field}
-                    value={details.name}
-                    maxLength={60}
-                    autoComplete="name"
-                    onChange={(e) => set({ name: e.target.value })}
-                    aria-invalid={tried && details.name.trim().length < 2}
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
-                  Mobile number (for the restaurant to reach you)
-                  <span className="flex items-center gap-2">
-                    <span className="text-[15px] font-semibold text-ink">+91</span>
-                    <input
-                      className={`${field} flex-1`}
-                      value={details.phone}
-                      inputMode="tel"
-                      autoComplete="tel-national"
-                      maxLength={14}
-                      onChange={(e) => {
-                        set({ phone: e.target.value });
-                        setConfirmed(false);
-                      }}
-                      placeholder="98765 43210"
-                      aria-invalid={tried && !phone}
-                    />
-                  </span>
-                </label>
-                {onSite && phone && (
-                  <label className="flex items-start gap-2.5 text-[14px] leading-snug text-ink cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={confirmed}
-                      onChange={(e) => setConfirmed(e.target.checked)}
-                      className="mt-0.5 w-5 h-5 shrink-0 accent-[var(--teal)]"
-                    />
-                    <span>
-                      <strong className="tabular-nums">{formatMobile(phone)}</strong> is my number, and the
-                      restaurant may call or WhatsApp it about this order.
-                    </span>
-                  </label>
-                )}
-                <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
-                  Note (optional)
-                  <input
-                    className={field}
-                    value={details.note}
-                    maxLength={160}
-                    onChange={(e) => set({ note: e.target.value })}
-                    placeholder="Less spicy, no onion…"
-                  />
-                </label>
-                {tried && problem && (
-                  <p role="alert" className="m-0 text-[14px] text-blush-text">
-                    {problem}
-                  </p>
-                )}
-                {place.error && (
-                  <p role="alert" className="m-0 text-[14px] text-blush-text">
-                    {place.error instanceof ApiError && place.error.code === 'RATE_LIMITED'
-                      ? 'You just ordered. Give it a minute.'
-                      : place.error.message}
-                  </p>
-                )}
-                {onSite ? (
+        {!readOnly && (
+          <aside
+            id="order-slip"
+            aria-label="Order slip"
+            className={`scroll-mt-24 lg:sticky lg:top-24 flex flex-col gap-4 bg-surface p-5 pb-9 [box-shadow:inset_0_0_0_1px_var(--line)] ${TORN} ${showTracker ? 'order-first lg:order-none' : ''}`}
+          >
+            {showTracker ? (
+              <>
+                <Tracker
+                  order={current}
+                  mess={mess}
+                  onCancel={() => cancel.mutate(current.id)}
+                  cancelling={cancel.isPending}
+                  onChat={() => setChatOpen(true)}
+                />
+                {!OPEN_MESS_ORDER.includes(current.status) && (
                   <Button
-                    type="submit"
-                    variant="brand"
-                    size="lg"
-                    disabled={place.isPending}
-                    className="w-full"
+                    variant="outline"
+                    size="sm"
+                    className="self-start"
+                    onClick={() => setDismissed(current.id)}
                   >
-                    {place.isPending
-                      ? 'Sending…'
-                      : count
-                        ? `Confirm order · ${rupees(total)}`
-                        : 'Confirm order'}
+                    New order
                   </Button>
-                ) : mess.phone ? (
-                  <button type="submit" className={`${WA_BUTTON} w-full h-14 text-[17px]`}>
-                    <WhatsAppIcon size={21} />
-                    {count ? `Order on WhatsApp · ${rupees(total)}` : 'Order on WhatsApp'}
-                  </button>
-                ) : (
-                  <p className="m-0 text-[14px] text-ink2">
-                    They aren't taking orders on the site right now.
-                  </p>
                 )}
-                <p className="m-0 text-[12.5px] leading-relaxed text-ink2">
-                  {onSite
-                    ? 'It goes straight to their order screen, and you can send it on WhatsApp next. Your name, number and address go only to the restaurant.'
-                    : 'Opens WhatsApp with this slip typed in, to the restaurant only.'}
-                  {open && !signedIn && (
-                    <>
-                      {' '}
-                      <Link
-                        to="/sign-in?next=%2Ftools%2Fmess-menu%23order"
-                        className="font-semibold text-ink underline underline-offset-2"
-                      >
-                        Sign in
-                      </Link>{' '}
-                      to also track your order here.
-                    </>
-                  )}
-                </p>
-              </form>
-            </>
-          )}
-        </aside>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-col gap-0.5 border-b border-dashed border-ink2/40 pb-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <h3 className="m-0 text-[13px] font-semibold uppercase tracking-[0.14em] text-ink">
+                      Order slip
+                    </h3>
+                    <span className="text-[13px] text-ink2">
+                      {count ? `${count} item${count === 1 ? '' : 's'}` : 'Empty'}
+                    </span>
+                  </div>
+                  <p className="m-0 font-display text-[19px] font-bold text-ink">{mess.name}</p>
+                  <p className="m-0 text-[12.5px] text-ink2">{slipTime()}</p>
+                </div>
+                {lines.length ? (
+                  <ul className="m-0 p-0 list-none flex flex-col gap-2 text-[14px] tabular-nums">
+                    {lines.map((l) => (
+                      <li key={l.key} className="flex items-center justify-between gap-3">
+                        <span className="min-w-0 text-ink">
+                          <strong>{l.qty} ×</strong> {l.label}
+                          <span className="block text-[12.5px] text-ink2">{rupees(l.price)} each</span>
+                        </span>
+                        <span className="shrink-0 font-semibold text-ink">{rupees(l.qty * l.price)}</span>
+                      </li>
+                    ))}
+                    <li className="mt-1 flex justify-between gap-3 border-t border-dashed border-ink2/40 pt-2 text-[19px] font-bold text-ink">
+                      <span>Total</span>
+                      <span>{rupees(total)}</span>
+                    </li>
+                  </ul>
+                ) : (
+                  <p className="m-0 text-[14px] text-ink2">Tap Add on a dish to start your order.</p>
+                )}
+
+                {tiffinLine && (
+                  <fieldset className="m-0 p-0 border-0 flex flex-col gap-2.5 rounded-xl bg-marigold-soft/60 p-3.5">
+                    <legend className="sr-only">Tiffin plan</legend>
+                    <p className="m-0 text-[13px] font-semibold uppercase tracking-[0.1em] text-marigold-text">
+                      Tiffin plan · {TIFFIN_DAYS} days
+                    </p>
+                    <div role="radiogroup" aria-label="Meals" className="grid grid-cols-3 gap-1.5">
+                      {TIFFIN_PLANS.map((k) => (
+                        <button
+                          key={k}
+                          type="button"
+                          role="radio"
+                          aria-checked={plan === k}
+                          onClick={() => setPlan(k)}
+                          className={`h-10 rounded-lg text-[13.5px] font-semibold border-[1.5px] ${plan === k ? 'bg-ink text-bg border-ink' : 'border-line bg-surface text-ink'}`}
+                        >
+                          {TIFFIN_PLAN_TEXT[k]}
+                        </button>
+                      ))}
+                    </div>
+                    <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
+                      First day
+                      <input
+                        type="date"
+                        className={field}
+                        value={startsOn}
+                        min={todayIso}
+                        max={lastStart}
+                        onChange={(e) => e.target.value && setStartsOn(e.target.value)}
+                      />
+                    </label>
+                    <p className="m-0 text-[12.5px] text-ink2">
+                      Runs {startsOn} to {tiffinEnds(startsOn)}. It starts once the restaurant accepts it.
+                    </p>
+                  </fieldset>
+                )}
+
+                {!signedIn ? (
+                  <div className="flex flex-col gap-2">
+                    <Link
+                      to="/sign-in?next=%2Ftools%2Fmess-menu%23order"
+                      className={buttonClass('brand', 'lg', 'w-full')}
+                    >
+                      Sign in to order
+                    </Link>
+                    <p className="m-0 text-[12.5px] leading-relaxed text-ink2">
+                      Sign in with your college email, so the restaurant knows the order is real and you can
+                      track it and chat with them here.
+                    </p>
+                  </div>
+                ) : (
+                  <form
+                    noValidate
+                    className="flex flex-col gap-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      setTried(true);
+                      if (!problem) place.mutate();
+                    }}
+                  >
+                    <div
+                      role="radiogroup"
+                      aria-label="Delivery or pickup"
+                      className="grid grid-cols-2 border-[1.5px] border-ink rounded-full overflow-hidden"
+                    >
+                      {(
+                        [
+                          ['delivery', 'Delivery'],
+                          ['pickup', 'Pickup'],
+                        ] as const
+                      ).map(([k, label]) => (
+                        <button
+                          key={k}
+                          type="button"
+                          role="radio"
+                          aria-checked={details.mode === k}
+                          onClick={() => set({ mode: k })}
+                          className={`h-10 text-[14px] font-semibold ${details.mode === k ? 'bg-ink text-bg' : 'text-ink'}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {details.mode === 'delivery' && (
+                      <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
+                        Deliver to
+                        <input
+                          className={field}
+                          value={details.address}
+                          maxLength={120}
+                          onChange={(e) => set({ address: e.target.value })}
+                          placeholder="Hostel block & room, or address"
+                          aria-invalid={tried && details.address.trim().length < 3}
+                        />
+                      </label>
+                    )}
+                    <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
+                      Name
+                      <input
+                        className={field}
+                        value={details.name}
+                        maxLength={60}
+                        autoComplete="name"
+                        onChange={(e) => set({ name: e.target.value })}
+                        aria-invalid={tried && details.name.trim().length < 2}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
+                      Mobile number (for the restaurant to reach you)
+                      <span className="flex items-center gap-2">
+                        <span className="text-[15px] font-semibold text-ink">+91</span>
+                        <input
+                          className={`${field} flex-1`}
+                          value={details.phone}
+                          inputMode="tel"
+                          autoComplete="tel-national"
+                          maxLength={14}
+                          onChange={(e) => {
+                            set({ phone: e.target.value });
+                            setConfirmed(false);
+                          }}
+                          placeholder="98765 43210"
+                          aria-invalid={tried && !phone}
+                        />
+                      </span>
+                    </label>
+                    {phone && (
+                      <label className="flex items-start gap-2.5 text-[14px] leading-snug text-ink cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={confirmed}
+                          onChange={(e) => setConfirmed(e.target.checked)}
+                          className="mt-0.5 w-5 h-5 shrink-0 accent-[var(--teal)]"
+                        />
+                        <span>
+                          <strong className="tabular-nums">{formatMobile(phone)}</strong> is my number, and
+                          the restaurant may call it about this order.
+                        </span>
+                      </label>
+                    )}
+                    <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
+                      Note (optional)
+                      <input
+                        className={field}
+                        value={details.note}
+                        maxLength={160}
+                        onChange={(e) => set({ note: e.target.value })}
+                        placeholder="Less spicy, no onion…"
+                      />
+                    </label>
+                    {tried && problem && (
+                      <p role="alert" className="m-0 text-[14px] text-blush-text">
+                        {problem}
+                      </p>
+                    )}
+                    {place.error && (
+                      <p role="alert" className="m-0 text-[14px] text-blush-text">
+                        {place.error instanceof ApiError && place.error.code === 'RATE_LIMITED'
+                          ? 'You just ordered. Give it a minute.'
+                          : place.error.message}
+                      </p>
+                    )}
+                    <Button
+                      type="submit"
+                      variant="brand"
+                      size="lg"
+                      disabled={place.isPending}
+                      className="w-full"
+                    >
+                      {place.isPending
+                        ? 'Sending…'
+                        : count
+                          ? `Confirm order · ${rupees(total)}`
+                          : 'Confirm order'}
+                    </Button>
+                    <p className="m-0 text-[12.5px] leading-relaxed text-ink2">
+                      It goes straight to the restaurant's order screen and rings there. Track it and chat
+                      with them here. Your name, number and address go only to the restaurant.
+                    </p>
+                  </form>
+                )}
+              </>
+            )}
+          </aside>
+        )}
       </div>
 
-      {count > 0 && !showTracker && !sentByWa && (
+      {!readOnly && count > 0 && !showTracker && (
         <a
           href="#order-slip"
-          className="lg:hidden fixed inset-x-4 bottom-[calc(84px+env(safe-area-inset-bottom))] z-30 flex items-center justify-between rounded-2xl bg-ink px-5 h-14 text-bg no-underline shadow-[0_18px_34px_-18px_rgba(0,0,0,0.6)]"
+          className="lg:hidden fixed inset-x-4 bottom-[calc(84px+env(safe-area-inset-bottom))] z-30 flex items-center justify-between rounded-2xl bg-teal px-5 h-14 text-white no-underline shadow-[0_18px_34px_-18px_rgba(0,0,0,0.6)]"
         >
           <span className="text-[15px] font-semibold">
             {count} item{count === 1 ? '' : 's'} · {rupees(total)}
           </span>
-          <span className="text-[15px] font-bold">View slip →</span>
+          <span className="text-[15px] font-bold">View order →</span>
         </a>
       )}
       {chatOpen && current && <OrderChat orderId={current.id} onClose={() => setChatOpen(false)} />}

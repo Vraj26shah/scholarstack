@@ -4,6 +4,15 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Ordering without WhatsApp, tiffin plans, customers (25 Nov)
+- **WhatsApp is gone**: orders go to the restaurant's screen and ring there; students track them and chat with the restaurant on the site; both sides have a Call button. The 3-minute nudge now re-alerts the owner and offers the student Call.
+- **The ordering screen, redesigned**: a category rail (chips on phones), dish search, food-app style rows with the photo on the right and Add on it, no stand-in letters for dishes without photos, sold-out dishes greyed, today's thali first.
+- **Three kinds of restaurant handled**: taking orders on the site (full ordering); a menu card but not taking orders (menu & prices to read, Call to order); only a weekly menu (no ordering section, just Call).
+- **Monthly tiffin plans**: owners mark a dish "Monthly tiffin plan"; students pick lunch, dinner or both and a first day (within two weeks); accepting it switches it on for 30 days. The owner's new **Tiffin** tab lists each day's lunch and dinner deliveries by address (printable), plans ending in 3 days, and plans waiting to be accepted. Migration `20261125000400_tiffin_plans`.
+- **Customers** tab for owners: everyone who ordered in 90 days, with their number, orders, spending, tiffin plan, blocked status, Call and Chat.
+- **Admins clear all chats at once** (Orders & chats › Orders), and read every chat in full; owners and students only ever see their own.
+- Signed-out students see "Sign in to order" instead of a form that can't be sent.
+
 ### Notification tests you can trust (25 Nov)
 - **Checked with real Google Chrome against the live site**: the server's push is accepted by Google, reaches the service worker, decrypts correctly, and is handed to the browser to show. When nothing appears, the device is hiding it (Windows/phone notification settings, Do Not Disturb, browser closed).
 - **Delivery receipts**: every device's service worker now reports each notification it actually shows (`POST /push/receipt`, `push_subscriptions.seen_at`, migration `20261125000300_push_receipts`).

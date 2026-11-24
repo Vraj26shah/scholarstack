@@ -353,3 +353,72 @@ describe('testing notifications', () => {
     ).toBe(403);
   });
 });
+
+describe('tiffin plans and customers', () => {
+  const today = () => new Date(clock.t + 330 * 60_000).toISOString().slice(0, 10);
+  const tiffinOrder = (plan: string, startsOn: string, extra: Record<string, unknown> = {}) => ({
+    lines: [{ name: 'Monthly tiffin', qty: 1, detail: '' }],
+    mode: 'delivery',
+    address: 'Block C, room 9',
+    name: 'Ravi',
+    phone: '+91 91234 56789',
+    phoneConfirmed: true,
+    tiffin: { plan, startsOn },
+    ...extra,
+  });
+
+  it('a student orders a monthly tiffin; accepting it puts them on the daily sheet', async () => {
+    const { owner } = await scene();
+    const s = await signedIn('student2@vitbhopal.ac.in');
+    // Not with other dishes, and only with a plan and a near first day.
+    const mixed = await s.call('POST', `/mess/${SLUG}/orders`, {
+      ...tiffinOrder('both', today()),
+      lines: [
+        { name: 'Monthly tiffin', qty: 1, detail: '' },
+        { name: 'Mess thali', qty: 1, detail: '' },
+      ],
+    });
+    expect(mixed.status).toBe(400);
+    expect((await s.call('POST', `/mess/${SLUG}/orders`, tiffinOrder('both', '2030-01-01'))).status).toBe(
+      400,
+    );
+
+    const placed = await s.call('POST', `/mess/${SLUG}/orders`, tiffinOrder('lunch', today()));
+    expect(placed.status).toBe(200);
+    expect(placed.json.tiffin).toMatchObject({ plan: 'lunch', startsOn: today() });
+    expect((await owner.call('GET', `/owner/messes/${SLUG}/tiffin`)).json).toMatchObject({
+      waiting: 1,
+      active: 0,
+    });
+
+    const accepted = await owner.call('PUT', `/owner/orders/${placed.json.id}`, { status: 'accepted' });
+    expect(accepted.json.status).toBe('done'); // a plan has no kitchen steps
+    const sheet = (await owner.call('GET', `/owner/messes/${SLUG}/tiffin`)).json;
+    expect(sheet.lunch.map((r: { name: string }) => r.name)).toEqual(['Ravi']);
+    expect(sheet.dinner).toEqual([]);
+
+    const customers = (await owner.call('GET', `/owner/messes/${SLUG}/customers`)).json;
+    expect(customers.map((c: { name: string }) => c.name).sort()).toEqual(['Asha', 'Ravi']);
+    expect(customers.find((c: { name: string }) => c.name === 'Ravi')).toMatchObject({
+      orders: 1,
+      spent: 3600,
+      tiffin: { plan: 'lunch' },
+      blocked: false,
+    });
+    // Students can't see a restaurant's customers.
+    expect((await s.call('GET', `/owner/messes/${SLUG}/customers`)).status).toBe(403);
+  });
+});
+
+describe('the admin above every chat', () => {
+  it('clears all chats at once; owners and students cannot', async () => {
+    const { admin, owner, student, placed } = await scene();
+    await student.call('POST', `/chats/${placed.id}/messages`, { body: 'Hello' });
+    await owner.call('POST', `/chats/${placed.id}/messages`, { body: 'Hi' });
+    expect((await owner.call('DELETE', '/admin/chats')).status).toBe(403);
+    expect((await student.call('DELETE', '/admin/chats')).status).toBe(403);
+    expect((await admin.call('DELETE', '/admin/chats')).json).toEqual({ cleared: 1 });
+    const left = (await student.call('GET', `/chats/${placed.id}`)).json.messages;
+    expect(left.map((m: { sender: string }) => m.sender)).toEqual(['system']);
+  });
+});

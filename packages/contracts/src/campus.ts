@@ -100,6 +100,8 @@ export const MessOrderItem = z.object({
     .default(''),
   /** Off = "sold out today": still listed, can't be ordered. */
   available: z.boolean().default(true),
+  /** A monthly tiffin plan: ordered with a meal plan and a start date, runs TIFFIN_DAYS days. */
+  tiffin: z.boolean().optional(),
 });
 export type MessOrderItem = z.infer<typeof MessOrderItem>;
 export const MessOrderSection = z.object({
@@ -244,8 +246,81 @@ export const PlaceMessOrderBody = z.object({
   note: z.string().trim().max(160).default(''),
   /** The student ticked "this is my number, the restaurant may call it". */
   phoneConfirmed: z.literal(true, { errorMap: () => ({ message: 'Confirm your phone number' }) }),
+  /** Only for a monthly tiffin plan: which meals, and from which day. */
+  tiffin: z.object({ plan: z.enum(['lunch', 'dinner', 'both']), startsOn: isoDate }).optional(),
 });
 export type PlaceMessOrderInput = z.infer<typeof PlaceMessOrderBody>;
+
+// ── Tiffin (monthly meal plans) ──────────────────────────────────────────────
+
+export const TIFFIN_PLANS = ['lunch', 'dinner', 'both'] as const;
+export type TiffinPlan = (typeof TIFFIN_PLANS)[number];
+export const TIFFIN_PLAN_TEXT: Record<TiffinPlan, string> = {
+  lunch: 'Lunch',
+  dinner: 'Dinner',
+  both: 'Lunch & dinner',
+};
+/** A plan runs this many days from its first day. */
+export const TIFFIN_DAYS = 30;
+/** A plan can start today or up to this many days ahead. */
+export const TIFFIN_START_WITHIN_DAYS = 14;
+/** An item is a tiffin plan when the owner says so, or (never set) its name says "tiffin". */
+export const isTiffinItem = (i: { name: string; tiffin?: boolean }) => i.tiffin ?? /tiffin/i.test(i.name);
+/** The last day of a plan starting on `startsOn` (YYYY-MM-DD). */
+export const tiffinEnds = (startsOn: string) => {
+  const d = new Date(`${startsOn}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + TIFFIN_DAYS - 1);
+  return d.toISOString().slice(0, 10);
+};
+
+export interface TiffinDto {
+  plan: TiffinPlan;
+  startsOn: string;
+  endsOn: string;
+}
+
+/** One plan on the owner's delivery sheet. */
+export interface TiffinRowDto {
+  orderId: string;
+  code: string;
+  name: string;
+  phone: string;
+  mode: 'delivery' | 'pickup';
+  address: string;
+  plan: TiffinPlan;
+  startsOn: string;
+  endsOn: string;
+  note: string;
+  unread: number;
+}
+
+/** The owner's tiffin sheet for a day: who gets lunch, who gets dinner, and plans ending soon. */
+export interface TiffinSheetDto {
+  date: string;
+  lunch: TiffinRowDto[];
+  dinner: TiffinRowDto[];
+  /** Plans ending within 3 days of `date` (to remind about renewing). */
+  ending: TiffinRowDto[];
+  /** Plans waiting for the owner to accept. */
+  waiting: number;
+  active: number;
+}
+
+/** Someone who ordered from this restaurant, as its owner sees them. */
+export interface OwnerCustomerDto {
+  userId: string;
+  name: string;
+  phone: string;
+  orders: number;
+  /** Rupees across orders that weren't declined or cancelled. */
+  spent: number;
+  firstOrderAt: string;
+  lastOrderAt: string;
+  /** Their latest order (to open its chat). */
+  lastOrderId: string;
+  tiffin: TiffinDto | null;
+  blocked: boolean;
+}
 
 export const MessOrderStatusBody = z.object({
   status: z.enum(MESS_ORDER_STATUSES),
@@ -289,6 +364,8 @@ export interface MessOrderDto {
   last: { sender: ChatSender; body: string; at: string } | null;
   /** Live updates channel ('' = none: the page asks every few seconds instead). */
   topic: string;
+  /** A monthly tiffin plan (null: an ordinary order). */
+  tiffin: TiffinDto | null;
 }
 
 export interface OwnedMessDto {

@@ -8,6 +8,7 @@ import type {
   MessReportStatus,
   OrderEndedBy,
   ReminderPrefs,
+  TiffinPlan,
 } from '@ss/contracts';
 
 // Ports for the campus tools: mess menus, menu corrections from students, and push reminders.
@@ -124,6 +125,8 @@ export interface MessOrderRecord {
   createdAt: Date;
   updatedAt: Date;
   chat: OrderChatState;
+  /** A monthly tiffin plan (null for an ordinary order). */
+  tiffin: { plan: TiffinPlan; startsOn: string; endsOn: string } | null;
 }
 
 /** The chat's bookkeeping on each order. */

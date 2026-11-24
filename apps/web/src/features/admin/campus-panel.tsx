@@ -318,7 +318,7 @@ function MessEditor({
         )}
         {form.kind === 'restaurant' && (
           <>
-            <Field label="Owner's mobile (orders, WhatsApp, and the Call button in chats)">
+            <Field label="Owner's mobile (the Call button on their page and in order chats)">
               <input
                 className={input}
                 value={form.phone}
