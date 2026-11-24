@@ -1,7 +1,7 @@
 import { isCollegeEmail, isWellFormedEmail } from '@ss/contracts';
-import { type FormEvent, useCallback, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { track } from '../../lib/analytics';
+import { signal, track } from '../../lib/analytics';
 import { ApiError, api, friendly } from '../../lib/api';
 import { authGateway } from '../../lib/auth';
 import { env, isDemo } from '../../lib/env';
@@ -47,6 +47,10 @@ export function SignInPage() {
   const [step, setStep] = useState<'email' | 'link-sent'>('email');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Admin › Insights › Where people get stuck: sign-in errors (wrong address, failed send…).
+  useEffect(() => {
+    if (error) signal('stuck_form');
+  }, [error]);
   // True only when the link email itself failed to go out: that's the moment to offer
   // Google right next to the error, so nobody is stuck without a way in.
   const [sendFailed, setSendFailed] = useState(false);
@@ -154,7 +158,10 @@ export function SignInPage() {
       sessionStorage.setItem('auth_next', returnTo);
       await authGateway.startEmail(email, captcha, isAdmin);
       if (isDemo) await finish();
-      else setStep('link-sent');
+      else {
+        track('signin_link_sent');
+        setStep('link-sent');
+      }
     } catch (err) {
       setSendFailed(true);
       setError(err instanceof ApiError ? friendly(err) : (err as Error).message || friendly(err));

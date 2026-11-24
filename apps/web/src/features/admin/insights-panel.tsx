@@ -5,6 +5,16 @@ import { Link } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { formatMoney } from '../../lib/format';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
+import {
+  DROP_ADVICE,
+  VERDICT,
+  actionTotal,
+  biggestDrop,
+  funnel,
+  signIn,
+  stuckRows,
+  toolRows,
+} from './insights-derive';
 import { StudentActivity, activityHref, activityLabel, ago } from './student-activity';
 import { Figure, Note, Panel, plural } from './ui';
 
@@ -171,12 +181,14 @@ function DailyChart({ daily }: { daily: DayRow[] }) {
   );
 }
 
-type View = 'overview' | 'pages' | 'students' | 'sales' | 'health';
+type View = 'overview' | 'tools' | 'stuck' | 'buying' | 'students' | 'pages' | 'health';
 const VIEWS: [View, string][] = [
-  ['overview', 'Overview'],
-  ['pages', 'Pages & tools'],
+  ['overview', 'Summary'],
+  ['tools', 'Tools'],
+  ['stuck', 'Where people get stuck'],
+  ['buying', 'Buying'],
   ['students', 'Students'],
-  ['sales', 'Sales'],
+  ['pages', 'All pages'],
   ['health', 'Errors & speed'],
 ];
 const VIEW_KEY = 'ss_insights_view';
@@ -189,56 +201,350 @@ const savedView = (): View => {
   }
 };
 
-/** The few sentences an admin would want read out: what happened, and what to look at. */
-function Glance({ data, activity }: { data: AdminInsightsDto; activity?: AdminActivityDto }) {
+const card = 'rounded-2xl border border-line bg-surface p-4 sm:p-5 flex flex-col gap-3';
+const linkBtn =
+  'self-start bg-transparent border-0 p-0 cursor-pointer text-[14px] font-semibold text-teal-text underline underline-offset-4 decoration-line hover:decoration-teal';
+
+function SectionHead({ title, lead }: { title: string; lead?: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <h3 className="m-0 text-[18px] font-bold text-ink">{title}</h3>
+      {lead && <p className="m-0 text-[14px] leading-relaxed text-ink2 max-w-[720px]">{lead}</p>}
+    </div>
+  );
+}
+
+/** A bar out of 100%: the filled part in a colour, the rest as a track. The value is always written next to it. */
+function Bar({ share, tone = 'teal' }: { share: number; tone?: 'teal' | 'marigold' | 'blush' }) {
+  const bg = tone === 'teal' ? 'var(--teal)' : tone === 'marigold' ? 'var(--marigold)' : 'var(--blush)';
+  return (
+    <span aria-hidden="true" className="block h-2.5 w-full rounded-full bg-sunk overflow-hidden">
+      <span
+        className="block h-full rounded-full"
+        style={{ width: `${Math.max(share > 0 ? 2 : 0, Math.min(100, share * 100))}%`, background: bg }}
+      />
+    </span>
+  );
+}
+
+/** The four numbers anyone asks first, each with a line saying what it means. */
+function Headline({ data, activity }: { data: AdminInsightsDto; activity?: AdminActivityDto }) {
   const s = data.summary;
   const a = activity?.summary;
-  const topPage = activity?.pages[0];
-  const topCourse = data.topItems[0];
-  const unpaid = s.checkouts - s.paidOrders;
-  const lines = [
-    a && a.activeStudents > 0
-      ? `${plural(a.activeStudents, 'student')} signed in and used the site${
-          topPage
-            ? `; the most opened page was ${activityLabel(topPage.target)} (${n(topPage.hits)} times)`
-            : ''
-        }.`
-      : null,
-    a && a.visitorPages > 0
-      ? `Visitors who weren't signed in opened ${plural(a.visitorPages, 'page')}.`
-      : null,
-    s.signups > 0
-      ? `${plural(s.signups, 'new student')} joined; ${n(s.signupsWhoBought)} of them bought something (${pct(s.signupsWhoBought, s.signups)}).`
-      : null,
-    topCourse
-      ? `Most viewed: ${topCourse.title} (${plural(topCourse.views, 'view')}, ${n(topCourse.paid)} paid).`
-      : null,
-    s.checkouts > 0
-      ? `${plural(s.checkouts, 'checkout')} started, ${n(s.paidOrders)} paid (${pct(s.paidOrders, s.checkouts)})${
-          unpaid > 0
-            ? `: ${n(unpaid)} didn't finish paying, so look at the price, the payment step or the promo codes`
-            : ''
-        }.`
-      : null,
-    s.revenuePaise > 0
-      ? `${formatMoney(s.revenuePaise)} came in from ${plural(s.buyers, 'buyer')} (${n(s.firstPurchases)} buying for the first time).`
-      : null,
-  ].filter(Boolean) as string[];
   return (
-    <section aria-label="At a glance" className="rounded-2xl bg-sunk p-4 flex flex-col gap-2">
-      <h3 className="m-0 text-[15px] font-semibold">At a glance</h3>
-      {lines.length === 0 ? (
-        <p className="m-0 text-sm text-ink2">
-          Nothing recorded in this period yet. These numbers fill in as students use the site.
+    <section
+      aria-label="Totals"
+      className="grid grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-2xl bg-line shadow-[0_0_0_1px_var(--line)]"
+    >
+      <Figure
+        label="Students active"
+        value={a ? n(a.activeStudents) : '…'}
+        hint={a ? `signed in and opened something · plus ${plural(a.visitorPages, 'visitor page')}` : ''}
+        tone="teal"
+      />
+      <Figure
+        label="New students"
+        value={n(s.signups)}
+        hint={
+          s.signups
+            ? `${n(s.signupsWhoBought)} of them bought (${pct(s.signupsWhoBought, s.signups)})`
+            : 'first sign-ins'
+        }
+      />
+      <Figure
+        label="Orders paid"
+        value={n(s.paidOrders)}
+        hint={
+          s.checkouts
+            ? `${pct(s.paidOrders, s.checkouts)} of people who started paying`
+            : 'nobody started paying yet'
+        }
+      />
+      <Figure
+        label="Money in"
+        value={formatMoney(s.revenuePaise)}
+        hint={`${plural(s.buyers, 'buyer')} · ${n(s.firstPurchases)} first-time`}
+        tone="marigold"
+      />
+    </section>
+  );
+}
+
+/** The few things most worth a look right now, in plain sentences, each opening its tab. */
+function NeedsAttention({
+  data,
+  activity,
+  go,
+}: { data: AdminInsightsDto; activity?: AdminActivityDto; go: (v: View) => void }) {
+  const items: { key: string; text: string; tone: 'blush' | 'marigold'; view: View }[] = [];
+  for (const r of stuckRows(activity).slice(0, 2))
+    items.push({
+      key: `stuck-${r.signal}-${r.page}`,
+      tone: r.signal === 'stuck_crash' || r.signal === 'stuck_error' ? 'blush' : 'marigold',
+      text: `${r.place}: people ${r.what} ${r.times === 1 ? 'once' : `${n(r.times)} times`}.`,
+      view: 'stuck',
+    });
+  const steps = funnel(data, activity);
+  const drop = biggestDrop(steps);
+  if (drop !== null) {
+    const before = steps[drop - 1]!;
+    const after = steps[drop]!;
+    items.push({
+      key: 'drop',
+      tone: 'marigold',
+      text: `Biggest drop on the way to buying: ${n(before.value)} ${before.label.toLowerCase()}, only ${n(after.value)} ${after.label.toLowerCase()} (${pct(after.value, before.value)}).`,
+      view: 'buying',
+    });
+  }
+  const poor = toolRows(activity).find((t) => t.verdict === 'poor');
+  if (poor)
+    items.push({
+      key: 'tool',
+      tone: 'marigold',
+      text: `${poor.name}: opened ${n(poor.opened)} times but used only ${n(poor.used)} (${pct(poor.used, poor.opened)}). Most people leave without trying it.`,
+      view: 'tools',
+    });
+  return (
+    <section aria-label="Needs a look" className={card}>
+      <SectionHead title="Needs a look" />
+      {!activity ? (
+        <Skeleton className="h-16 rounded-xl" />
+      ) : items.length === 0 ? (
+        <p className="m-0 text-[15px] text-ink">
+          <span className="font-semibold text-teal-text">All clear.</span> Nobody got stuck in this period,
+          and no step loses an unusual share of people.
         </p>
       ) : (
-        <ul className="m-0 pl-5 flex flex-col gap-1 text-[14px] leading-relaxed">
-          {lines.map((l) => (
-            <li key={l}>{l}</li>
+        <ul className="m-0 p-0 list-none flex flex-col divide-y divide-line">
+          {items.slice(0, 4).map((it) => (
+            <li key={it.key} className="py-2.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span
+                aria-hidden="true"
+                className={`w-2 h-2 rounded-full ${it.tone === 'blush' ? 'bg-blush' : 'bg-marigold'}`}
+              />
+              <span className="flex-[1_1_300px] text-[15px] leading-snug text-ink">{it.text}</span>
+              <button type="button" onClick={() => go(it.view)} className={linkBtn}>
+                See why
+              </button>
+            </li>
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+/** Course page → preview → payment → paid, as shrinking bars, with the biggest drop called out. */
+function Funnel({
+  data,
+  activity,
+  compact,
+}: { data: AdminInsightsDto; activity?: AdminActivityDto; compact?: boolean }) {
+  const steps = funnel(data, activity);
+  const top = Math.max(1, steps[0]!.value);
+  const drop = biggestDrop(steps);
+  const sign = signIn(activity);
+  return (
+    <section aria-label="From looking to buying" className={card}>
+      <SectionHead
+        title="From looking to buying"
+        lead="Each bar is how many got that far. The percentage is how many from the step before kept going."
+      />
+      <ol className="m-0 p-0 list-none flex flex-col gap-3">
+        {steps.map((st, i) => {
+          const prev = steps[i - 1];
+          const worst = i === drop;
+          return (
+            <li key={st.label} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 items-baseline">
+              <span className="text-[15px] font-semibold text-ink">
+                {st.label}
+                {!compact && <span className="ml-2 text-[13px] font-normal text-ink2">{st.hint}</span>}
+              </span>
+              <span className="font-display text-[22px] font-extrabold tabular-nums text-ink leading-none">
+                {n(st.value)}
+              </span>
+              <span className="col-span-2">
+                <Bar share={st.value / top} tone={worst ? 'marigold' : 'teal'} />
+              </span>
+              {prev && (
+                <span
+                  className={`col-span-2 text-[13px] ${worst ? 'font-semibold text-marigold-text' : 'text-ink2'}`}
+                >
+                  {prev.value ? `${pct(st.value, prev.value)} kept going` : 'nobody reached the step before'}
+                  {worst && ' · biggest drop'}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      {drop !== null && DROP_ADVICE[steps[drop]!.label] && (
+        <p className="m-0 border-l-4 border-marigold pl-3 text-[14px] leading-relaxed text-ink">
+          <strong>What to try:</strong> {DROP_ADVICE[steps[drop]!.label]}
+        </p>
+      )}
+      {!compact && sign.sent > 0 && (
+        <p className="m-0 text-[14px] text-ink2">
+          <strong className="text-ink">Signing in:</strong> {plural(sign.sent, 'sign-in link')} emailed,{' '}
+          {plural(sign.signedIn, 'sign-in')} completed (Google sign-ins included).{' '}
+          {sign.signedIn < sign.sent * 0.6 &&
+            'Many links are never used: students may not find the email (spam folder, college inbox).'}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** Each tool: opened vs. actually used, as a bar, with a plain verdict. */
+function ToolsView({ activity, limit }: { activity: ActivityState; limit?: number }) {
+  if (activity.isLoading) return <Skeleton className="h-40 rounded-2xl" />;
+  const rows = toolRows(activity.data);
+  const shown = limit ? rows.slice(0, limit) : rows;
+  const orders = actionTotal(activity.data, 'mess_order_placed');
+  const reminders = actionTotal(activity.data, 'reminders_on');
+  return (
+    <section aria-label="Tools" className={card}>
+      <SectionHead
+        title={limit ? 'Tools people use' : 'Which tools get used'}
+        lead={
+          limit
+            ? undefined
+            : '"Opened" is a visit to the tool. "Used" means they tapped or typed something inside it, not just looked and left.'
+        }
+      />
+      {shown.length === 0 ? (
+        <p className="m-0 text-sm text-ink2">No tool was opened in this period.</p>
+      ) : (
+        <ul className="m-0 p-0 list-none flex flex-col gap-4">
+          {shown.map((t) => (
+            <li key={t.key} className="flex flex-col gap-1.5">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+                <Link to={`/tools/${t.key}`} className="text-[16px] font-bold text-ink hover:underline">
+                  {t.name}
+                </Link>
+                <span className="text-[13px] tabular-nums text-ink2">
+                  <strong className="text-ink">{n(t.opened)}</strong> opened ·{' '}
+                  <strong className="text-ink">{n(t.used)}</strong> used ({pct(t.used, t.opened)}) ·{' '}
+                  {plural(t.students, 'student')}
+                </span>
+              </div>
+              <Bar
+                share={t.opened ? t.used / t.opened : 0}
+                tone={t.verdict === 'poor' ? 'blush' : t.verdict === 'mixed' ? 'marigold' : 'teal'}
+              />
+              {!limit && (
+                <span
+                  className={`text-[13px] ${t.verdict === 'poor' ? 'text-blush-text font-semibold' : t.verdict === 'mixed' ? 'text-marigold-text' : 'text-ink2'}`}
+                >
+                  {VERDICT[t.verdict]}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {!limit && (orders > 0 || reminders > 0) && (
+        <p className="m-0 text-[14px] text-ink2">
+          Inside the tools: {plural(orders, 'food order')} placed from the Mess menu, and reminders turned on{' '}
+          {plural(reminders, 'time')}.
+        </p>
+      )}
+      {!limit && rows.length > 0 && (
+        <p className="m-0 text-[12px] text-ink2">
+          Counting "used" started on 24 Nov 2026, so periods before that show fewer uses than really happened.
+        </p>
+      )}
+    </section>
+  );
+}
+
+const SIGNAL_HELP: [string, string][] = [
+  ['Error screen', 'A "couldn’t load" message appeared instead of the page’s content.'],
+  ['Crash', 'The page broke and showed "This page tripped".'],
+  ['Angry tapping', '4+ quick taps on the same spot that does nothing: it looked clickable.'],
+  ['Form error', 'They pressed send and were told something was wrong or missing.'],
+  ['Closed payment', 'The Razorpay window opened and was closed without paying.'],
+];
+
+/** Where students hit a wall: errors, crashes, angry tapping, form errors, closed payments. */
+function StuckView({ activity }: { activity: ActivityState }) {
+  if (activity.isLoading) return <Skeleton className="h-40 rounded-2xl" />;
+  const rows = stuckRows(activity.data);
+  return (
+    <>
+      <section aria-label="Where people get stuck" className={card}>
+        <SectionHead
+          title="Where people get stuck"
+          lead="Each line is a page and what went wrong there, worst first. Each problem is counted once per visit, so one student tapping ten times counts once."
+        />
+        {rows.length === 0 ? (
+          <p className="m-0 text-[15px] text-ink">
+            <span className="font-semibold text-teal-text">Nobody got stuck in this period.</span> No error
+            screens, crashes, angry tapping, form errors or closed payment windows.
+          </p>
+        ) : (
+          <ol className="m-0 p-0 list-none flex flex-col divide-y divide-line">
+            {rows.map((r) => (
+              <li
+                key={`${r.signal}:${r.page}`}
+                className="py-3 grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-3"
+              >
+                <span
+                  className={`font-display text-[26px] font-extrabold leading-none tabular-nums ${r.signal === 'stuck_crash' || r.signal === 'stuck_error' ? 'text-blush-text' : 'text-marigold-text'}`}
+                >
+                  {n(r.times)}
+                  <span className="block mt-1 font-sans text-[11px] font-semibold uppercase tracking-wide text-ink2">
+                    {r.times === 1 ? 'time' : 'times'}
+                  </span>
+                </span>
+                <div className="flex flex-col gap-1 min-w-0">
+                  <p className="m-0 text-[15px] leading-snug text-ink">
+                    <strong>{r.place}</strong>: people {r.what}.
+                  </p>
+                  <p className="m-0 text-[13px] text-ink2">
+                    {r.students > 0
+                      ? `${plural(r.students, 'signed-in student')} affected`
+                      : 'Visitors who weren’t signed in'}
+                    {r.page && activityHref(r.page) && (
+                      <>
+                        {' · '}
+                        <Link to={r.page} className="font-semibold text-ink underline underline-offset-2">
+                          Open the page
+                        </Link>
+                      </>
+                    )}
+                  </p>
+                  <details>
+                    <summary className="cursor-pointer text-[13px] font-semibold text-teal-text">
+                      What to do
+                    </summary>
+                    <p className="m-0 mt-1 text-[14px] leading-relaxed text-ink2">{r.fix}</p>
+                  </details>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+        <p className="m-0 text-[13px] text-ink2">
+          The exact error messages are in{' '}
+          <Link to="/admin?section=problems" className="font-semibold text-ink underline underline-offset-2">
+            Storage › Problems
+          </Link>
+          . Counting started on 24 Nov 2026.
+        </p>
+      </section>
+      <section aria-label="What we watch for" className={card}>
+        <SectionHead title="What we watch for" />
+        <dl className="m-0 grid gap-x-6 gap-y-2 sm:grid-cols-2 text-[14px]">
+          {SIGNAL_HELP.map(([t, d]) => (
+            <div key={t}>
+              <dt className="font-semibold text-ink">{t}</dt>
+              <dd className="m-0 text-ink2">{d}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    </>
   );
 }
 
@@ -253,7 +559,6 @@ function Report({ data, activity }: { data: AdminInsightsDto; activity: Activity
     }
   };
   const s = data.summary;
-  const a = activity.data?.summary;
   const byDay = new Map(activity.data?.daily.map((d) => [d.day, d]));
   const daily: DayRow[] = data.daily.map((d) => ({
     ...d,
@@ -261,6 +566,7 @@ function Report({ data, activity }: { data: AdminInsightsDto; activity: Activity
     studentPages: byDay.get(d.day)?.studentPages ?? 0,
     visitorPages: byDay.get(d.day)?.visitorPages ?? 0,
   }));
+  const stuckCount = stuckRows(activity.data).reduce((t, r) => t + r.times, 0);
   return (
     <>
       <div
@@ -280,96 +586,47 @@ function Report({ data, activity }: { data: AdminInsightsDto; activity: Activity
             }`}
           >
             {label}
+            {k === 'stuck' && stuckCount > 0 && (
+              <span className="ml-1.5 rounded-full bg-marigold-soft px-1.5 py-0.5 text-[11px] text-marigold-text tabular-nums">
+                {n(stuckCount)}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
+      {activity.isError && (
+        <ErrorState
+          title="Student activity didn't load."
+          message={friendly(activity.error)}
+          onRetry={() => activity.refetch()}
+        />
+      )}
+
       {view === 'overview' && (
         <>
-          <Glance data={data} activity={activity.data} />
-          <section
-            aria-label="Totals"
-            className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-px overflow-hidden rounded-2xl bg-line shadow-[0_0_0_1px_var(--line)]"
-          >
-            <Figure
-              label="Active students"
-              value={a ? n(a.activeStudents) : '…'}
-              hint="Signed in and opened something"
-              tone="teal"
-            />
-            <Figure
-              label="New students"
-              value={n(s.signups)}
-              hint={`${n(s.signupsWhoBought)} bought (${pct(s.signupsWhoBought, s.signups)})`}
-            />
-            <Figure
-              label="Visitor pages"
-              value={a ? n(a.visitorPages) : '…'}
-              hint="Opened without signing in"
-            />
-            <Figure
-              label="Course views"
-              value={n(s.views)}
-              hint={`${pct(s.signedInViews, s.views)} by signed-in students`}
-            />
-            <Figure
-              label="Paid orders"
-              value={n(s.paidOrders)}
-              hint={`of ${plural(s.checkouts, 'checkout')} (${pct(s.paidOrders, s.checkouts)})`}
-              tone="teal"
-            />
-            <Figure
-              label="Revenue"
-              value={formatMoney(s.revenuePaise)}
-              hint={`${plural(s.buyers, 'buyer')} · ${n(s.firstPurchases)} first-time`}
-              tone="marigold"
-            />
-          </section>
-          {activity.isError && (
-            <ErrorState
-              title="Student activity didn't load."
-              message={friendly(activity.error)}
-              onRetry={() => activity.refetch()}
-            />
-          )}
+          <Headline data={data} activity={activity.data} />
+          <NeedsAttention data={data} activity={activity.data} go={choose} />
+          <div className="grid gap-5 lg:grid-cols-2 items-start">
+            <Funnel data={data} activity={activity.data} compact />
+            <ToolsView activity={activity} limit={5} />
+          </div>
           <DailyChart daily={daily} />
-          <section
-            aria-label="From looking to buying"
-            className="rounded-2xl border border-line bg-surface p-4"
-          >
-            <h3 className="m-0 mb-2 text-[15px] font-semibold">From looking to buying</h3>
-            <ol className="m-0 p-0 list-none grid grid-cols-3 gap-2 text-center tabular-nums">
-              {[
-                ['Course views', s.views, ''],
-                ['Checkouts', s.checkouts, `${pct(s.checkouts, s.views)} of views`],
-                ['Paid', s.paidOrders, `${pct(s.paidOrders, s.checkouts)} of checkouts`],
-              ].map(([label, value, note]) => (
-                <li key={label as string} className="rounded-xl bg-sunk px-2 py-3 flex flex-col gap-0.5">
-                  <span className="font-display font-extrabold text-[26px] leading-none">
-                    {n(value as number)}
-                  </span>
-                  <span className="text-[13px] font-semibold">{label as string}</span>
-                  <span className="text-[12px] text-ink2 min-h-4">{note as string}</span>
-                </li>
-              ))}
-            </ol>
-            <p className="m-0 mt-3 text-[12px] text-ink2">
-              Many views but few checkouts: the course page isn't convincing yet (preview, description,
-              price). Many checkouts but few paid: look at the price, the payment step or a promo code.
-            </p>
-          </section>
           <p className="m-0 text-[12px] text-ink2">
             Readers: {n(s.readers)} students read {plural(s.pagesRead, 'page')} of bought files (last 30 days
-            at most). Days are IST.
+            at most). Days are IST. Admins are never counted.
           </p>
         </>
       )}
 
+      {view === 'tools' && <ToolsView activity={activity} />}
+      {view === 'stuck' && <StuckView activity={activity} />}
       {view === 'pages' && <ActivityTables activity={activity} part="pages" />}
       {view === 'students' && <ActivityTables activity={activity} part="students" />}
 
-      {view === 'sales' && (
+      {view === 'buying' && (
         <>
+          <Funnel data={data} activity={activity.data} />
           <section aria-label="Most viewed" className="rounded-2xl border border-line bg-surface p-4">
             <h3 className="m-0 mb-2 text-[15px] font-semibold">Most viewed courses and bundles</h3>
             {data.topItems.length === 0 ? (

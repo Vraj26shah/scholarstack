@@ -1,5 +1,5 @@
 import { Component, type ReactNode } from 'react';
-import { captureException } from '../../lib/analytics';
+import { captureException, signal } from '../../lib/analytics';
 import { reportProblem } from '../../lib/problems';
 import { BackInner, backClass } from './back-link';
 import { Eyebrow, PageTitle } from './page-title';
@@ -41,6 +41,7 @@ export class ErrorBoundary extends Component<
     }
     // React swallows render errors from the window, so Sentry only hears about them from here.
     captureException(error);
+    signal('stuck_crash');
     reportProblem('crash', error.message, (info.componentStack ?? '').slice(0, 1500));
   }
 

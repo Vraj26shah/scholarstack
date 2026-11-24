@@ -212,7 +212,7 @@ export function ReminderCard({
 
   return frame(
     <>
-      <SampleNotification {...sample} />
+      {r.state !== 'blocked' && <SampleNotification {...sample} />}
       {r.state === 'unconfigured' && (
         <p className="m-0 rounded-xl bg-marigold-soft px-4 py-3 text-[14px] text-marigold-text">
           <strong>Admin:</strong> the server has no push keys yet, so reminders can't be sent. Run{' '}
@@ -349,26 +349,33 @@ function BlockedHelp() {
         Notifications are blocked for this site. Allow them in your browser's site settings → Notifications,
         then reload this page.
       </p>
-      <div
-        aria-hidden="true"
-        className="max-w-[360px] rounded-xl bg-sunk p-3 flex flex-col gap-2 text-[13px]"
-      >
-        <div className="flex items-center gap-2 rounded-full bg-surface px-3 h-9 shadow-[0_0_0_1px_var(--line)]">
-          <span className="grid place-items-center w-6 h-6 rounded-full bg-mist text-on-mist ring-2 ring-teal">
-            <Lock size={13} />
-          </span>
-          <span className="text-ink2 truncate">
-            {typeof window !== 'undefined' ? window.location.host : 'scholarsstack'}
+      <details className="group">
+        <summary className="cursor-pointer text-[14px] font-semibold text-ink underline underline-offset-4 decoration-line">
+          Show me where
+        </summary>
+        <div
+          aria-hidden="true"
+          className="mt-2 max-w-[360px] rounded-xl bg-sunk p-3 flex flex-col gap-2 text-[13px]"
+        >
+          <div className="flex items-center gap-2 rounded-full bg-surface px-3 h-9 shadow-[0_0_0_1px_var(--line)]">
+            <span className="grid place-items-center w-6 h-6 rounded-full bg-mist text-on-mist ring-2 ring-teal">
+              <Lock size={13} />
+            </span>
+            <span className="text-ink2 truncate">
+              {typeof window !== 'undefined' ? window.location.host : 'scholarsstack'}
+            </span>
+          </div>
+          <div className="ml-4 rounded-xl bg-surface p-3 shadow-[0_0_0_1px_var(--line)] flex items-center justify-between gap-3">
+            <span className="inline-flex items-center gap-2 text-ink">
+              <Bell size={14} /> Notifications
+            </span>
+            <span className="rounded-md bg-mist px-2 py-0.5 font-semibold text-on-mist">Allow</span>
+          </div>
+          <span className="text-ink2">
+            Tap the icon left of the address, then set Notifications to Allow.
           </span>
         </div>
-        <div className="ml-4 rounded-xl bg-surface p-3 shadow-[0_0_0_1px_var(--line)] flex items-center justify-between gap-3">
-          <span className="inline-flex items-center gap-2 text-ink">
-            <Bell size={14} /> Notifications
-          </span>
-          <span className="rounded-md bg-mist px-2 py-0.5 font-semibold text-on-mist">Allow</span>
-        </div>
-        <span className="text-ink2">Tap the icon left of the address, then set Notifications to Allow.</span>
-      </div>
+      </details>
     </div>
   );
 }

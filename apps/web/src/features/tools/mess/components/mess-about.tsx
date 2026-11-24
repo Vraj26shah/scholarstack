@@ -1,4 +1,5 @@
 import type { MessDto } from '@ss/contracts';
+import type { ReactNode } from 'react';
 import { buttonClass } from '../../../../shared/ui/button';
 import { KIND_LABEL } from './mess-picker';
 
@@ -6,7 +7,15 @@ import { KIND_LABEL } from './mess-picker';
  * Who serves it, the owner's prices, and one honest line about how far to trust the menu, with a
  * way to tell us when it's wrong.
  */
-export function MessAbout({ mess, onReport }: { mess: MessDto; onReport: () => void }) {
+export function MessAbout({
+  mess,
+  onReport,
+  picker,
+}: {
+  mess: MessDto;
+  onReport: () => void /** The "Change mess" control, under the name. */;
+  picker?: ReactNode;
+}) {
   const owner = mess.source === 'owner';
   const canOrder = mess.kind === 'restaurant' && (!!mess.phone || mess.order.length > 0);
   return (
@@ -20,6 +29,7 @@ export function MessAbout({ mess, onReport }: { mess: MessDto; onReport: () => v
           {mess.place ? ` · ${mess.place}` : ''}
         </p>
       </div>
+      {picker}
 
       {(mess.prices || canOrder) && (
         <p className="m-0 flex flex-wrap items-center gap-x-5 gap-y-2">

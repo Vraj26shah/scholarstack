@@ -2666,8 +2666,30 @@ export const ACTIVITY_ACTIONS = [
   'apply_promo_code',
   'purchase',
   'read_open',
+  // Tools: opened is a page hit; "used" is the first tap or typing inside the tool.
+  'tool_used',
+  'reminders_on',
+  'mess_order_placed',
+  // Sign-in: the link was emailed (signing in afterwards is 'login').
+  'signin_link_sent',
+  // Where people get stuck (recorded with the page it happened on, once per page visit).
+  'stuck_error',
+  'stuck_crash',
+  'stuck_rage',
+  'stuck_form',
+  'payment_cancelled',
 ] as const;
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
+
+/** The "stuck" signals, with what each one means in plain words (Admin › Insights). */
+export const STUCK_SIGNALS = {
+  stuck_error: 'saw a “couldn’t load” message',
+  stuck_crash: 'hit a crash (the page broke)',
+  stuck_rage: 'tapped the same spot again and again (something looked clickable but did nothing)',
+  stuck_form: 'got an error while filling a form',
+  payment_cancelled: 'closed the payment window without paying',
+} as const;
+export type StuckSignal = keyof typeof STUCK_SIGNALS;
 
 /** A page opened, or an action on the page at `path`. The server decides what it is recorded as. */
 export const TrackHitBody = z.discriminatedUnion('kind', [

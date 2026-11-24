@@ -1,5 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { type ReactNode, useSyncExternalStore } from 'react';
+import { type ReactNode, useEffect, useSyncExternalStore } from 'react';
+import { signal } from '../../lib/analytics';
 import { Button } from './button';
 import { Cross } from './icons';
 
@@ -27,6 +28,8 @@ export function ErrorState({
   message,
   onRetry,
 }: { title: string; message: string; onRetry?: () => void }) {
+  // Admin › Insights › Where people get stuck: which pages fail to load for students.
+  useEffect(() => signal('stuck_error'), []);
   return (
     <div
       role="alert"

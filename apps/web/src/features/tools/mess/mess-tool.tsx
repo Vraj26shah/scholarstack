@@ -69,6 +69,8 @@ export default function MessTool() {
     queryKey: ['mess', slug],
     queryFn: () => api.mess(slug!),
     enabled: !!slug,
+    // Switching mess keeps the old menu on screen until the new one arrives (no flash).
+    placeholderData: (prev) => prev,
     staleTime: 5 * 60_000,
   });
 
@@ -82,7 +84,7 @@ export default function MessTool() {
     if (params.has('mess') || params.has('meal')) setParams({}, { replace: true });
   };
 
-  const m = mess.data;
+  const m = slug ? mess.data : undefined;
   const remindersFor = list.data?.find((x) => x.slug === reminders.mess.slug)?.name;
   const week = m ? weekIndex(m.cycleStart, clock.date, m.weeks.length) : 0;
 
@@ -94,38 +96,40 @@ export default function MessTool() {
         footnote="Your mess choice stays on this device."
       />
 
-      <div className="flex flex-col gap-3">
-        {list.isLoading ? (
-          <Skeleton className="h-14 max-w-[520px]" />
-        ) : list.isError ? (
-          <ErrorState
-            title="Couldn't load the menus"
-            message="Check your connection and try again."
-            onRetry={() => list.refetch()}
-          />
-        ) : (
-          <MessPicker messes={list.data ?? []} value={slug} onChange={pick} />
-        )}
+      {!m && (
+        <div className="flex flex-col gap-3">
+          {list.isLoading ? (
+            <Skeleton className="h-14 max-w-[520px]" />
+          ) : list.isError ? (
+            <ErrorState
+              title="Couldn't load the menus"
+              message="Check your connection and try again."
+              onRetry={() => list.refetch()}
+            />
+          ) : (
+            <MessPicker messes={list.data ?? []} value={slug} onChange={pick} />
+          )}
 
-        {!slug && list.data && (
-          <div className="grid gap-6 sm:grid-cols-2 max-w-[760px] pt-2">
-            {(
-              [
-                ['Hosteller?', "Pick your hostel's mess: breakfast, lunch, high tea and dinner, all week."],
+          {!slug && list.data && (
+            <div className="grid gap-6 sm:grid-cols-2 max-w-[760px] pt-2">
+              {(
                 [
-                  'Day scholar?',
-                  "Pick a restaurant near campus: lunch and dinner, the owner's prices, and ordering.",
-                ],
-              ] as const
-            ).map(([t, body]) => (
-              <div key={t} className="border-t-2 border-ink pt-3">
-                <p className="m-0 font-display text-[20px] font-bold text-ink">{t}</p>
-                <p className="m-0 mt-1 text-[14px] leading-relaxed text-ink2">{body}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+                  ['Hosteller?', "Pick your hostel's mess: breakfast, lunch, high tea and dinner, all week."],
+                  [
+                    'Day scholar?',
+                    "Pick a restaurant near campus: lunch and dinner, the owner's prices, and ordering.",
+                  ],
+                ] as const
+              ).map(([t, body]) => (
+                <div key={t} className="border-t-2 border-ink pt-3">
+                  <p className="m-0 font-display text-[20px] font-bold text-ink">{t}</p>
+                  <p className="m-0 mt-1 text-[14px] leading-relaxed text-ink2">{body}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {slug && mess.isLoading && <Skeleton className="h-80" />}
       {slug && mess.isError && (
@@ -138,7 +142,11 @@ export default function MessTool() {
 
       {m && (
         <>
-          <MessAbout mess={m} onReport={openReport} />
+          <MessAbout
+            mess={m}
+            onReport={openReport}
+            picker={<MessPicker compact messes={list.data ?? []} value={slug} onChange={pick} />}
+          />
 
           <MealNow
             mess={m}

@@ -27,6 +27,10 @@ const SECRETS = [
   'R2_BUCKET',
   'TILE_SEED_SECRET',
   'CONVERTER_CALLBACK_SECRET',
+  // reminder notifications (Web Push); the deploy copies them into the Worker
+  'VAPID_PUBLIC_KEY',
+  'VAPID_PRIVATE_KEY',
+  'VAPID_SUBJECT',
   // migrations when the access token has expired, and the nightly backup
   'SUPABASE_DB_PASSWORD',
   'SUPABASE_DB_URL',

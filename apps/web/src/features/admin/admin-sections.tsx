@@ -149,7 +149,7 @@ export const GROUPS: Group[] = [
         label: 'Insights',
         note: (
           <>
-            What students look at, sign up and buy, and <U>where to find errors and page speed</U>.
+            Which tools get used, what students buy, and <U>where people get stuck</U>.
           </>
         ),
         render: () => <InsightsPanel />,

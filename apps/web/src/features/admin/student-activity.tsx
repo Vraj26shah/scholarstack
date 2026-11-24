@@ -28,6 +28,15 @@ const ACTIONS: Record<string, string> = {
   apply_promo_code: 'Applied a promo code',
   purchase: 'Paid',
   read_open: 'Opened a file to read',
+  tool_used: 'Used a tool',
+  reminders_on: 'Turned on reminders',
+  mess_order_placed: 'Ordered food',
+  signin_link_sent: 'Asked for a sign-in link',
+  stuck_error: 'Saw a "couldn’t load" error',
+  stuck_crash: 'Hit a crash',
+  stuck_rage: 'Tapped something that did nothing',
+  stuck_form: 'Got a form error',
+  payment_cancelled: 'Closed the payment window',
 };
 
 const pageLabel = (path: string): string => {
@@ -41,7 +50,7 @@ export function activityLabel(target: string): string {
   if (target.startsWith('/')) return pageLabel(target);
   const [name = '', on] = target.split(':');
   const action = ACTIONS[name] ?? name;
-  return on ? `${action} · ${on.replace(/^\/[cb]\//, '')}` : action;
+  return on ? `${action} · ${on.replace(/^\/(?:[cb]|tools)\//, '')}` : action;
 }
 
 /** A link to the page itself (or the page an action was on), for course, bundle and tool pages. */

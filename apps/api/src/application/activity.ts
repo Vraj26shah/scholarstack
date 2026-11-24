@@ -38,12 +38,24 @@ export function pageTarget(rawPath: string): string | null {
 }
 
 const ON_PAGE = new Set(['peek_open', 'begin_checkout', 'apply_promo_code']);
+/** Actions that say where they happened on any page: a tool used, or someone stuck. */
+const ANY_PAGE = new Set([
+  'tool_used',
+  'stuck_error',
+  'stuck_crash',
+  'stuck_rage',
+  'stuck_form',
+  'payment_cancelled',
+]);
 
-/** An action, with the course or bundle page it was on: "peek_open:/c/dbms-2025-cse-core". */
+/** An action, with the page it was on: "peek_open:/c/dbms-2025-cse-core", "tool_used:/tools/cgpa". */
 export function activityTarget(body: TrackHitBody): { kind: 'page' | 'action'; target: string } | null {
   const page = pageTarget(body.path);
   if (body.kind === 'page') return page ? { kind: 'page', target: page } : null;
+  if (body.name === 'tool_used')
+    return page?.startsWith('/tools/') ? { kind: 'action', target: `tool_used:${page}` } : null;
   // Only actions that belong to the course or bundle on screen name it (signing in doesn't).
-  const on = page && ON_PAGE.has(body.name) && /^\/[cb]\//.test(page) ? page : null;
+  const on =
+    page && ((ON_PAGE.has(body.name) && /^\/[cb]\//.test(page)) || ANY_PAGE.has(body.name)) ? page : null;
   return { kind: 'action', target: on ? `${body.name}:${on}` : body.name };
 }

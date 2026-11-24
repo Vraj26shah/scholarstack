@@ -1,7 +1,7 @@
 import { ACTIVITY_ACTIONS, type ActivityAction } from '@ss/contracts';
 import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { setActionSink } from './analytics';
+import { resetPageSignals, setActionSink, signal } from './analytics';
 import { api } from './api';
 import { env } from './env';
 import { useSession } from './session';
@@ -45,6 +45,58 @@ export function useCountView(item: { courseId: string } | { bundleId: string } |
 }
 
 const ACTIONS = new Set<string>(ACTIVITY_ACTIONS);
+/** An element that does something when tapped (so repeated taps on it are not "stuck"). */
+const LIVE =
+  'a[href],button:not(:disabled),input:not(:disabled),select,textarea,label,summary,[role="button"],[role="tab"],[role="option"],[role="radio"],[role="checkbox"],[contenteditable="true"]';
+
+/**
+ * Taps 4+ times on the same spot within 1.2 s, on something that does nothing (or a disabled
+ * button): the visitor expected it to work. Text selection (triple-click) doesn't count.
+ */
+function watchRageTaps() {
+  let taps: { x: number; y: number; t: number }[] = [];
+  const onClick = (e: MouseEvent) => {
+    const el = e.target as Element | null;
+    if (!el || el.closest(LIVE)) {
+      taps = [];
+      return;
+    }
+    const now = e.timeStamp;
+    taps = [
+      ...taps.filter((p) => now - p.t < 1200 && Math.hypot(p.x - e.clientX, p.y - e.clientY) < 30),
+      { x: e.clientX, y: e.clientY, t: now },
+    ];
+    if (taps.length >= 4 && !window.getSelection()?.toString()) {
+      taps = [];
+      signal('stuck_rage');
+    }
+  };
+  document.addEventListener('click', onClick, true);
+  return () => document.removeEventListener('click', onClick, true);
+}
+
+/** On a tool page: the first tap or typing inside the page's content counts the tool as "used". */
+function watchToolUse(pathname: string) {
+  if (!pathname.startsWith('/tools/')) return () => {};
+  const used = (e: Event) => {
+    const el = e.target as Element | null;
+    const main = document.getElementById('main') ?? document.querySelector('main');
+    // The tool's own header (title, "Something not working?") isn't using the tool.
+    if (!el || !main?.contains(el) || el.closest('[data-tool-header]')) return;
+    // "Back to toolbox" and other links away are leaving, not using.
+    if (el.closest('a[href]') && !el.closest('a[href^="#"]')) return;
+    if (e.type === 'pointerdown' && !el.closest(LIVE)) return;
+    signal('tool_used');
+    stop();
+  };
+  const stop = () => {
+    document.removeEventListener('pointerdown', used, true);
+    document.removeEventListener('keydown', used, true);
+  };
+  document.addEventListener('pointerdown', used, true);
+  document.addEventListener('keydown', used, true);
+  return stop;
+}
 /** False for admins (never counted) and until the session is known. */
 let recording = false;
 
@@ -58,6 +110,12 @@ export function usePageActivity() {
   const { status, me } = useSession();
   const last = useRef<string | null>(null);
   recording = status !== 'loading' && !me?.isAdmin;
+
+  useEffect(watchRageTaps, []);
+  useEffect(() => {
+    resetPageSignals();
+    return watchToolUse(pathname);
+  }, [pathname]);
 
   useEffect(() => {
     setActionSink((name) => {

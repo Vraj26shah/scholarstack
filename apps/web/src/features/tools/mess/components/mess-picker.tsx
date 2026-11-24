@@ -30,12 +30,15 @@ export function MessPicker({
   onChange,
   label = 'Your mess',
   placeholder = 'Choose your mess or restaurant',
+  compact = false,
 }: {
   messes: MessSummaryDto[];
   value: string | null;
   onChange: (slug: string) => void;
   label?: string;
   placeholder?: string;
+  /** A small "Change" link (the page already shows the chosen mess as its title). */
+  compact?: boolean;
 }) {
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -121,36 +124,57 @@ export function MessPicker({
 
   return (
     <div ref={root} className="relative flex flex-col gap-1.5 min-w-0 w-full max-w-[520px]">
-      <span id={`${id}-label`} className="text-sm font-semibold text-ink2">
+      <span id={`${id}-label`} className={compact ? 'sr-only' : 'text-sm font-semibold text-ink2'}>
         {label}
       </span>
-      <button
-        ref={button}
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-labelledby={`${id}-label ${id}-value`}
-        onClick={toggleOpen}
-        className="press flex items-center gap-3 min-h-14 w-full rounded-2xl bg-surface border-[1.5px] border-line px-4 py-2 text-left hover:border-ink2 focus-visible:border-teal outline-none"
-      >
-        <span id={`${id}-value`} className="flex-1 min-w-0 flex flex-col">
-          {current ? (
-            <>
-              <span className="font-semibold text-[16px] text-ink truncate">{current.name}</span>
-              <span className="text-[13px] text-ink2 truncate">
-                {KIND_LABEL[current.kind]}
-                {current.place ? ` · ${current.place}` : ''}
-              </span>
-            </>
-          ) : (
-            <span className="text-[15px] text-ink2">{placeholder}</span>
-          )}
-        </span>
-        <ChevronDown
-          size={18}
-          className={`shrink-0 text-ink2 transition-transform ${open ? 'rotate-180' : ''}`}
-        />
-      </button>
+      {compact ? (
+        <button
+          ref={button}
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-labelledby={`${id}-label ${id}-value`}
+          onClick={toggleOpen}
+          className="press self-start inline-flex items-center gap-1.5 h-9 rounded-full border border-line px-3.5 text-[13px] font-semibold text-ink hover:border-ink2"
+        >
+          <span id={`${id}-value`}>
+            <span className="sr-only">{current ? `${current.name}, ` : ''}</span>
+            Change mess
+          </span>
+          <ChevronDown
+            size={15}
+            className={`shrink-0 text-ink2 transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </button>
+      ) : (
+        <button
+          ref={button}
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-labelledby={`${id}-label ${id}-value`}
+          onClick={toggleOpen}
+          className="press flex items-center gap-3 min-h-14 w-full rounded-2xl bg-surface border-[1.5px] border-line px-4 py-2 text-left hover:border-ink2 focus-visible:border-teal outline-none"
+        >
+          <span id={`${id}-value`} className="flex-1 min-w-0 flex flex-col">
+            {current ? (
+              <>
+                <span className="font-semibold text-[16px] text-ink truncate">{current.name}</span>
+                <span className="text-[13px] text-ink2 truncate">
+                  {KIND_LABEL[current.kind]}
+                  {current.place ? ` · ${current.place}` : ''}
+                </span>
+              </>
+            ) : (
+              <span className="text-[15px] text-ink2">{placeholder}</span>
+            )}
+          </span>
+          <ChevronDown
+            size={18}
+            className={`shrink-0 text-ink2 transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </button>
+      )}
 
       {open && (
         <div className="mt-1 rounded-2xl bg-surface shadow-[0_18px_34px_-22px_var(--shadow),0_0_0_1px_var(--line)] p-2 flex flex-col gap-2">

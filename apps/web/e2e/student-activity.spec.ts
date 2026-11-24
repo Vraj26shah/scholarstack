@@ -21,8 +21,13 @@ test('what a student opens shows in Insights and in their own Activity', async (
   test.skip(info.project.name !== 'desktop', 'one admin session per run');
   test.setTimeout(120_000);
 
-  // A signed-in student: a course page, then a tool.
-  const student = await (await browser.newContext()).newPage();
+  // A signed-in student: a course page, then a tool. Its own browser name, so the per-browser
+  // limit on activity hits (40 a minute) isn't already used up by earlier tests on this machine.
+  const student = await (
+    await browser.newContext({
+      userAgent: `Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/${browser.version()} e2e-student-${Date.now()}`,
+    })
+  ).newPage();
   const hits: string[] = [];
   student.on('request', (r) => {
     if (r.url().includes('/insights/hit')) hits.push(r.postData() ?? '');
@@ -53,7 +58,7 @@ test('what a student opens shows in Insights and in their own Activity', async (
   await admin.getByRole('radio', { name: 'Today' }).click();
 
   const views = admin.getByRole('tablist', { name: 'Insights views' });
-  await views.getByRole('tab', { name: 'Pages & tools' }).click();
+  await views.getByRole('tab', { name: 'All pages' }).click();
   const pages = admin.getByRole('region', { name: 'Pages and tools' });
   await expect(pages).toContainText('Tool · cgpa');
   await expect(pages).toContainText('Help');

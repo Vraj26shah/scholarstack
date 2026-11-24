@@ -109,6 +109,23 @@ export function track(name: string, params: Params = {}): void {
   }
 }
 
+/** Signals already sent on this page visit: one "stuck" of each kind per visit is enough. */
+const sentOnPage = new Set<string>();
+export const resetPageSignals = () => sentOnPage.clear();
+
+/**
+ * Something on this page went wrong for the visitor ("couldn't load", a form error, a crash), or
+ * they started using a tool. Counted once per kind per page visit in Admin › Insights.
+ */
+export function signal(
+  name: 'stuck_error' | 'stuck_crash' | 'stuck_rage' | 'stuck_form' | 'payment_cancelled' | 'tool_used',
+): void {
+  const key = `${name}@${typeof location === 'undefined' ? '' : location.pathname}`;
+  if (sentOnPage.has(key)) return;
+  sentOnPage.add(key);
+  track(name);
+}
+
 /** One page_view per route the student actually lands on (the app is a SPA). */
 export function trackPageView(path: string): void {
   if (!gaReady) return;

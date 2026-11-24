@@ -67,7 +67,8 @@ export class InsightsService {
 
   async activity(days: AdminActivityDto['days']): Promise<AdminActivityDto> {
     const now = this.now();
-    const data = await this.repo.activity(periodStart(Number(days), now), 30);
+    // 100: room for every tool and every "stuck" signal per page, not only the top few.
+    const data = await this.repo.activity(periodStart(Number(days), now), 100);
     return { days, checkedAt: now.toISOString(), ...data };
   }
 

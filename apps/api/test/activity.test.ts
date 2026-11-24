@@ -55,6 +55,36 @@ describe('what pages are recorded as', () => {
   });
 });
 
+describe('tool use and "stuck" signals', () => {
+  it('records which tool was used and where people got stuck, by page', () => {
+    expect(activityTarget({ kind: 'action', name: 'tool_used', path: '/tools/mess-menu' })).toEqual({
+      kind: 'action',
+      target: 'tool_used:/tools/mess-menu',
+    });
+    // "Used" only means something on a tool page.
+    expect(activityTarget({ kind: 'action', name: 'tool_used', path: '/shelf' })).toBeNull();
+    expect(activityTarget({ kind: 'action', name: 'stuck_error', path: '/tools/cgpa?x=1' })).toEqual({
+      kind: 'action',
+      target: 'stuck_error:/tools/cgpa',
+    });
+    expect(activityTarget({ kind: 'action', name: 'stuck_form', path: '/sign-in' })).toEqual({
+      kind: 'action',
+      target: 'stuck_form:/sign-in',
+    });
+    // A private id in the path never reaches the table.
+    expect(activityTarget({ kind: 'action', name: 'stuck_crash', path: '/read/secret-file-id' })).toEqual({
+      kind: 'action',
+      target: 'stuck_crash:/read',
+    });
+    expect(
+      activityTarget({ kind: 'action', name: 'payment_cancelled', path: '/c/dbms-2025-cse-core' }),
+    ).toEqual({
+      kind: 'action',
+      target: 'payment_cancelled:/c/dbms-2025-cse-core',
+    });
+  });
+});
+
 describe('student activity', () => {
   it('records signed-in students by account and visitors together, and reports both', async () => {
     const { app, hit, page, activity, userId, admin } = await world();

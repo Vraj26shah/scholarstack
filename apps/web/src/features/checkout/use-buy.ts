@@ -1,7 +1,7 @@
 import type { CheckoutQuoteDto } from '@ss/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { track } from '../../lib/analytics';
+import { signal, track } from '../../lib/analytics';
 import { ApiError, api, friendly } from '../../lib/api';
 import { PaymentBlocked, PaymentCancelled, checkoutGateway } from '../../lib/payments';
 import { reportProblem } from '../../lib/problems';
@@ -132,13 +132,14 @@ export function useBuy(item: { courseId: string } | { bundleId: string }, return
       navigate(`/checkout/${order.orderId}`, { state: { order, payment } });
     } catch (e) {
       setReviewing(false);
-      if (e instanceof PaymentCancelled)
+      if (e instanceof PaymentCancelled) {
+        signal('payment_cancelled');
         setProblem(
           e.failure
             ? { kind: 'declined', message: e.failure }
             : { kind: 'closed', message: 'Payment window closed. Nothing was charged.' },
         );
-      else if (e instanceof PaymentBlocked) {
+      } else if (e instanceof PaymentBlocked) {
         setProblem({ kind: 'blocked', message: '' });
         reportProblem('blocked', 'The Razorpay payment window was blocked by the browser');
       } else if (e instanceof ApiError && e.code === 'ALREADY_OWNED') navigate('/shelf');

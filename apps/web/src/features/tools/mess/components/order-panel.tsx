@@ -11,9 +11,9 @@ import {
   toMinutes,
 } from '@ss/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { track } from '../../../../lib/analytics';
+import { signal, track } from '../../../../lib/analytics';
 import { ApiError, api } from '../../../../lib/api';
 import { useSession } from '../../../../lib/session';
 import { Button, buttonClass } from '../../../../shared/ui/button';
@@ -338,6 +338,10 @@ export function OrderPanel({
           : !confirmed
             ? 'Tick to confirm your number.'
             : null;
+  // A student pressed Place order and was told something's missing: counted as stuck on a form.
+  useEffect(() => {
+    if (tried && problem) signal('stuck_form');
+  }, [tried, problem]);
 
   const place = useMutation({
     mutationFn: () =>

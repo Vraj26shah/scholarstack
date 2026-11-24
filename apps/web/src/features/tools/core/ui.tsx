@@ -37,7 +37,7 @@ export function ToolHeader({
 }) {
   const { pathname } = useLocation();
   return (
-    <header className="flex flex-col pt-4 pb-10">
+    <header data-tool-header="" className="flex flex-col pt-4 pb-10">
       <BackLink fallback="/#toolbox" className="mb-5 print:hidden" />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-3 max-w-[720px]">

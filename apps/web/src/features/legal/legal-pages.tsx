@@ -168,9 +168,12 @@ export function PrivacyPage() {
         </li>
         <li>
           Which pages and tools you open on the site, and a few actions (signing in, peeking inside a course,
-          starting a checkout, paying, opening a file), counted per day. When you're signed in this is kept
-          with your account so we can see what is useful and improve it; when you're not, you're counted
-          together with every other visitor and nothing identifies you. <Hl>It's deleted after 180 days.</Hl>
+          starting a checkout, paying, opening a file, using a tool), counted per day. We also count when a
+          page shows you an error, a form tells you something is wrong, or a button seems not to respond, so
+          we can fix the spots where people get stuck; what you typed is never sent. When you're signed in
+          this is kept with your account so we can see what is useful and improve it; when you're not, you're
+          counted together with every other visitor and nothing identifies you.{' '}
+          <Hl>It's deleted after 180 days.</Hl>
         </li>
         <li>Your IP address and browser when you open files, used only for security.</li>
         <li>
