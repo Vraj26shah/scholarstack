@@ -76,7 +76,7 @@ export function Header({ onDark = false }: { onDark?: boolean }) {
               onDark ? 'bg-white text-ink' : 'bg-ink text-bg'
             }`}
           >
-            Orders
+            My restaurant
           </NavLink>
         )}
         {me?.isAdmin && (

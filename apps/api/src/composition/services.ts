@@ -201,7 +201,7 @@ export function buildServices(p: Ports, config: AppConfig) {
     prices,
   );
   const admins = new AdminAccess(p.admins, config.adminEmails);
-  const orders = new OrderService(p.messes, p.messOrders, p.features, p.clock);
+  const orders = new OrderService(p.messes, p.messOrders, p.features, p.clock, p.uploads);
   /** Admins, and restaurant owners, may sign in with an address outside the college domain. */
   const outsideAllowed = async (email: string) =>
     (await admins.isAdmin(email)) || (await orders.isOwner(email).catch(() => false));

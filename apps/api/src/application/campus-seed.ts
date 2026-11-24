@@ -238,8 +238,8 @@ export const SEED_MESSES: MessInput[] = [
       {
         title: 'Thali & tiffin',
         items: [
-          { name: 'Mess thali', price: 80, note: "today's lunch or dinner menu" },
-          { name: 'Monthly tiffin', price: 3600, note: 'a month' },
+          { name: 'Mess thali', price: 80, note: "today's lunch or dinner menu", photo: '', available: true },
+          { name: 'Monthly tiffin', price: 3600, note: 'a month', photo: '', available: true },
         ],
       },
     ],
@@ -298,30 +298,30 @@ export const DEMO_DHABA_EXTRAS: MessInput['order'] = [
   {
     title: 'Main course',
     items: [
-      { name: 'Paneer butter masala', price: 160, note: 'full' },
-      { name: 'Kadai paneer', price: 170, note: 'full' },
-      { name: 'Mix veg', price: 120, note: '' },
-      { name: 'Dal fry', price: 90, note: '' },
-      { name: 'Dal makhani', price: 130, note: '' },
-      { name: 'Chhole masala', price: 110, note: '' },
+      { name: 'Paneer butter masala', price: 160, note: 'full', photo: '', available: true },
+      { name: 'Kadai paneer', price: 170, note: 'full', photo: '', available: true },
+      { name: 'Mix veg', price: 120, note: '', photo: '', available: true },
+      { name: 'Dal fry', price: 90, note: '', photo: '', available: true },
+      { name: 'Dal makhani', price: 130, note: '', photo: '', available: true },
+      { name: 'Chhole masala', price: 110, note: '', photo: '', available: true },
     ],
   },
   {
     title: 'Breads & rice',
     items: [
-      { name: 'Tawa roti', price: 8, note: 'each' },
-      { name: 'Butter roti', price: 12, note: 'each' },
-      { name: 'Aloo paratha', price: 40, note: 'with curd' },
-      { name: 'Jeera rice', price: 80, note: '' },
-      { name: 'Veg fried rice', price: 100, note: '' },
+      { name: 'Tawa roti', price: 8, note: 'each', photo: '', available: true },
+      { name: 'Butter roti', price: 12, note: 'each', photo: '', available: true },
+      { name: 'Aloo paratha', price: 40, note: 'with curd', photo: '', available: true },
+      { name: 'Jeera rice', price: 80, note: '', photo: '', available: true },
+      { name: 'Veg fried rice', price: 100, note: '', photo: '', available: true },
     ],
   },
   {
     title: 'Snacks & drinks',
     items: [
-      { name: 'Hakka noodles', price: 90, note: '' },
-      { name: 'Masala chai', price: 15, note: '' },
-      { name: 'Sweet lassi', price: 40, note: '' },
+      { name: 'Hakka noodles', price: 90, note: '', photo: '', available: true },
+      { name: 'Masala chai', price: 15, note: '', photo: '', available: true },
+      { name: 'Sweet lassi', price: 40, note: '', photo: '', available: true },
     ],
   },
 ];

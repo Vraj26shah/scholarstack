@@ -3,6 +3,7 @@ import {
   MessOrdersOpenBody,
   MessReportBody,
   MessReportStatusBody,
+  OwnerMessBody,
   PlaceMessOrderBody,
   PushEndpointBody,
   PushPrefsBody,
@@ -101,6 +102,47 @@ campusRoutes.put('/owner/messes/:slug/open', async (c) => {
   return c.json(
     await k.orders.setOpen(principal, await k.account.isAdmin(principal), c.req.param('slug'), open),
   );
+});
+
+/** The owner's dashboard: their restaurant, to edit. */
+campusRoutes.get('/owner/messes/:slug', async (c) => {
+  const { principal } = await requireLive(c);
+  const k = c.get('container');
+  return c.json(await k.orders.ownerMess(principal, await k.account.isAdmin(principal), c.req.param('slug')));
+});
+
+campusRoutes.put('/owner/messes/:slug', async (c) => {
+  const { principal } = await requireLive(c);
+  await throttle(c, 'owner-save', principal.userId);
+  const body = OwnerMessBody.parse(await c.req.json());
+  const k = c.get('container');
+  return c.json(
+    await k.orders.ownerSave(principal, await k.account.isAdmin(principal), c.req.param('slug'), body),
+  );
+});
+
+/** An item photo: the raw image bytes as the body (the dashboard shrinks it first). */
+campusRoutes.post('/owner/messes/:slug/photos', async (c) => {
+  const { principal } = await requireLive(c);
+  await throttle(c, 'owner-photo', principal.userId);
+  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  const k = c.get('container');
+  return c.json(
+    await k.orders.ownerPhoto(principal, await k.account.isAdmin(principal), c.req.param('slug'), bytes),
+  );
+});
+
+/** Item photos on the public menu. Names are random and never reused, so they cache for good. */
+campusRoutes.get('/mess-photos/:slug/:file', async (c) => {
+  const found = await c.get('container').orders.photo(c.req.param('slug'), c.req.param('file'));
+  if (!found) return c.body(null, 404);
+  return new Response(found.body as BodyInit, {
+    headers: {
+      'content-type': found.contentType,
+      'cache-control': 'public, max-age=31536000, immutable',
+      'x-content-type-options': 'nosniff',
+    },
+  });
 });
 
 campusRoutes.put('/owner/orders/:id', async (c) => {

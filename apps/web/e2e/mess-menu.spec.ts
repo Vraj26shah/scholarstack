@@ -81,28 +81,32 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await expect(page.getByRole('table').getByRole('columnheader')).toHaveCount(3); // day, lunch, dinner
   await shot(page, 'mess-restaurant', info.project.name);
 
-  // Ordering: the current thali, a bill, a confirmed number, then the restaurant's own screen.
+  // Ordering: the current thali, an order slip, a confirmed number, then the restaurant's own screen.
   await expect(page.getByText('Mess thali ₹80')).toBeVisible();
   await page.getByRole('link', { name: 'Order now' }).click();
   await expect(page.getByRole('heading', { name: 'Order', exact: true })).toBeVisible();
   await page.getByRole('button', { name: /^Add .*thali/ }).click();
   await page.getByRole('button', { name: /^One more .*thali/ }).click();
   await page.getByRole('button', { name: 'Add Butter roti' }).click();
-  const bill = page.getByRole('complementary', { name: 'Your bill' });
+  const bill = page.getByRole('complementary', { name: 'Order slip' });
   await expect(bill.getByText('₹172', { exact: true }).first()).toBeVisible();
-  await bill.getByRole('button', { name: /Place order/ }).click();
+  await bill.getByRole('button', { name: /Confirm order/ }).click();
   await expect(bill.getByText('Add where to deliver it.')).toBeVisible();
   await bill.getByLabel('Deliver to').fill('Block B, room 214');
   await bill.getByLabel('Name').fill('Asha');
-  await bill.getByLabel('Mobile number').fill('98765 43210');
-  await bill.getByRole('button', { name: /Place order/ }).click();
+  await bill.getByLabel(/Mobile number/).fill('98765 43210');
+  await bill.getByRole('button', { name: /Confirm order/ }).click();
   await expect(bill.getByText('Tick to confirm your number.')).toBeVisible();
   await bill.getByRole('checkbox', { name: /\+91 98765 43210 is my number/ }).check();
   await shot(page, 'mess-order', info.project.name);
-  await bill.getByRole('button', { name: /Place order · ₹172/ }).click();
+  await bill.getByRole('button', { name: /Confirm order · ₹172/ }).click();
   await expect(bill.getByText('Sent, waiting for the restaurant')).toBeVisible();
   const code = (await bill.locator('p.font-display').textContent())!.trim();
   expect(code).toMatch(/^[A-Z0-9]{4}$/);
+  // One WhatsApp button, with the whole slip (and the code) typed in.
+  const wa = bill.getByRole('link', { name: 'Send order on WhatsApp' });
+  await expect(wa).toHaveAttribute('href', new RegExp(`^https://wa\\.me/\\d+\\?text=.*${code}`));
+  await expect(page.getByRole('link', { name: /WhatsApp/ })).toHaveCount(1);
   await shot(page, 'mess-order-placed', info.project.name);
 
   // The restaurant's screen (admins see every restaurant): accept, and the student sees it.
@@ -113,6 +117,37 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await shot(page, 'orders-board', info.project.name);
   await ticket.getByRole('button', { name: 'Accept · 15 min' }).click();
   await expect(page.getByRole('region', { name: /Making/ }).getByText(code)).toBeVisible();
+  // The owner's ticket has the student's number and one WhatsApp button for them.
+  await expect(ticket.getByRole('link', { name: 'WhatsApp Asha' })).toHaveAttribute(
+    'href',
+    /wa\.me\/919876543210/,
+  );
+
+  // The owner's own menu card (a dish this test doesn't order): a new price and a photo, saved, and on the student page at once.
+  await page.getByRole('tab', { name: 'Menu card' }).click();
+  const roti = page.getByRole('listitem', { name: 'Tawa roti' });
+  await roti.getByLabel('Price of Tawa roti in rupees').fill('15');
+  await roti.locator('input[type=file]').setInputFiles({
+    name: 'roti.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGP4z8Dwn4GBgYGJAQoAAAw0AQHsnrH7AAAAAElFTkSuQmCC',
+      'base64',
+    ),
+  });
+  await expect(roti.locator('img')).toBeVisible();
+  await shot(page, 'owner-menu', info.project.name);
+  await page.getByRole('tab', { name: 'Weekly menu' }).click();
+  // A phone edits one day at a time; a laptop types into the whole week's chart.
+  if (info.project.name === 'phone') await page.getByRole('tab', { name: 'Sunday' }).click();
+  await page.getByLabel('Sunday dinner').locator('visible=true').fill('Paneer masala\nJeera rice');
+  await shot(page, 'owner-week', info.project.name);
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Saved. Your page shows it now.')).toBeVisible();
+  await page.getByRole('tab', { name: 'Details & timings' }).click();
+  await expect(page.getByLabel('WhatsApp number for orders')).toBeVisible();
+  await shot(page, 'owner-details', info.project.name);
+
   await page.goto('/tools/mess-menu#order');
   await expect(page.getByText('Accepted, being made · “Ready in 15 min”')).toBeVisible();
 
@@ -134,6 +169,15 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await page.getByRole('button', { name: 'Edit' }).first().click();
   await expect(page.getByText('Meals and times')).toBeVisible();
   await shot(page, 'admin-editor', info.project.name);
+  // A restaurant: who runs it, added by email, and the way into its dashboard.
+  await page.getByRole('button', { name: 'Back to all menus' }).click();
+  await page.getByRole('button', { name: 'Edit' }).nth(1).click();
+  const owners = page.getByRole('region', { name: 'Restaurant owners' });
+  await owners.getByLabel("Owner's email").fill('new.owner@gmail.com');
+  await owners.getByRole('button', { name: 'Add owner' }).click();
+  await expect(owners.getByText('new.owner@gmail.com')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open the dashboard' })).toBeVisible();
+  await shot(page, 'admin-restaurant', info.project.name);
 
   // Admin › Reminders shows the numbers.
   await page.goto('/admin?section=reminders');

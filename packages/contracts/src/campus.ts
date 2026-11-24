@@ -93,6 +93,13 @@ export const MessOrderItem = z.object({
   price: z.number().int().min(0).max(100_000),
   /** e.g. "half / full", "a month", "today's lunch or dinner". */
   note: z.string().trim().max(80).default(''),
+  /** A photo the owner uploaded: its file name under /mess-photos/<slug>/ ('' = none). */
+  photo: z
+    .string()
+    .regex(/^([a-f0-9]{24}\.(webp|jpg|png))?$/)
+    .default(''),
+  /** Off = "sold out today": still listed, can't be ordered. */
+  available: z.boolean().default(true),
 });
 export type MessOrderItem = z.infer<typeof MessOrderItem>;
 export const MessOrderSection = z.object({
@@ -101,46 +108,69 @@ export const MessOrderSection = z.object({
 });
 export type MessOrderSection = z.infer<typeof MessOrderSection>;
 
-export const SaveMessBody = z
-  .object({
-    slug,
-    name: z.string().trim().min(2, 'Give it a name').max(80),
-    kind: MessKind,
-    place: z.string().trim().max(120).default(''),
-    source: MessSource,
-    /** One line shown above the menu (where it came from, what to check). */
-    note: z.string().trim().max(400).default(''),
-    /** Prices exactly as the owner gave them, e.g. "Mess thali ₹80 · Tiffin ₹3,600 a month". */
-    prices: z.string().trim().max(200).default(''),
-    /** The owner's number for orders (calls and WhatsApp). Empty for hostel messes. */
-    phone: z
-      .string()
-      .trim()
-      .regex(/^(\+?\d[\d ]{6,17})?$/, 'Use digits, e.g. +91 85179 03810')
-      .default(''),
-    /** e.g. "Free home delivery · Parcel available". */
-    orderNote: z.string().trim().max(160).default(''),
-    /** What students can order, by section, with the owner's prices. */
-    order: z.array(MessOrderSection).max(12).default([]),
-    /** Who runs the restaurant: these addresses may sign in (any domain) and see its orders. */
-    ownerEmails: z.array(z.string().trim().toLowerCase().email()).max(5).default([]),
-    /** The owner is taking orders on the site right now. */
-    ordersOpen: z.boolean().default(false),
-    meals: z.array(MessMeal).min(1).max(4),
-    /** A rotating menu: week 1, week 2… counted from cycleStart. One week repeats every week. */
-    weeks: z.array(MessWeek).min(1).max(6),
-    cycleStart: isoDate,
-    published: z.boolean().default(false),
-  })
-  .refine((m) => new Set(m.meals.map((x) => x.key)).size === m.meals.length, {
-    message: 'Each meal can be listed once',
-    path: ['meals'],
-  })
-  .refine((m) => m.meals.every((x) => x.start < x.end), {
-    message: 'A meal has to end after it starts',
-    path: ['meals'],
-  });
+const MessFields = z.object({
+  slug,
+  name: z.string().trim().min(2, 'Give it a name').max(80),
+  kind: MessKind,
+  place: z.string().trim().max(120).default(''),
+  source: MessSource,
+  /** One line shown above the menu (where it came from, what to check). */
+  note: z.string().trim().max(400).default(''),
+  /** Prices exactly as the owner gave them, e.g. "Mess thali ₹80 · Tiffin ₹3,600 a month". */
+  prices: z.string().trim().max(200).default(''),
+  /** The owner's number for orders (calls and WhatsApp). Empty for hostel messes. */
+  phone: z
+    .string()
+    .trim()
+    .regex(/^(\+?\d[\d ]{6,17})?$/, 'Use digits, e.g. +91 85179 03810')
+    .default(''),
+  /** e.g. "Free home delivery · Parcel available". */
+  orderNote: z.string().trim().max(160).default(''),
+  /** What students can order, by section, with the owner's prices. */
+  order: z.array(MessOrderSection).max(12).default([]),
+  /** Who runs the restaurant: these addresses may sign in (any domain) and see its orders. */
+  ownerEmails: z.array(z.string().trim().toLowerCase().email()).max(5).default([]),
+  /** The owner is taking orders on the site right now. */
+  ordersOpen: z.boolean().default(false),
+  meals: z.array(MessMeal).min(1).max(4),
+  /** A rotating menu: week 1, week 2… counted from cycleStart. One week repeats every week. */
+  weeks: z.array(MessWeek).min(1).max(6),
+  cycleStart: isoDate,
+  published: z.boolean().default(false),
+});
+
+const uniqueMeals = (m: { meals: { key: string }[] }) =>
+  new Set(m.meals.map((x) => x.key)).size === m.meals.length;
+const mealsInOrder = (m: { meals: { start: string; end: string }[] }) =>
+  m.meals.every((x) => x.start < x.end);
+const UNIQUE = { message: 'Each meal can be listed once', path: ['meals'] };
+const IN_ORDER = { message: 'A meal has to end after it starts', path: ['meals'] };
+
+export const SaveMessBody = MessFields.refine(uniqueMeals, UNIQUE).refine(mealsInOrder, IN_ORDER);
 export type MessInput = z.infer<typeof SaveMessBody>;
+
+/**
+ * What a restaurant owner may change from their dashboard: their menu, photos, prices, contact and
+ * timings. Never who owns it, its link, whether it's published, or what kind of place it is.
+ */
+export const OwnerMessBody = MessFields.pick({
+  name: true,
+  place: true,
+  note: true,
+  prices: true,
+  phone: true,
+  orderNote: true,
+  order: true,
+  meals: true,
+  weeks: true,
+  cycleStart: true,
+})
+  .refine(uniqueMeals, UNIQUE)
+  .refine(mealsInOrder, IN_ORDER);
+export type OwnerMessInput = z.infer<typeof OwnerMessBody>;
+
+/** Largest item photo accepted (the dashboard shrinks photos to well under this first). */
+export const MESS_PHOTO_MAX_BYTES = 1_500_000;
 
 export interface MessDto extends MessInput {
   sort: number;

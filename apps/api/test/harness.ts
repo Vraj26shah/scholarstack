@@ -27,7 +27,12 @@ export class Browser {
         ...(this.cookie ? { cookie: this.cookie } : {}),
         ...headers,
       },
-      body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
+      body:
+        body === undefined
+          ? undefined
+          : typeof body === 'string' || body instanceof Uint8Array
+            ? (body as BodyInit)
+            : JSON.stringify(body),
     });
     const set = res.headers.get('set-cookie');
     if (set) this.cookie = set.split(';')[0]!;

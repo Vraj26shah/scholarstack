@@ -2,8 +2,8 @@ import type { StoredObject } from '../domain/entities';
 import type { ObjectStore } from '../domain/ports';
 import { fail } from './errors';
 
-/** Areas of the bucket that are never notes: generated pages, uploads, help-desk files, backups. */
-export const PROTECTED = /^(pages|contributions|support|_system)\//;
+/** Areas of the bucket that are never notes: generated pages, uploads, help-desk files, restaurant photos, backups. */
+export const PROTECTED = /^(pages|contributions|support|mess-photos|_system)\//;
 
 export async function walk(
   store: ObjectStore,

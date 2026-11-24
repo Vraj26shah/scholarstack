@@ -210,3 +210,29 @@ export const Minus = ({ size, ...p }: P) => (
     <path d="M5 12h14" />
   </svg>
 );
+
+/** A chat bubble with a phone in it: "message them on WhatsApp". */
+export const WhatsAppIcon = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M3.5 20.5l1.3-4.1A8.5 8.5 0 1 1 8 19.4z" />
+    <path d="M9.2 8.6c.2-.4.5-.5.8-.5h.5l.9 2-.6.8a5 5 0 0 0 2.3 2.3l.8-.6 2 .9v.5c0 .3-.1.6-.5.8-.9.5-2.6.3-4.4-1.5S8.7 9.5 9.2 8.6z" />
+  </svg>
+);
+/** A picture: "add a photo". */
+export const PhotoIcon = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <circle cx="9" cy="10" r="1.6" />
+    <path d="M21 16l-5-5-8 8" />
+  </svg>
+);
+export const Trash = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+  </svg>
+);
+export const ArrowUp = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </svg>
+);

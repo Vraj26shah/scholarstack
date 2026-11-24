@@ -9,6 +9,7 @@ import type {
   MessReportStatus,
   MessSummaryDto,
   OwnedMessDto,
+  OwnerMessInput,
   PlaceMessOrderInput,
   PushDeviceDto,
   PushRunDto,
@@ -187,19 +188,23 @@ export class ApiClient {
     retried = false,
   ): Promise<T> {
     const token = await this.tokenSource();
+    // A Blob (an image) goes as it is; anything else as JSON.
+    const raw = typeof Blob !== 'undefined' && body instanceof Blob;
     let res: Response;
     try {
       res = await fetch(`${this.base}${path}`, {
         method,
         credentials: 'same-origin',
         headers: {
-          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+          ...(body !== undefined
+            ? { 'content-type': raw ? (body as Blob).type || 'application/octet-stream' : 'application/json' }
+            : {}),
           ...(token ? { authorization: `Bearer ${token}` } : {}),
           // Expected session states come back as 200 + x-ss-status (see the API's onError).
           'x-ss-soft-errors': '1',
           ...headers,
         },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined ? undefined : raw ? (body as Blob) : JSON.stringify(body),
       });
     } catch {
       throw new ApiError(0, 'NETWORK', 'You seem to be offline. Check your connection and try again.');
@@ -252,6 +257,15 @@ export class ApiClient {
     this.request<MessOrderDto[]>('GET', `/owner/messes/${encodeURIComponent(slug)}/orders`);
   ownerSetOpen = (slug: string, open: boolean) =>
     this.request<OwnedMessDto>('PUT', `/owner/messes/${encodeURIComponent(slug)}/open`, { open });
+  /** The owner's dashboard: their restaurant to edit, saving it, and item photos. */
+  ownerMess = (slug: string) => this.request<MessDto>('GET', `/owner/messes/${encodeURIComponent(slug)}`);
+  ownerSaveMess = (slug: string, m: OwnerMessInput) =>
+    this.request<MessDto>('PUT', `/owner/messes/${encodeURIComponent(slug)}`, m);
+  ownerUploadPhoto = (slug: string, image: Blob) =>
+    this.request<{ photo: string }>('POST', `/owner/messes/${encodeURIComponent(slug)}/photos`, image);
+  /** Where an item photo is served ('' when the item has none). */
+  messPhotoUrl = (slug: string, photo: string) =>
+    photo ? `${this.base}/mess-photos/${encodeURIComponent(slug)}/${photo}` : '';
   ownerSetOrder = (id: string, status: MessOrderStatus, note = '') =>
     this.request<MessOrderDto>('PUT', `/owner/orders/${encodeURIComponent(id)}`, { status, note });
   adminMesses = () => this.request<MessDto[]>('GET', '/admin/mess');

@@ -10,7 +10,6 @@ import {
   type MessInput,
   type MessKind,
   type MessMeal,
-  type MessOrderSection,
   type MessWeek,
   campusClock,
 } from '@ss/contracts';
@@ -20,7 +19,7 @@ import { Link } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { Button } from '../../shared/ui/button';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
-import { Field, Panel, StatusPill, input, plural } from './ui';
+import { Field, Panel, StatusPill, U, input, plural } from './ui';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,43 +34,6 @@ const fromText = (text: string): MessDish[] =>
     .map((l) =>
       l.endsWith('?') ? { name: l.slice(0, -1).trim(), unsure: true } : { name: l, unsure: false },
     );
-
-/**
- * The order list as text: "# Section" starts a section, then one item per line as
- * "Paneer butter masala | 160 | half / full" (name | price | optional note).
- */
-const orderToText = (order: MessOrderSection[] = []) =>
-  order
-    .map(
-      (s) =>
-        `# ${s.title}\n${s.items.map((i) => [i.name, i.price, i.note].filter((x) => x !== '').join(' | ')).join('\n')}`,
-    )
-    .join('\n\n');
-const orderFromText = (text: string): { order: MessOrderSection[]; bad: string[] } => {
-  const order: MessOrderSection[] = [];
-  const bad: string[] = [];
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (line.startsWith('#')) {
-      order.push({ title: line.replace(/^#+/, '').trim().slice(0, 60) || 'Menu', items: [] });
-      continue;
-    }
-    const [name = '', price = '', ...note] = line.split('|').map((x) => x.trim());
-    const rupees = Number(price.replace(/[₹,\s]|rs\.?/gi, ''));
-    if (!name || !Number.isInteger(rupees) || rupees < 0) {
-      bad.push(line);
-      continue;
-    }
-    if (!order.length) order.push({ title: 'Menu', items: [] });
-    order[order.length - 1]!.items.push({
-      name: name.slice(0, 80),
-      price: rupees,
-      note: note.join(' | ').slice(0, 80),
-    });
-  }
-  return { order: order.filter((s) => s.items.length).slice(0, 12), bad };
-};
 
 const emptyWeek = (label = ''): MessWeek => ({
   label,
@@ -220,9 +182,14 @@ function MessEditor({
   const [day, setDay] = useState<DayKey>(DAY_KEYS[campusClock(new Date()).day]!);
   const [text, setText] = useState<Record<string, string>>({});
   const [done, setDone] = useState<string | null>(null);
-  const [orderText, setOrderText] = useState(() => orderToText(initial.order));
-  const [ownersText, setOwnersText] = useState(() => initial.ownerEmails.join(', '));
-  const orderBad = orderFromText(orderText).bad;
+  const [ownerDraft, setOwnerDraft] = useState('');
+  const ownerOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ownerDraft.trim());
+  const addOwner = () => {
+    const email = ownerDraft.trim().toLowerCase();
+    if (!ownerOk || form.ownerEmails.includes(email) || form.ownerEmails.length >= 5) return;
+    set({ ownerEmails: [...form.ownerEmails, email] });
+    setOwnerDraft('');
+  };
   const set = (patch: Partial<MessInput>) => {
     setDone(null);
     setForm((f) => ({ ...f, ...patch }));
@@ -248,7 +215,19 @@ function MessEditor({
   };
 
   const save = useMutation({
-    mutationFn: () => (isNew ? api.adminCreateMess(form) : api.adminSaveMess(initial.slug, form)),
+    mutationFn: async () => {
+      if (isNew) return api.adminCreateMess(form);
+      // The menu card is edited in the restaurant's dashboard (maybe by its owner, just now):
+      // save it as it is on the server, never this screen's older copy.
+      const order =
+        initial.kind === 'restaurant'
+          ? await api.ownerMess(initial.slug).then(
+              (m) => m.order,
+              () => form.order,
+            )
+          : form.order;
+      return api.adminSaveMess(initial.slug, { ...form, order });
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin-messes'] });
       void qc.invalidateQueries({ queryKey: ['messes'] });
@@ -363,24 +342,6 @@ function MessEditor({
                 placeholder="+91 85179 03810"
               />
             </Field>
-            <Field label="Owner's sign-in email(s), comma separated (they get the Orders page)">
-              <input
-                className={input}
-                value={ownersText}
-                inputMode="email"
-                onChange={(e) => {
-                  setOwnersText(e.target.value);
-                  set({
-                    ownerEmails: e.target.value
-                      .split(/[,\s]+/)
-                      .map((x) => x.trim().toLowerCase())
-                      .filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))
-                      .slice(0, 5),
-                  });
-                }}
-                placeholder="owner@gmail.com"
-              />
-            </Field>
             <label className="flex items-center gap-2 self-end h-11 text-[15px] font-semibold">
               <input
                 type="checkbox"
@@ -399,28 +360,86 @@ function MessEditor({
                 placeholder="Free home delivery · Parcel available"
               />
             </Field>
-            <Field
-              label="What students can order: '# Section', then 'Name | price | note' on each line"
-              className="sm:col-span-2"
+
+            <section
+              aria-label="Restaurant owners"
+              className="sm:col-span-2 rounded-2xl bg-sunk p-4 sm:p-5 flex flex-col gap-3"
             >
-              <textarea
-                className={`${input} h-auto py-2 font-mono text-[13px]`}
-                rows={8}
-                value={orderText}
-                onChange={(e) => {
-                  setOrderText(e.target.value);
-                  set({ order: orderFromText(e.target.value).order });
-                }}
-                placeholder={
-                  "# Thali & tiffin\nMess thali | 80 | today's menu\n\n# Main course\nPaneer butter masala | 160 | full"
-                }
-              />
-              {orderBad.length > 0 && (
-                <span className="text-[13px] text-blush-text">
-                  Left out (needs "name | price"): {orderBad.slice(0, 3).join(' · ')}
-                </span>
+              <div className="flex flex-col gap-1">
+                <h3 className="m-0 text-[18px] font-bold text-ink">Restaurant owners</h3>
+                <p className="m-0 text-[14px] leading-relaxed text-ink2 max-w-[720px]">
+                  Add the email the owner will sign in with (Gmail or any address). They sign in at{' '}
+                  <strong className="text-ink">{window.location.host}/sign-in</strong> and land on{' '}
+                  <strong className="text-ink">My restaurant</strong>: their orders, menu card with photos,
+                  weekly menu and timings, <U>for this restaurant only</U>. They never see the admin pages,
+                  other restaurants or any student's details except the orders sent to them.
+                </p>
+              </div>
+              {form.ownerEmails.length > 0 ? (
+                <ul className="m-0 p-0 list-none flex flex-wrap gap-2">
+                  {form.ownerEmails.map((email) => (
+                    <li
+                      key={email}
+                      className="inline-flex items-center gap-2 h-9 rounded-full bg-surface pl-3.5 pr-1.5 text-[14px] font-semibold text-ink [box-shadow:inset_0_0_0_1px_var(--line)]"
+                    >
+                      {email}
+                      <button
+                        type="button"
+                        onClick={() => set({ ownerEmails: form.ownerEmails.filter((e) => e !== email) })}
+                        aria-label={`Remove ${email}`}
+                        className="grid place-items-center w-7 h-7 rounded-full text-ink2 hover:bg-sunk hover:text-blush-text"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="m-0 text-[14px] font-semibold text-marigold-text">
+                  No owner yet: nobody can take orders or edit this menu but admins.
+                </p>
               )}
-            </Field>
+              <form
+                className="flex flex-wrap gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  addOwner();
+                }}
+              >
+                <input
+                  className={`${input} flex-1 min-w-[220px] max-w-[360px]`}
+                  value={ownerDraft}
+                  inputMode="email"
+                  autoComplete="off"
+                  onChange={(e) => setOwnerDraft(e.target.value)}
+                  placeholder="owner@gmail.com"
+                  aria-label="Owner's email"
+                />
+                <Button type="submit" variant="outline" disabled={!ownerOk || form.ownerEmails.length >= 5}>
+                  Add owner
+                </Button>
+              </form>
+              <p className="m-0 text-[13px] text-ink2">
+                Press <strong>Save</strong> below after adding or removing an owner. Removing one stops their
+                access within a minute.
+              </p>
+            </section>
+
+            <div className="sm:col-span-2 flex flex-wrap items-center gap-3 rounded-2xl p-4 [box-shadow:inset_0_0_0_1px_var(--line)]">
+              <p className="m-0 flex-1 min-w-[240px] text-[14px] leading-relaxed text-ink2">
+                <strong className="text-ink">Menu card, photos and prices</strong> are edited in the
+                restaurant's own dashboard, the same screen the owner uses (
+                {form.order.reduce((n, x) => n + x.items.length, 0)} dishes now).
+              </p>
+              {!isNew && (
+                <Link
+                  to={`/orders?mess=${initial.slug}&tab=menu`}
+                  className="inline-flex items-center h-10 rounded-full bg-ink px-4 text-[14px] font-semibold text-bg no-underline"
+                >
+                  Open the dashboard
+                </Link>
+              )}
+            </div>
           </>
         )}
         <Field label="Note above the menu" className="sm:col-span-2">

@@ -483,3 +483,128 @@ describe('ordering from a restaurant', () => {
     expect(no.json).toMatchObject({ status: 'rejected', ownerNote: 'Out of thali' });
   });
 });
+
+describe("the owner's dashboard", () => {
+  const OWNER = 'dhaba.owner@gmail.com';
+  const SLUG = 'radha-rani-ka-dhaba';
+  const setUp = async () => {
+    launch('mess-menu');
+    const a = await admin();
+    const { updatedAt: _u, sort: _s, ...input } = (await a.call('GET', `/mess/${SLUG}`)).json;
+    expect(
+      (
+        await a.call('PUT', `/admin/mess/${SLUG}`, {
+          ...input,
+          published: true,
+          ordersOpen: true,
+          ownerEmails: [OWNER],
+        })
+      ).status,
+    ).toBe(200);
+    const owner = new Browser(app);
+    await owner.signIn(OWNER);
+    return { a, owner };
+  };
+  /** A tiny real PNG (the first bytes are what the server checks). */
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 73, 72, 68, 82]);
+
+  it('the owner edits their own menu card, and students see it at once', async () => {
+    const { owner } = await setUp();
+    const mine = (await owner.call('GET', `/owner/messes/${SLUG}`)).json;
+    expect(mine.ownerEmails).toEqual([]); // not even the owner list is shown back
+    const { photo } = (
+      await owner.call('POST', `/owner/messes/${SLUG}/photos`, PNG, { 'content-type': 'image/png' })
+    ).json;
+    expect(photo).toMatch(/^[a-f0-9]{24}\.png$/);
+    const body = {
+      name: 'Radha Rani Dhaba',
+      place: mine.place,
+      note: 'Closed on Tuesdays',
+      prices: mine.prices,
+      phone: '+91 98765 43210',
+      orderNote: mine.orderNote,
+      meals: mine.meals,
+      weeks: mine.weeks,
+      cycleStart: mine.cycleStart,
+      order: [
+        {
+          title: 'Thali',
+          items: [
+            { name: 'Mess thali', price: 90, note: '', photo, available: true },
+            { name: 'Paneer thali', price: 140, note: '', photo: '', available: false },
+          ],
+        },
+      ],
+    };
+    const saved = await owner.call('PUT', `/owner/messes/${SLUG}`, body);
+    expect(saved.status).toBe(200);
+    expect(saved.json).toMatchObject({ name: 'Radha Rani Dhaba', source: 'owner', published: true });
+
+    const s = new Browser(app);
+    await s.signIn('student1@vitbhopal.ac.in');
+    const page = (await s.call('GET', `/mess/${SLUG}`)).json;
+    expect(page.order[0].items[0]).toMatchObject({ name: 'Mess thali', price: 90, photo });
+    // The photo is served to anyone, and cached for good.
+    const img = await new Browser(app).call('GET', `/mess-photos/${SLUG}/${photo}`);
+    expect(img.status).toBe(200);
+    expect(img.res.headers.get('content-type')).toBe('image/png');
+    expect(img.res.headers.get('cache-control')).toMatch(/immutable/);
+    // A sold-out dish can't be ordered.
+    const sold = await s.call('POST', `/mess/${SLUG}/orders`, {
+      lines: [{ name: 'Paneer thali', qty: 1 }],
+      mode: 'pickup',
+      name: 'Asha',
+      phone: '9876543210',
+      phoneConfirmed: true,
+    });
+    expect(sold.status).toBe(400);
+    expect(sold.json.error.message).toMatch(/sold out/);
+  });
+
+  it("can't touch what's the admin's: owners, publishing, the link, or another restaurant", async () => {
+    const { a, owner } = await setUp();
+    const mine = (await owner.call('GET', `/owner/messes/${SLUG}`)).json;
+    const {
+      slug: _s,
+      kind: _k,
+      source: _src,
+      ownerEmails: _o,
+      ordersOpen: _op,
+      published: _p,
+      sort: _so,
+      updatedAt: _u,
+      ...own
+    } = mine;
+    // Extra fields are ignored: still one owner, still published, still a restaurant.
+    await owner.call('PUT', `/owner/messes/${SLUG}`, {
+      ...own,
+      ownerEmails: ['friend@gmail.com'],
+      published: false,
+      kind: 'hostel',
+      slug: 'taken-over',
+    });
+    const after = (await a.call('GET', `/mess/${SLUG}`)).json;
+    expect(after).toMatchObject({ slug: SLUG, kind: 'restaurant', published: true, ownerEmails: [OWNER] });
+    // The hostel mess (and any other restaurant) is not theirs.
+    expect((await owner.call('GET', '/owner/messes/safal-hostel-mess')).status).toBe(404);
+    expect((await owner.call('PUT', '/owner/messes/safal-hostel-mess', own)).status).toBe(404);
+    // Admin pages stay shut.
+    expect((await owner.call('GET', '/admin/mess')).status).toBe(403);
+    // A student can't edit or upload either.
+    const s = new Browser(app);
+    await s.signIn('student1@vitbhopal.ac.in');
+    expect((await s.call('PUT', `/owner/messes/${SLUG}`, own)).status).toBe(403);
+    expect((await s.call('POST', `/owner/messes/${SLUG}/photos`, PNG)).status).toBe(403);
+  });
+
+  it('only real photos are kept, and photo names can not reach other files', async () => {
+    const { owner } = await setUp();
+    const fake = new TextEncoder().encode('<svg onload="alert(1)"></svg>');
+    const r = await owner.call('POST', `/owner/messes/${SLUG}/photos`, fake, { 'content-type': 'image/png' });
+    expect(r.status).toBe(400);
+    expect((await new Browser(app).call('GET', `/mess-photos/${SLUG}/..%2Fsecret.png`)).status).toBe(404);
+    expect((await new Browser(app).call('GET', `/mess-photos/${SLUG}/${'a'.repeat(24)}.png`)).status).toBe(
+      404,
+    );
+  });
+});

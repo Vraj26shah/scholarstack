@@ -41,7 +41,26 @@ export const REMINDERS_FEATURE = MESS_FEATURE;
 const isLive = async (features: FeatureRepository, key: string) =>
   (await features.find(key))?.status === 'live';
 
-const toDto = ({ updatedAt, ...m }: MessRecord): MessDto => ({ ...m, updatedAt: updatedAt.toISOString() });
+/**
+ * Menus saved before photos and "sold out" existed have neither field: fill them in, so every
+ * reader (student page, dashboard, ordering) sees the same complete shape.
+ */
+export const withItemDefaults = (order: MessRecord['order']): MessRecord['order'] =>
+  (order ?? []).map((s) => ({
+    ...s,
+    items: s.items.map((i) => ({
+      ...i,
+      note: i.note ?? '',
+      photo: i.photo ?? '',
+      available: i.available !== false,
+    })),
+  }));
+
+export const toDto = ({ updatedAt, ...m }: MessRecord): MessDto => ({
+  ...m,
+  order: withItemDefaults(m.order),
+  updatedAt: updatedAt.toISOString(),
+});
 const toSummary = (m: MessRecord): MessSummaryDto => ({
   slug: m.slug,
   name: m.name,

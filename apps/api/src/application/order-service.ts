@@ -1,8 +1,11 @@
 import {
   MESS_ORDER_NEXT,
+  MESS_PHOTO_MAX_BYTES,
+  type MessDto,
   type MessOrderDto,
   type MessOrderStatus,
   type OwnedMessDto,
+  type OwnerMessInput,
   type PlaceMessOrderInput,
   normaliseEmail,
   normaliseMobile,
@@ -14,8 +17,8 @@ import type {
   MessRepository,
 } from '../domain/campus-ports';
 import type { Principal } from '../domain/entities';
-import type { Clock, FeatureRepository } from '../domain/ports';
-import { MESS_FEATURE } from './campus-service';
+import type { Clock, FeatureRepository, UploadStore } from '../domain/ports';
+import { MESS_FEATURE, toDto as messDto } from './campus-service';
 import { fail } from './errors';
 
 /**
@@ -37,6 +40,21 @@ export const ORDER_LIMITS = {
 };
 
 const DAY_MS = 24 * 3600 * 1000;
+
+/** Where an item photo is stored: its own folder per restaurant, away from the notes. */
+export const photoKey = (slug: string, file: string) => `mess-photos/${slug}/${file}`;
+
+/** What the first bytes say the file really is (the name and the browser's word are not trusted). */
+export function imageKind(b: Uint8Array): { ext: 'jpg' | 'png' | 'webp'; type: string } | null {
+  if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff)
+    return { ext: 'jpg', type: 'image/jpeg' };
+  if (b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47)
+    return { ext: 'png', type: 'image/png' };
+  const ascii = (from: number, to: number) => String.fromCharCode(...b.slice(from, to));
+  if (b.length > 12 && ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP')
+    return { ext: 'webp', type: 'image/webp' };
+  return null;
+}
 const CODE_CHARS = 'ACDEFGHJKMNPQRTUVWXY3479';
 const newCode = () =>
   Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
@@ -68,6 +86,8 @@ export class OrderService {
     private readonly orders: MessOrderRepository,
     private readonly features: FeatureRepository,
     private readonly clock: Clock,
+    /** Where item photos are kept (the R2 bucket in production). */
+    private readonly photos?: UploadStore,
   ) {}
 
   // ── Owners ──
@@ -107,6 +127,56 @@ export class OrderService {
     if (!mess || mess.kind !== 'restaurant') throw fail.notFound('That restaurant');
     if (!admin && !mess.ownerEmails.includes(normaliseEmail(p.email))) throw fail.forbidden();
     return mess;
+  }
+
+  /** The whole restaurant, for its owner's dashboard (who else runs it is not shown). */
+  async ownerMess(p: Principal, admin: boolean, slug: string): Promise<MessDto> {
+    const dto = messDto(await this.ownedMess(p, admin, slug));
+    return admin ? dto : { ...dto, ownerEmails: [] };
+  }
+
+  /**
+   * The owner saves their menu card, weekly menu, prices, contact and timings. Everything else
+   * (link, kind, who owns it, published, taking orders) stays exactly as it was: those are the
+   * admin's, or have their own switch.
+   */
+  async ownerSave(p: Principal, admin: boolean, slug: string, input: OwnerMessInput): Promise<MessDto> {
+    const current = await this.ownedMess(p, admin, slug);
+    const { updatedAt: _u, ...rest } = current;
+    const saved = await this.messes.save({ ...rest, ...input, source: 'owner' });
+    const dto = messDto(saved);
+    return admin ? dto : { ...dto, ownerEmails: [] };
+  }
+
+  /**
+   * An item photo from the owner's dashboard. Only real JPEG, PNG or WebP images are kept, under a
+   * random name in this restaurant's folder. Returns the file name to put on the item.
+   */
+  async ownerPhoto(
+    p: Principal,
+    admin: boolean,
+    slug: string,
+    bytes: Uint8Array,
+  ): Promise<{ photo: string }> {
+    await this.ownedMess(p, admin, slug);
+    if (!this.photos) throw fail.badRequest('Photos are not set up on this server.');
+    if (bytes.byteLength > MESS_PHOTO_MAX_BYTES)
+      throw fail.badRequest('That photo is too big. Use one under 1.5 MB.');
+    const kind = imageKind(bytes);
+    if (!kind) throw fail.badRequest('Use a JPEG, PNG or WebP photo.');
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) =>
+      b.toString(16).padStart(2, '0'),
+    ).join('');
+    const photo = `${id}.${kind.ext}`;
+    await this.photos.save(photoKey(slug, photo), bytes, kind.type);
+    return { photo };
+  }
+
+  /** A stored item photo, for the public menu (null when there's no such photo). */
+  async photo(slug: string, file: string) {
+    if (!this.photos || !/^[a-z0-9-]{1,60}$/.test(slug) || !/^[a-f0-9]{24}\.(webp|jpg|png)$/.test(file))
+      return null;
+    return this.photos.get(photoKey(slug, file));
   }
 
   /** The owner's board: everything still open, and today's finished orders. */
@@ -151,11 +221,12 @@ export class OrderService {
     if (!phone) throw fail.badRequest('Use a 10-digit Indian mobile number.');
 
     // Prices come from the restaurant's own list, never from the browser.
-    const prices = new Map(mess.order.flatMap((s) => s.items).map((i) => [i.name.toLowerCase(), i.price]));
+    const items = new Map(mess.order.flatMap((s) => s.items).map((i) => [i.name.toLowerCase(), i]));
     const lines = input.lines.map((l) => {
-      const price = prices.get(l.name.toLowerCase());
-      if (price === undefined) throw fail.badRequest(`"${l.name}" isn't on ${mess.name}'s list any more.`);
-      return { name: l.name, qty: l.qty, price, detail: l.detail };
+      const item = items.get(l.name.toLowerCase());
+      if (!item) throw fail.badRequest(`"${l.name}" isn't on ${mess.name}'s list any more.`);
+      if (item.available === false) throw fail.badRequest(`"${item.name}" is sold out right now.`);
+      return { name: l.name, qty: l.qty, price: item.price, detail: l.detail };
     });
 
     await this.checkLimits(p.userId, ipHash, slug);
