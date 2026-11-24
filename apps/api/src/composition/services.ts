@@ -312,7 +312,7 @@ export function buildServices(p: Ports, config: AppConfig) {
     housekeeping: p.housekeeping,
     previews: new PreviewService(p.catalogueReader, p.catalogueWriter, p.pages, p.seeder, p.limiter),
     admins,
-    account: new AccountService(p.profiles, p.devices, p.sessions, config, admins, p.clock),
+    account: new AccountService(p.profiles, p.devices, p.sessions, config, admins, p.clock, orders),
     checkout: new CheckoutService(
       p.catalogueReader,
       p.bundles,

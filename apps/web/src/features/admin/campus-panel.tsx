@@ -1,11 +1,8 @@
 import {
-  DAY_KEYS,
   DAY_NAMES,
-  type DayKey,
   MEAL_KEYS,
   MEAL_NAMES,
   type MealKey,
-  type MessDish,
   type MessDto,
   type MessInput,
   type MessKind,
@@ -14,26 +11,16 @@ import {
   campusClock,
 } from '@ss/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { Button } from '../../shared/ui/button';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
+import { MenuCardEditor } from '../restaurant/menu-card-editor';
+import { WeekChartEditor } from '../restaurant/week-chart-editor';
 import { Field, Panel, StatusPill, U, input, plural } from './ui';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-/** One dish per line; a line ending in "?" was hard to read. */
-const toText = (dishes: MessDish[] = []) => dishes.map((d) => `${d.name}${d.unsure ? '?' : ''}`).join('\n');
-const fromText = (text: string): MessDish[] =>
-  text
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .slice(0, 30)
-    .map((l) =>
-      l.endsWith('?') ? { name: l.slice(0, -1).trim(), unsure: true } : { name: l, unsure: false },
-    );
 
 const emptyWeek = (label = ''): MessWeek => ({
   label,
@@ -66,6 +53,7 @@ const newMess = (): MessInput => ({
   order: [],
   ownerEmails: [],
   ordersOpen: false,
+  dailyOrderCap: 0,
   meals: DEFAULT_MEALS.hostel,
   weeks: [emptyWeek('Week 1')],
   cycleStart: campusClock(new Date()).date,
@@ -178,11 +166,21 @@ function MessEditor({
 }: { initial: MessInput; isNew: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const [form, setForm] = useState<MessInput>(initial);
-  const [week, setWeek] = useState(0);
-  const [day, setDay] = useState<DayKey>(DAY_KEYS[campusClock(new Date()).day]!);
-  const [text, setText] = useState<Record<string, string>>({});
   const [done, setDone] = useState<string | null>(null);
   const [ownerDraft, setOwnerDraft] = useState('');
+  const [cardTouched, setCardTouched] = useState(false);
+  // Open with the restaurant's current menu card (its owner may have just changed it).
+  useEffect(() => {
+    if (isNew || initial.kind !== 'restaurant') return;
+    let live = true;
+    void api.ownerMess(initial.slug).then(
+      (m) => live && setForm((f) => ({ ...f, order: m.order })),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [isNew, initial.kind, initial.slug]);
   const ownerOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ownerDraft.trim());
   const addOwner = () => {
     const email = ownerDraft.trim().toLowerCase();
@@ -203,24 +201,13 @@ function MessEditor({
     set({ meals: meals.sort((a, b) => MEAL_KEYS.indexOf(a.key) - MEAL_KEYS.indexOf(b.key)) });
   };
 
-  // Textareas keep exactly what was typed; dishes are parsed from it on every change.
-  const cell = `${week}:${day}`;
-  const dishText = (k: MealKey) => text[`${cell}:${k}`] ?? toText(form.weeks[week]?.days[day]?.[k]);
-  const setDishes = (k: MealKey, value: string) => {
-    setText((t) => ({ ...t, [`${cell}:${k}`]: value }));
-    const weeks = form.weeks.map((w, i) =>
-      i !== week ? w : { ...w, days: { ...w.days, [day]: { ...w.days[day], [k]: fromText(value) } } },
-    );
-    set({ weeks });
-  };
-
   const save = useMutation({
     mutationFn: async () => {
       if (isNew) return api.adminCreateMess(form);
-      // The menu card is edited in the restaurant's dashboard (maybe by its owner, just now):
-      // save it as it is on the server, never this screen's older copy.
+      // The owner may have changed their menu card meanwhile: unless it was edited here, save the
+      // card exactly as it is on the server now, never this screen's older copy.
       const order =
-        initial.kind === 'restaurant'
+        initial.kind === 'restaurant' && !cardTouched
           ? await api.ownerMess(initial.slug).then(
               (m) => m.order,
               () => form.order,
@@ -232,7 +219,8 @@ function MessEditor({
       void qc.invalidateQueries({ queryKey: ['admin-messes'] });
       void qc.invalidateQueries({ queryKey: ['messes'] });
       void qc.invalidateQueries({ queryKey: ['mess'] });
-      setDone('Saved.');
+      setCardTouched(false);
+      setDone('Saved. Students see it now.');
     },
   });
   const remove = useMutation({
@@ -243,9 +231,6 @@ function MessEditor({
       onClose();
     },
   });
-
-  const dayCount = (w: MessWeek) =>
-    DAY_KEYS.filter((d) => Object.values(w.days[d] ?? {}).some((x) => x?.length)).length;
 
   return (
     <Panel
@@ -425,21 +410,18 @@ function MessEditor({
               </p>
             </section>
 
-            <div className="sm:col-span-2 flex flex-wrap items-center gap-3 rounded-2xl p-4 [box-shadow:inset_0_0_0_1px_var(--line)]">
-              <p className="m-0 flex-1 min-w-[240px] text-[14px] leading-relaxed text-ink2">
-                <strong className="text-ink">Menu card, photos and prices</strong> are edited in the
-                restaurant's own dashboard, the same screen the owner uses (
-                {form.order.reduce((n, x) => n + x.items.length, 0)} dishes now).
-              </p>
-              {!isNew && (
-                <Link
-                  to={`/orders?mess=${initial.slug}&tab=menu`}
-                  className="inline-flex items-center h-10 rounded-full bg-ink px-4 text-[14px] font-semibold text-bg no-underline"
-                >
-                  Open the dashboard
-                </Link>
-              )}
-            </div>
+            <Field label="Most orders a day (0 = no limit)">
+              <input
+                className={`${input} tabular-nums`}
+                type="number"
+                min={0}
+                max={2000}
+                value={form.dailyOrderCap ?? 0}
+                onChange={(e) =>
+                  set({ dailyOrderCap: Math.max(0, Math.min(2000, Math.floor(Number(e.target.value) || 0))) })
+                }
+              />
+            </Field>
           </>
         )}
         <Field label="Note above the menu" className="sm:col-span-2">
@@ -504,90 +486,35 @@ function MessEditor({
         </div>
       </section>
 
+      {form.kind === 'restaurant' && !isNew && (
+        <section className="flex flex-col gap-3" aria-label="Menu card">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <h3 className="m-0 text-[18px] font-bold">Menu card: what students can order</h3>
+            <Link
+              to={`/orders?mess=${initial.slug}`}
+              className="text-[14px] font-semibold text-ink2 underline underline-offset-2 hover:text-ink"
+            >
+              Open the restaurant's dashboard (orders)
+            </Link>
+          </div>
+          <p className="m-0 text-[14px] text-ink2 max-w-[760px]">
+            Categories (Snacks, Sandwiches, Main course…), dishes, prices, photos and sold-out, the same
+            editor the owner uses. {cardTouched ? 'Your changes are saved with Save below.' : ''}
+          </p>
+          <MenuCardEditor
+            slug={initial.slug}
+            order={form.order}
+            onChange={(order) => {
+              setCardTouched(true);
+              set({ order });
+            }}
+          />
+        </section>
+      )}
+
       <section className="flex flex-col gap-3">
-        <h3 className="m-0 text-[18px] font-bold">The menu</h3>
-        <p className="m-0 text-[14px] text-ink2">
-          One dish per line. End a line with <strong>?</strong> when the notice was hard to read; students see
-          it marked.
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          {form.weeks.map((w, i) => (
-            <Button
-              key={`${i}-${w.label}`}
-              size="sm"
-              variant={i === week ? 'ink' : 'outline'}
-              onClick={() => setWeek(i)}
-            >
-              {w.label || `Week ${i + 1}`} <span className="opacity-70">· {dayCount(w)}/7 days</span>
-            </Button>
-          ))}
-          {form.weeks.length < 6 && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                set({ weeks: [...form.weeks, emptyWeek(`Week ${form.weeks.length + 1}`)] });
-                setWeek(form.weeks.length);
-              }}
-            >
-              + Add a week (rotating menu)
-            </Button>
-          )}
-          {form.weeks.length > 1 && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                if (!window.confirm(`Remove ${form.weeks[week]?.label || `week ${week + 1}`} and its menu?`))
-                  return;
-                set({ weeks: form.weeks.filter((_, i) => i !== week) });
-                setText({});
-                setWeek(0);
-              }}
-            >
-              Remove this week
-            </Button>
-          )}
-        </div>
-        {form.weeks.length > 1 && (
-          <Field label="This week's name" className="max-w-[300px]">
-            <input
-              className={input}
-              value={form.weeks[week]?.label ?? ''}
-              maxLength={40}
-              onChange={(e) =>
-                set({ weeks: form.weeks.map((w, i) => (i === week ? { ...w, label: e.target.value } : w)) })
-              }
-            />
-          </Field>
-        )}
-        <div role="tablist" aria-label="Day" className="flex flex-wrap gap-1">
-          {DAY_KEYS.map((d) => (
-            <button
-              key={d}
-              type="button"
-              role="tab"
-              aria-selected={d === day}
-              onClick={() => setDay(d)}
-              className={`h-9 rounded-full px-3 text-[13px] font-semibold ${d === day ? 'bg-brand text-white' : 'text-ink2 hover:text-ink hover:bg-sunk'}`}
-            >
-              {DAY_NAMES[d]}
-            </button>
-          ))}
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 max-w-[900px]">
-          {form.meals.map((m) => (
-            <Field key={`${cell}:${m.key}`} label={`${DAY_NAMES[day]} · ${MEAL_NAMES[m.key]}`}>
-              <textarea
-                className={`${input} h-auto py-2 leading-relaxed font-mono text-[14px]`}
-                rows={7}
-                value={dishText(m.key)}
-                onChange={(e) => setDishes(m.key, e.target.value)}
-                placeholder={'Dal fry\nAloo gobi\nKheer?'}
-              />
-            </Field>
-          ))}
-        </div>
+        <h3 className="m-0 text-[18px] font-bold">The week's menu</h3>
+        <WeekChartEditor meals={form.meals} weeks={form.weeks} cycleStart={form.cycleStart} onChange={set} />
       </section>
 
       <label className="flex items-start gap-3 max-w-[700px] text-[15px]">

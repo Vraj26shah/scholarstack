@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../../../shared/ui/button';
 import { Sheet as Dialog } from '../../../shared/ui/feedback';
-import { ClassReminders } from '../../reminders/class-reminders';
+import { ClassReminderSwitch, ClassReminders } from '../../reminders/class-reminders';
 import { useSyncTimetableReminders } from '../../reminders/use-reminders';
 import { newId, useToolState } from '../core/storage';
 import { ToolHeader } from '../core/ui';
@@ -123,7 +123,8 @@ export default function TimetableTool({
         title="Timetable maker"
         lead="Tap your slots or type them (A1, B2…), name the course, and get a clash-free week. Download it as a PDF, put it in your calendar, or share it with friends."
         aside={
-          <div className="flex flex-wrap gap-2 print:hidden">
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            {courses.some((c) => !c.tentative) && <ClassReminderSwitch />}
             {primary && (
               <Button variant="brand" onClick={() => run(primary)} disabled={!courses.length || !!busy}>
                 {busy === primary.id ? 'Making it…' : primary.label}

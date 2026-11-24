@@ -580,6 +580,7 @@ const toForm = (m: MessDto): OwnerMessInput => ({
   meals: m.meals,
   weeks: m.weeks,
   cycleStart: m.cycleStart,
+  dailyOrderCap: m.dailyOrderCap ?? 0,
 });
 
 /**

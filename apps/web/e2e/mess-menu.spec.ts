@@ -198,7 +198,15 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await owners.getByLabel("Owner's email").fill('new.owner@gmail.com');
   await owners.getByRole('button', { name: 'Add owner' }).click();
   await expect(owners.getByText('new.owner@gmail.com')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open the dashboard' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Open the restaurant's dashboard/ })).toBeVisible();
+  // The admin edits the menu card and the week right here, like the owner does.
+  await expect(
+    page.getByRole('region', { name: 'Menu card' }).getByRole('listitem', { name: 'Tawa roti' }),
+  ).toBeVisible();
+  if (info.project.name === 'phone') await page.getByRole('tab', { name: 'Saturday' }).click();
+  await page.getByLabel('Saturday lunch').locator('visible=true').fill('Kadhai paneer\nJeera rice');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText('Saved. Students see it now.')).toBeVisible();
   await shot(page, 'admin-restaurant', info.project.name);
 
   // Admin › Reminders shows the numbers.

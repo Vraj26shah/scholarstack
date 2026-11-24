@@ -132,6 +132,8 @@ const MessFields = z.object({
   ownerEmails: z.array(z.string().trim().toLowerCase().email()).max(5).default([]),
   /** The owner is taking orders on the site right now. */
   ordersOpen: z.boolean().default(false),
+  /** Most orders the restaurant takes on the site in one day (campus time); 0 = no limit. */
+  dailyOrderCap: z.number().int().min(0).max(2000).default(0),
   meals: z.array(MessMeal).min(1).max(4),
   /** A rotating menu: week 1, week 2… counted from cycleStart. One week repeats every week. */
   weeks: z.array(MessWeek).min(1).max(6),
@@ -164,6 +166,7 @@ export const OwnerMessBody = MessFields.pick({
   meals: true,
   weeks: true,
   cycleStart: true,
+  dailyOrderCap: true,
 })
   .refine(uniqueMeals, UNIQUE)
   .refine(mealsInOrder, IN_ORDER);
@@ -542,7 +545,13 @@ export const ReminderPrefs = z.object({
       /** Minutes before the meal starts. */
       lead: z.number().int().min(5).max(90).default(30),
       /** Words to look for ("paneer", "biryani"): that meal is announced even if it isn't ticked. */
-      favourites: z.array(z.string().trim().min(2).max(40)).max(15).default([]),
+      /** Dishes the student ticked (or words like "paneer"): matched against each meal's dishes. */
+      favourites: z.array(z.string().trim().min(2).max(80)).max(40).default([]),
+      /**
+       * false: every ticked meal is announced (and a favourite at any meal).
+       * true: only ticked meals that serve one of the favourites.
+       */
+      only: z.boolean().default(false),
     })
     .default({}),
   classes: z
@@ -744,7 +753,8 @@ export function duePushes(
       const dishes = dishesOn(mess, clock.date, meal.key);
       if (!dishes.length) continue;
       const favs = favouritesIn(dishes, prefs.mess.favourites);
-      if (!prefs.mess.meals.includes(meal.key) && !favs.length) continue;
+      const ticked = prefs.mess.meals.includes(meal.key);
+      if (prefs.mess.only ? !ticked || !favs.length : !ticked && !favs.length) continue;
       const start = toMinutes(meal.start);
       if (clock.minutes < start - prefs.mess.lead || clock.minutes >= start) continue;
       const left = start - clock.minutes;

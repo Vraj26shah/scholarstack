@@ -29,6 +29,9 @@ const STATUS_LINE: Partial<Record<MessOrderStatus, string>> = {
   cancelled: 'Order cancelled.',
 };
 
+/** Devices one notification goes to at most (owners may have many). */
+export const MAX_FANOUT = 30;
+
 export interface Delivery {
   devices: number;
   sent: number;
@@ -85,11 +88,16 @@ export class OrderEvents {
     const gone: string[] = [];
     let sent = 0;
     await Promise.all(
-      subs.slice(0, 10).map(async (s) => {
-        const r = await this.sender.send(s, message, ttl).catch(() => 'failed' as const);
-        if (r === 'ok') sent++;
-        if (r === 'gone') gone.push(s.id);
-      }),
+      // Newest devices first. A Worker request may make only so many outgoing calls (50 on the
+      // free plan), so one alert reaches at most MAX_FANOUT devices.
+      [...subs]
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .slice(0, MAX_FANOUT)
+        .map(async (s) => {
+          const r = await this.sender.send(s, message, ttl).catch(() => 'failed' as const);
+          if (r === 'ok') sent++;
+          if (r === 'gone') gone.push(s.id);
+        }),
     );
     if (gone.length) await this.push.removeIds(gone).catch(() => {});
     return { devices: subs.length - gone.length, sent };

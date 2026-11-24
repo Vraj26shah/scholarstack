@@ -28,6 +28,7 @@ export const SEED_MESSES: MessInput[] = [
     order: [],
     ownerEmails: [],
     ordersOpen: false,
+    dailyOrderCap: 0,
     cycleStart: '2026-10-12',
     published: false,
     meals: [
@@ -245,6 +246,7 @@ export const SEED_MESSES: MessInput[] = [
     ],
     ownerEmails: [],
     ordersOpen: false,
+    dailyOrderCap: 0,
     cycleStart: '2026-11-23',
     published: false,
     meals: [

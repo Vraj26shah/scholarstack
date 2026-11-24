@@ -286,3 +286,42 @@ describe('security', () => {
     expect((await otherOwner.call('DELETE', `/admin/orders/${placed.id}/chat`)).status).toBe(403);
   });
 });
+
+describe('owners, devices and limits', () => {
+  it('a restaurant owner can stay signed in on many devices (students keep two)', async () => {
+    await scene();
+    for (let i = 0; i < 6; i++) {
+      const b = new Browser(app);
+      expect((await b.signIn(OWNER, `Kitchen phone ${i}`)).status).toBe(200);
+    }
+    const me = (await (await signedIn(OWNER)).call('GET', '/me')).json;
+    expect(me).toMatchObject({ maxDevices: 100, instantDeviceRemoval: true });
+    // A student is still held to two.
+    const s = 'student5@vitbhopal.ac.in';
+    for (let i = 0; i < 2; i++) expect((await new Browser(app).signIn(s, `Phone ${i}`)).status).toBe(200);
+    expect((await new Browser(app).signIn(s, 'Third phone')).status).not.toBe(200);
+  });
+
+  it("the owner's daily order limit stops orders for the rest of the day", async () => {
+    const { owner } = await scene(); // one order already placed today
+    const mess = (await owner.call('GET', `/owner/messes/${SLUG}`)).json;
+    const { name, place, note, prices, phone, orderNote, order: card, meals, weeks, cycleStart } = mess;
+    const saved = await owner.call('PUT', `/owner/messes/${SLUG}`, {
+      ...{ name, place, note, prices, phone, orderNote, order: card, meals, weeks, cycleStart },
+      dailyOrderCap: 1,
+    });
+    expect(saved.json.dailyOrderCap).toBe(1);
+    const other = await signedIn('student2@vitbhopal.ac.in');
+    const r = await other.call('POST', `/mess/${SLUG}/orders`, order());
+    expect(r.status).toBe(400);
+    expect(r.json.error.message).toMatch(/all the orders it can today/);
+  });
+
+  it('"Send a test" works on a device that also gets order alerts', async () => {
+    await scene();
+    const admin = await signedIn('admin@vitbhopal.ac.in');
+    const before = env.campus.pushSender.sent.length;
+    expect((await admin.call('POST', '/push/test', { endpoint: device(1).endpoint })).status).toBe(200);
+    expect(env.campus.pushSender.sent.length).toBe(before + 1);
+  });
+});

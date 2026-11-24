@@ -4,6 +4,17 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Mess menu, reminders and restaurant tools, round two (25 Nov)
+- **The week's menu is a real table**: a framed grid with a header band of meals and times, ruled columns, alternating rows, today's row and the meal being served (or next) outlined, and a "With every meal" footer. Dishes you ticked are highlighted with ⭐.
+- **Meal reminders by dish**: choose **Every dish** or **Only dishes I tick**, then tick the mess's own dishes meal by meal (searchable, most common first). With "only", a meal is announced only when it serves a ticked dish. Typed words (paneer, biryani) still work.
+- **One switch at the top** of the Mess menu (meal reminders) and the Timetable maker (class reminders): on and off without scrolling; "Settings" jumps to the details.
+- **Fix**: turning reminders off no longer switches off order alerts and chat notifications on the same device.
+- **Admins edit like owners**: Admin › Campus › Mess menus now has the menu card editor (categories, dishes, prices, photos, sold out) and the week typed straight into the chart. The owner's newer card is never overwritten unless the admin edits it.
+- **Daily order limit**: owners (and admins) set "Most orders a day"; past it, students are asked to call.
+- **Owners on any number of devices** (up to 100, removed at once), so a kitchen can stay signed in on every phone, tablet and laptop; new-order alerts reach up to 30 of the owner's devices.
+- "Send a test" reminder checked on devices that also get order alerts.
+- Migration `20261125000200_owner_devices_and_order_cap`.
+
 ### Order chat, alerts and the orders workflow (25 Nov)
 - **Why notifications never worked on the live site**: the server answered `configured: false` (no push keys) and not one device had ever subscribed. The keys were added to GitHub on 24 Nov *after* the last good deploy, and the next deploy failed on an out-of-date contracts test (menu items gained `photo` and `available`), so the keys never reached the Worker. The test is fixed; the next deploy copies the keys.
 - **Chat on every restaurant order**, like a messaging app: text, photos (private, only the two sides and admins can load them), one-tap quick replies, ✓ sent / ✓✓ read, unread badges (ticket, Orders tab, page title, header "My orders"), and a Call button on both sides. Links, phone numbers and email addresses are refused in messages; 20 messages a minute and 300 a day per person.

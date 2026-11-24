@@ -178,13 +178,38 @@ describe('reminders', () => {
     await a.call(
       'POST',
       '/push/subscribe',
-      device(1, { mess: { slug: 'safal-hostel-mess', meals: [], lead: 30, favourites: ['paneer'] } }),
+      device(1, {
+        mess: { slug: 'safal-hostel-mess', meals: [], lead: 30, favourites: ['paneer'], only: false },
+      }),
     );
     at('12:00');
     expect((await a.call('POST', '/admin/push/run')).json.sent).toBe(0);
     at('18:50'); // Monday dinner (7:15 pm): methi mutter malai paneer
     await a.call('POST', '/admin/push/run');
     expect(env.campus.pushSender.sent.at(-1)!.message.title).toBe('Dinner in 25 min · paneer ⭐');
+  });
+
+  it('"only dishes I tick": a ticked meal is announced only when one of them is served', async () => {
+    const a = await admin();
+    const picked = 'Methi mutter malai paneer curry (veg) / egg curry (non-veg)';
+    await a.call(
+      'POST',
+      '/push/subscribe',
+      device(1, {
+        mess: {
+          slug: 'safal-hostel-mess',
+          meals: ['lunch', 'dinner'],
+          lead: 30,
+          favourites: [picked],
+          only: true,
+        },
+      }),
+    );
+    at('11:50'); // Monday lunch: dal fry etc., nothing ticked
+    expect((await a.call('POST', '/admin/push/run')).json.sent).toBe(0);
+    at('18:50'); // Monday dinner has the ticked dish
+    expect((await a.call('POST', '/admin/push/run')).json.sent).toBe(1);
+    expect(env.campus.pushSender.sent.at(-1)!.message.title).toContain('⭐');
   });
 
   it("tomorrow's classes at 9 pm, and a class reminder only for chosen subjects and days", async () => {

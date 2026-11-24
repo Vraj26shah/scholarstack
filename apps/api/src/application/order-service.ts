@@ -8,6 +8,7 @@ import {
   type OwnerMessInput,
   type PlaceMessOrderInput,
   type ReplyTimeDto,
+  campusClock,
   normaliseEmail,
   normaliseMobile,
 } from '@ss/contracts';
@@ -363,6 +364,14 @@ export class OrderService {
     });
 
     await this.checkLimits(p.userId, ipHash, slug);
+    if (mess.dailyOrderCap > 0) {
+      // Since midnight on campus (IST): the owner's "most orders a day".
+      const now = this.clock.now();
+      const midnight = new Date(`${campusClock(now).date}T00:00:00+05:30`);
+      const today = await this.orders.countSince({ messSlug: slug }, midnight);
+      if (today >= mess.dailyOrderCap)
+        throw fail.badRequest(`${mess.name} has taken all the orders it can today. Call them instead.`);
+    }
     const order = await this.orders.add({
       code: newCode(),
       messSlug: slug,

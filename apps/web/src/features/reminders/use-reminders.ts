@@ -1,4 +1,4 @@
-import { deviceLabel } from '@ss/contracts';
+import { ReminderPrefs, deviceLabel } from '@ss/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { track } from '../../lib/analytics';
@@ -21,6 +21,12 @@ import {
 } from './settings-store';
 
 const WEEK = 7 * 24 * 3600 * 1000;
+
+/** What a device that keeps order alerts but wants no reminders asks for. */
+const NO_REMINDERS = ReminderPrefs.parse({
+  mess: { slug: null, meals: [], favourites: [] },
+  classes: { nightly: false, before: false },
+});
 
 /** Taps in quick succession are sent to the server once, when they settle. */
 let saveTimer: number | undefined;
@@ -124,8 +130,14 @@ export function useReminders() {
 
   const turnOff = () =>
     run('off', async () => {
-      if (local.endpoint) await api.pushUnsubscribe(local.endpoint).catch(() => {});
-      await unsubscribeBrowser();
+      // The same device may also get order alerts and chat messages: then only the reminders stop,
+      // and the browser keeps its notification address.
+      const alerts = !!local.endpoint && localStorage.getItem('ss_account_alerts') === local.endpoint;
+      if (local.endpoint && alerts) await api.pushPrefs(local.endpoint, NO_REMINDERS);
+      else {
+        if (local.endpoint) await api.pushUnsubscribe(local.endpoint).catch(() => {});
+        await unsubscribeBrowser();
+      }
       setLocalReminders((r) => ({ ...r, endpoint: null }));
       track('reminders_off', {});
       return true;

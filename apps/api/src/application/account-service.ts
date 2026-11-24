@@ -12,6 +12,11 @@ const DEVICE_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
  * Students keep `maxDevices` (two) and the three-day removal.
  */
 export const ADMIN_MAX_DEVICES = 10;
+/**
+ * Restaurant owners take orders on several phones, a counter tablet and a laptop: in practice no
+ * limit (the ceiling only stops a runaway script). Same in the database trigger.
+ */
+export const OWNER_MAX_DEVICES = 100;
 /** A device of the same kind unused this long is taken to be this one, back again. */
 const RETURNING_AFTER_MS = 24 * 60 * 60 * 1000;
 
@@ -39,7 +44,22 @@ export class AccountService {
     private readonly config: AppConfig,
     private readonly admins: Pick<AdminAccess, 'isAdmin'>,
     private readonly clock: Clock,
+    /** Restaurant owners (their addresses are on a restaurant): many devices, removed at once. */
+    private readonly owners?: { isOwner(email: string): Promise<boolean> },
   ) {}
+
+  private isOwner(principal: Principal): Promise<boolean> {
+    return this.owners ? this.owners.isOwner(principal.email).catch(() => false) : Promise.resolve(false);
+  }
+
+  /** Admins and owners: more devices, and a removal takes effect at once. */
+  private async staff(principal: Principal) {
+    const [admin, owner] = await Promise.all([
+      this.isAdmin(principal).catch(() => false),
+      this.isOwner(principal),
+    ]);
+    return { admin, owner, any: admin || owner };
+  }
 
   private async deviceCooldownUntil(userId: string, now: Date): Promise<Date | null> {
     return this.devices.latestRevokedAt(userId, now);
@@ -51,7 +71,8 @@ export class AccountService {
 
   /** How many devices this account may use. If the admin list can't be read, the student rule. */
   private async deviceLimit(principal: Principal): Promise<number> {
-    const admin = await this.isAdmin(principal).catch(() => false);
+    const { admin, owner } = await this.staff(principal);
+    if (owner) return Math.max(OWNER_MAX_DEVICES, this.config.maxDevices);
     return admin ? Math.max(ADMIN_MAX_DEVICES, this.config.maxDevices) : this.config.maxDevices;
   }
 
@@ -167,6 +188,7 @@ export class AccountService {
     const devices = await this.devices.listActive(principal.userId, now);
     const cooldownUntil = await this.deviceCooldownUntil(principal.userId, now);
     const isAdmin = await this.isAdmin(principal);
+    const staff = isAdmin || (await this.isOwner(principal));
     return {
       id: profile.id,
       email: profile.email,
@@ -175,9 +197,9 @@ export class AccountService {
       emailOptIn: profile.emailOptIn,
       devices: devices.map((d) => toDeviceDto(d, currentDeviceId, now)),
       // Admins never wait on a removal, so there is no cooldown to show them.
-      deviceCooldownUntil: isAdmin ? null : (cooldownUntil?.toISOString() ?? null),
-      maxDevices: isAdmin ? Math.max(ADMIN_MAX_DEVICES, this.config.maxDevices) : this.config.maxDevices,
-      instantDeviceRemoval: isAdmin,
+      deviceCooldownUntil: staff ? null : (cooldownUntil?.toISOString() ?? null),
+      maxDevices: await this.deviceLimit(principal),
+      instantDeviceRemoval: staff,
     };
   }
 
@@ -192,8 +214,8 @@ export class AccountService {
 
   async removeDevice(principal: Principal, deviceId: string, currentDeviceId: string | null = null) {
     const now = this.clock.now();
-    const admin = await this.isAdmin(principal);
-    // Students: one removal at a time, three days each. Admins: straight away, any number.
+    const admin = (await this.staff(principal)).any;
+    // Students: one removal at a time, three days each. Admins and owners: straight away, any number.
     if (!admin) {
       const cooldownUntil = await this.deviceCooldownUntil(principal.userId, now);
       if (cooldownUntil) throw fail.deviceCooldown(cooldownUntil);

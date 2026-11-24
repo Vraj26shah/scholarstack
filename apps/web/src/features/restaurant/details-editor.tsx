@@ -93,6 +93,22 @@ export function DetailsEditor({
         />
       </Row>
       <Row
+        label="Most orders a day"
+        hint="Stop taking orders on the site after this many today. 0 means no limit. Resets at midnight."
+      >
+        <input
+          className={`${box} max-w-[160px] tabular-nums`}
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={2000}
+          value={form.dailyOrderCap ?? 0}
+          onChange={(e) =>
+            onChange({ dailyOrderCap: Math.max(0, Math.min(2000, Math.floor(Number(e.target.value) || 0))) })
+          }
+        />
+      </Row>
+      <Row
         label="Prices at the top of your page"
         hint="Your best-known prices, separated with ·, e.g. Mess thali ₹80 · Tiffin ₹3,600 a month."
       >

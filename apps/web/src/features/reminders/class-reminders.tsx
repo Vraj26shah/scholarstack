@@ -1,7 +1,21 @@
 import { field } from '../tools/core/ui';
 import { type Course, GRID, clock, dayClasses, dayIndex } from '../tools/timetable/domain';
 import { Chip, Group, ReminderCard, Switch, toggle } from './reminder-card';
+import { ReminderSwitch } from './reminder-switch';
 import { useReminders } from './use-reminders';
+
+/** The top-of-page switch for class reminders. */
+export function ClassReminderSwitch() {
+  return (
+    <ReminderSwitch
+      label="Class reminders"
+      settings="class-reminders"
+      isOn={(r) => r.classes.nightly || r.classes.before}
+      enable={(r) => ({ ...r, classes: { ...r.classes, nightly: true } })}
+      disable={(r) => ({ ...r, classes: { ...r.classes, nightly: false, before: false } })}
+    />
+  );
+}
 
 /** A preview of tonight's message, from the student's own timetable. */
 function sampleFor(courses: Course[]) {

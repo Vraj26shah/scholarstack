@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../../../lib/api';
 import { ErrorState, Skeleton } from '../../../shared/ui/feedback';
-import { MealReminders } from '../../reminders/meal-reminders';
+import { MealReminderSwitch, MealReminders } from '../../reminders/meal-reminders';
 import { useLocalReminders } from '../../reminders/settings-store';
 import { useToolState } from '../core/storage';
 import { ToolHeader } from '../core/ui';
@@ -145,7 +145,12 @@ export default function MessTool() {
           <MessAbout
             mess={m}
             onReport={openReport}
-            picker={<MessPicker compact messes={list.data ?? []} value={slug} onChange={pick} />}
+            picker={
+              <div className="flex flex-wrap items-center gap-3 print:hidden">
+                <MessPicker compact messes={list.data ?? []} value={slug} onChange={pick} />
+                <MealReminderSwitch mess={m} />
+              </div>
+            }
           />
 
           <MealNow

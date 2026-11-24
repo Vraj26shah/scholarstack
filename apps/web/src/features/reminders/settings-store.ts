@@ -10,7 +10,15 @@ import { type Course, GRID, dayClasses } from '../tools/timetable/domain';
 export interface LocalReminders {
   /** This device's push address once reminders are on; null when off. */
   endpoint: string | null;
-  mess: { slug: string | null; meals: MealKey[]; lead: number; favourites: string[] };
+  mess: {
+    slug: string | null;
+    meals: MealKey[];
+    lead: number;
+    /** Dishes the student ticked (or words they typed). */
+    favourites: string[];
+    /** true: only meals serving a ticked dish. false: every ticked meal. */
+    only: boolean;
+  };
   classes: {
     nightly: boolean;
     nightlyAt: string;
@@ -26,7 +34,7 @@ export interface LocalReminders {
 
 export const DEFAULT_REMINDERS: LocalReminders = {
   endpoint: null,
-  mess: { slug: null, meals: ['lunch', 'dinner'], lead: 30, favourites: [] },
+  mess: { slug: null, meals: ['lunch', 'dinner'], lead: 30, favourites: [], only: false },
   classes: {
     nightly: false,
     nightlyAt: '21:00',
@@ -49,7 +57,15 @@ function read(): LocalReminders {
     return {
       ...DEFAULT_REMINDERS,
       ...v,
-      mess: { ...DEFAULT_REMINDERS.mess, ...v.mess },
+      // Saved by an older version: fields may be missing, so each is read on its own.
+      mess: {
+        ...DEFAULT_REMINDERS.mess,
+        ...v.mess,
+        favourites: Array.isArray(v.mess?.favourites)
+          ? v.mess.favourites.filter((f): f is string => typeof f === 'string')
+          : [],
+        only: v.mess?.only === true,
+      },
       classes: { ...DEFAULT_REMINDERS.classes, ...v.classes },
     };
   } catch {

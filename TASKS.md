@@ -4,8 +4,9 @@ Status as of 23 Oct 2026 (v0.7.0). **Me** = built here. **You** = an account ste
 Everything marked done is covered by an automated test (see QA_REPORT.md).
 
 ## Done
+- [x] 0.38.0 · Mess menu as a ruled table, reminders by ticked dish (every dish / only ticked), on/off switch at the top of Mess menu and Timetable, reminders-off keeps order alerts, admin edits menu card + week chart inline, daily order limit, owners on unlimited devices
 - [x] 0.37.0 · Order chat (photos, quick replies, read ticks, unread badges, Call), per-side clear + admin clear for everyone, owner block/unblock, reports to admin, new-order alarm every minute, 3-min alert + WhatsApp nudge, 10-min auto-cancel, push for every message, live updates, public reply time, /my-orders, Admin › Orders & chats; notifications root cause fixed (failed deploy kept VAPID keys off the Worker)
-- [ ] 0.37.0 · **You:** apply migration `20261125000100_order_chat` (`pnpm ops db:apply` or paste the new block of supabase/apply-all.sql), then deploy; check `https://…/api/push/status` says `"configured": true`
+- [x] 0.37.0 · Migration `20261125000100_order_chat` applied by the deploy; live `/api/push/status` says `"configured": true` (25 Nov)
 - [ ] 0.37.0 · **You:** Supabase › Realtime settings: allow public broadcast channels (otherwise pages poll every few seconds, which still works)
 - [ ] 0.37.0 · **You:** on the owner's phone open My restaurant › "Turn on alerts", then Admin › Orders & chats › "Send a test alert to the owner"
 - [x] 0.24.0 · Courses offered to many batches and branches (course list + filing + admin choice), Course list view, Emails bulk delete, smooth Inbox, per-line marker lines, calmer doodles
