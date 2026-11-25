@@ -6,6 +6,7 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ### Tiffin deliveries, a cart screen on phones, an easier phone box (25 Nov)
 - **Tiffin deliveries**: the owner's Tiffin tab lists each day's lunch and dinner by address; each meal is marked **Delivered** or **Missed** in one tap (tap again to undo), with today's delivered / still to do / missed counts. A missed meal can be made up within the next 4 days (it shows under **Make-up meals** with its last date, marked Delivered when given) and lapses after that. The student's order shows meals delivered and missed, and any make-up still to come. Migration `20261125000800_tiffin_marks`.
+- **Change amounts in the cart**: each item in the cart has − and + (down to removing it), like food apps.
 - **Cart screen on phones**, like food apps: the cart bar ("3 items · ₹172 · View cart →") opens a full cart with the items, offer, total, promo code, details and Confirm order; "+ Add more" goes back to the menu. After ordering, the bar becomes "Order AB12 · … · Track →". Laptops keep the slip beside the menu. The bar never covers the bottom of the page any more.
 - **Restaurant phone number**: owners type just the 10 digits; +91 is added for them, pasting any format works, and it says "✓ Looks right".
 

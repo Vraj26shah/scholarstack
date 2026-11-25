@@ -994,11 +994,39 @@ export function OrderPanel({
                     <ul className="m-0 p-0 list-none flex flex-col gap-2 text-[14px] tabular-nums">
                       {lines.map((l) => (
                         <li key={l.key} className="flex items-center justify-between gap-3">
-                          <span className="min-w-0 text-ink">
-                            <strong>{l.qty} ×</strong> {l.label}
+                          <span className="min-w-0 flex-1 text-ink">
+                            {l.label}
                             <span className="block text-[12.5px] text-ink2">{rupees(l.price)} each</span>
                           </span>
-                          <span className="shrink-0 font-semibold text-ink">{rupees(l.qty * l.price)}</span>
+                          {/* Change the amount right in the cart, like food apps. */}
+                          <span className="shrink-0 inline-flex items-center rounded-lg border-[1.5px] border-teal text-teal-text">
+                            <button
+                              type="button"
+                              aria-label={`Remove one ${l.label} from the cart`}
+                              onClick={() => setQty(l.key, l.qty - 1)}
+                              className="grid place-items-center w-9 h-9 border-0 bg-transparent text-current cursor-pointer"
+                            >
+                              <Minus size={15} />
+                            </button>
+                            <span
+                              className="min-w-[18px] text-center font-bold"
+                              aria-label={`${l.qty} in cart`}
+                            >
+                              {l.qty}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`Add one more ${l.label} to the cart`}
+                              disabled={l.tiffin || l.qty >= 20}
+                              onClick={() => setQty(l.key, l.qty + 1)}
+                              className="grid place-items-center w-9 h-9 border-0 bg-transparent text-current cursor-pointer disabled:opacity-40"
+                            >
+                              <Plus size={15} />
+                            </button>
+                          </span>
+                          <span className="shrink-0 w-[64px] text-right font-semibold text-ink">
+                            {rupees(l.qty * l.price)}
+                          </span>
                         </li>
                       ))}
                       {discount > 0 && deal.offer && (

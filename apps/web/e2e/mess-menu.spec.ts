@@ -100,8 +100,15 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await page.getByRole('button', { name: 'Add Butter roti' }).click();
   // The cart bar; on a phone it opens the cart screen (like food apps), on a laptop the slip is beside the menu.
   if (info.project.name === 'phone') {
-    await page.getByRole('button', { name: /3 items · ₹172.*View cart/ }).click();
-    await expect(page.getByRole('dialog', { name: 'Your cart' })).toBeVisible();
+    const cartBar = page.getByRole('button', { name: /3 items · ₹172.*View cart/ });
+    await expect(cartBar).toBeInViewport();
+    await cartBar.click();
+    const cart = page.getByRole('dialog', { name: 'Your cart' });
+    await expect(cart).toBeVisible();
+    // Amounts change right in the cart.
+    await cart.getByRole('button', { name: 'Add one more Butter roti to the cart' }).click();
+    await expect(cart.getByText('₹184', { exact: true }).first()).toBeVisible();
+    await cart.getByRole('button', { name: 'Remove one Butter roti from the cart' }).click();
   }
   const bill = page.getByRole('complementary', { name: 'Order slip' });
   await expect(bill.getByText('₹172', { exact: true }).first()).toBeVisible();
