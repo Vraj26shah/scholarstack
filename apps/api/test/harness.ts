@@ -1,4 +1,5 @@
 import { memoryContainer } from '../src/composition/memory';
+import type { SmsVerifier } from '../src/domain/campus-ports';
 import type { Clock } from '../src/domain/ports';
 import { createApp } from '../src/http/app';
 
@@ -49,9 +50,16 @@ export class Browser {
   }
 }
 
-export function setup() {
+/** A fresh app on memory. opts.sms: the SMS service for phone codes (default none, so orders take a typed
+ *  number; phone-check tests pass the demo one). */
+export function setup(opts: { sms?: SmsVerifier } = {}) {
   const clock = new TestClock();
-  const env = memoryContainer({ seed: true, clock, pageProducer: async () => new Uint8Array([1, 2, 3]) });
+  const env = memoryContainer({
+    seed: true,
+    clock,
+    pageProducer: async () => new Uint8Array([1, 2, 3]),
+    sms: opts.sms,
+  });
   const app = createApp(() => env.container);
   return { clock, env, app };
 }

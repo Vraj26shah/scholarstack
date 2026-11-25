@@ -55,6 +55,7 @@ const newMess = (): MessInput => ({
   ownerEmails: [],
   ordersOpen: false,
   dailyOrderCap: 0,
+  offers: [],
   meals: DEFAULT_MEALS.hostel,
   weeks: [emptyWeek('Week 1')],
   cycleStart: campusClock(new Date()).date,

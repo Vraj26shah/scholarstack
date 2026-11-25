@@ -7,6 +7,7 @@ import type { Course } from '../tools/timetable/domain';
 import {
   PermissionRefused,
   type PushSupport,
+  PushUnavailable,
   browserSubscription,
   pushSupport,
   subscribeBrowser,
@@ -37,7 +38,9 @@ export type ReminderState =
   'hidden' | 'unconfigured' | PushSupport | 'on';
 
 const message = (e: unknown) =>
-  e instanceof ApiError ? e.message : "That didn't work. Check your connection and try again.";
+  e instanceof ApiError || e instanceof PushUnavailable
+    ? e.message
+    : "That didn't work. Check your connection and try again.";
 
 /** Everything a screen needs to offer, turn on, change and turn off reminders on this device. */
 export function useReminders() {

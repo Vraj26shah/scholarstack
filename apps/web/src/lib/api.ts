@@ -84,6 +84,7 @@ import type {
   HeartbeatDto,
   ImportCourseInput,
   ImportTreeDto,
+  InsightPeriod,
   MeDto,
   MoveCourseFolderInput,
   MoveCourseFolderResultDto,
@@ -91,8 +92,10 @@ import type {
   MySupportDto,
   OpenReaderDto,
   OrderDto,
+  OwnerInsightsDto,
   PackRunBody,
   PackRunDto,
+  PhoneStatusDto,
   PreviewPick,
   ProblemDto,
   PromoPayoutBody,
@@ -118,6 +121,7 @@ import type {
   SupportCreateInput,
   SupportQueryDto,
   SyncResultDto,
+  TiffinMarkInput,
 } from '@ss/contracts';
 import { TILE_SEED_HEADER, VIEWER_TOKEN_HEADER } from '@ss/contracts';
 import { env } from './env';
@@ -264,6 +268,20 @@ export class ApiClient {
   placeMessOrder = (slug: string, o: PlaceMessOrderInput) =>
     this.request<MessOrderDto>('POST', `/mess/${encodeURIComponent(slug)}/orders`, o);
   myMessOrders = () => this.request<MessOrderDto[]>('GET', '/me/mess-orders');
+  /** A restaurant page was opened (counted once per visitor per day for its owner). */
+  messView = (slug: string) => this.request<{ ok: true }>('POST', `/mess/${encodeURIComponent(slug)}/view`);
+  ownerInsights = (slug: string, period: InsightPeriod, date?: string) =>
+    this.request<OwnerInsightsDto>(
+      'GET',
+      `/owner/messes/${encodeURIComponent(slug)}/insights?period=${period}${date ? `&date=${date}` : ''}`,
+    );
+  // The student's mobile number, checked once with an SMS code
+  myPhone = () => this.request<PhoneStatusDto>('GET', '/me/phone');
+  sendPhoneCode = (phone: string) => this.request<PhoneStatusDto>('POST', '/me/phone/start', { phone });
+  checkPhoneCode = (phone: string, code: string) =>
+    this.request<PhoneStatusDto>('POST', '/me/phone/check', { phone, code });
+  adminResetPhone = (email: string) =>
+    this.request<{ found: boolean; phone: string | null }>('POST', '/admin/phones/reset', { email });
   cancelMessOrder = (id: string) =>
     this.request<MessOrderDto>('POST', `/me/mess-orders/${encodeURIComponent(id)}/cancel`);
   ownedMesses = () => this.request<OwnedMessDto[]>('GET', '/owner/messes');
@@ -363,6 +381,7 @@ export class ApiClient {
   }
   ownerCustomers = (slug: string) =>
     this.request<OwnerCustomerDto[]>('GET', `/owner/messes/${encodeURIComponent(slug)}/customers`);
+  ownerMarkTiffin = (m: TiffinMarkInput) => this.request<TiffinSheetDto>('PUT', '/owner/tiffin/marks', m);
   ownerTiffin = (slug: string, date?: string) =>
     this.request<TiffinSheetDto>(
       'GET',

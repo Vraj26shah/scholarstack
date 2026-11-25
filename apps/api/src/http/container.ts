@@ -20,6 +20,7 @@ import type { OfferService } from '../application/offer-service';
 import type { ChatService } from '../application/order-chat';
 import type { OrderService } from '../application/order-service';
 import type { PackService } from '../application/packs';
+import type { PhoneService } from '../application/phone-service';
 import type { PreviewService } from '../application/preview-service';
 import type { PriceBook } from '../application/price-book';
 import type { ProblemService } from '../application/problems';
@@ -70,6 +71,8 @@ export interface Container {
   reminders: ReminderService;
   /** Orders to restaurants for day scholars, and the owners' board. */
   orders: OrderService;
+  /** Students' mobile numbers, checked once with an SMS code. */
+  phones: PhoneService;
   /** The chat on each order (student ⇄ restaurant), blocks, reports, and the admin's view. */
   chats: ChatService;
   /** Admins and restaurant owners may sign in from outside the college domain. */

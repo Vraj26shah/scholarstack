@@ -1,7 +1,7 @@
 import { DAY_KEYS, MEAL_KEYS, type MealKey, campusClock, weekIndex } from '@ss/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { api } from '../../../lib/api';
 import { ErrorState, Skeleton } from '../../../shared/ui/feedback';
 import { MealReminderSwitch, MealReminders } from '../../reminders/meal-reminders';
@@ -80,6 +80,17 @@ export default function MessTool() {
     staleTime: 5 * 60_000,
   });
 
+  // Back from signing in (#order-slip) or a shared #order link: that part of the page, once it's there.
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (!mess.data || !hash || hash.length < 2) return;
+    const t = window.setTimeout(
+      () => document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView({ block: 'start' }),
+      200,
+    );
+    return () => window.clearTimeout(t);
+  }, [mess.data, hash]);
+
   useEffect(() => {
     if (focus && mess.data) document.getElementById(`meal-${focus}`)?.scrollIntoView({ block: 'center' });
   }, [focus, mess.data]);
@@ -87,10 +98,25 @@ export default function MessTool() {
   const pick = (s: string) => {
     setChoice(s);
     setDate(clock.date);
-    if (params.has('mess') || params.has('meal')) setParams({}, { replace: true });
+    // The address always names the chosen mess, so it can be copied and shared as it is.
+    if (params.get('mess') !== s || params.has('meal')) setParams({ mess: s }, { replace: true });
   };
 
+  // A mess chosen earlier on this device: put it in the address too (shareable, and a reload keeps it).
+  useEffect(() => {
+    if (slug && !linked) setParams((p) => ({ ...Object.fromEntries(p), mess: slug }), { replace: true });
+  }, [slug, linked, setParams]);
+
   const m = slug ? mess.data : undefined;
+  // A restaurant's page view, for its owner's insights: once per restaurant per day on this tab.
+  const viewed = m?.kind === 'restaurant' ? m.slug : null;
+  useEffect(() => {
+    if (!viewed) return;
+    const key = `ss_viewed_${viewed}_${clock.date}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    void api.messView(viewed).catch(() => {});
+  }, [viewed, clock.date]);
   const remindersFor = list.data?.find((x) => x.slug === reminders.mess.slug)?.name;
   const week = m ? weekIndex(m.cycleStart, clock.date, m.weeks.length) : 0;
 

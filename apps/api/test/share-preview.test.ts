@@ -1,7 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { bundleMeta, courseMeta, isShareBot, sharedItem, withShareMeta } from '../src/http/share-preview';
+import {
+  bundleMeta,
+  courseMeta,
+  isShareBot,
+  messMeta,
+  sharedApiPath,
+  sharedItem,
+  sharedPagePath,
+  withShareMeta,
+} from '../src/http/share-preview';
 import { Browser, setup } from './harness';
 
 const INDEX = readFileSync(join(__dirname, '../../web/index.html'), 'utf8');
@@ -32,8 +41,24 @@ describe('link previews for shared course and bundle links', () => {
   it('only course and bundle pages are rewritten', () => {
     expect(sharedItem('/c/dbms-2025-cse-core')).toEqual({ kind: 'course', slug: 'dbms-2025-cse-core' });
     expect(sharedItem('/b/pack-2026-bcy/')).toEqual({ kind: 'bundle', slug: 'pack-2026-bcy' });
-    for (const p of ['/', '/shelf', '/c/', '/c/x/y', '/read/abc', '/c/<script>'])
+    expect(sharedItem('/m/Radha-Rani-Dhaba')).toEqual({ kind: 'mess', slug: 'radha-rani-dhaba' });
+    expect(sharedApiPath({ kind: 'mess', slug: 'x' })).toBe('/api/mess/x');
+    expect(sharedPagePath({ kind: 'mess', slug: 'x' })).toBe('/m/x');
+    for (const p of ['/', '/shelf', '/c/', '/c/x/y', '/m/', '/read/abc', '/c/<script>'])
       expect(sharedItem(p)).toBeNull();
+  });
+
+  it('a shared restaurant link names the restaurant and says it takes orders', () => {
+    const html = withShareMeta(
+      INDEX,
+      messMeta(
+        { name: 'Radha Rani Ka Dhaba', kind: 'restaurant', place: 'Kothri', ordersOpen: true, prices: '' },
+        'https://example.test/m/radha',
+      ),
+    );
+    expect(tag(html, 'og:title')).toBe('Radha Rani Ka Dhaba · Kothri · menu &amp; ordering');
+    expect(tag(html, 'og:description')).toContain('ordering');
+    expect(tag(html, 'og:url')).toBe('https://example.test/m/radha');
   });
 
   it('a shared course shows its own title, price and description; a bundle its courses and saving', async () => {

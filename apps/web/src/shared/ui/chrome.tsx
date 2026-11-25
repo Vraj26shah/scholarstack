@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { signInPath } from '../../lib/return-to';
 import { useSession } from '../../lib/session';
 import { LABEL } from '../copy';
 import { StackWord, Wordmark } from './brand';
@@ -66,6 +67,7 @@ function useMyOrderCount(enabled: boolean) {
 
 export function Header({ onDark = false }: { onDark?: boolean }) {
   const { status, me } = useSession();
+  const location = useLocation();
   const owner = useRunsRestaurant(status === 'ready' && me && !me.isAdmin ? me.id : null);
   const myOrders = useMyOrderCount(status === 'ready' && !!me && !owner);
   const link = `no-underline font-medium ${onDark ? 'text-white' : 'text-ink'} hover:opacity-80`;
@@ -148,7 +150,11 @@ export function Header({ onDark = false }: { onDark?: boolean }) {
             {initials(me.email, me.fullName)}
           </Link>
         ) : status === 'signed-out' || status === 'unavailable' ? (
-          <LinkButton to="/sign-in" variant={onDark ? 'mist' : 'brand'} className="!px-4 sm:!px-5">
+          <LinkButton
+            to={signInPath(`${location.pathname}${location.search}${location.hash}`)}
+            variant={onDark ? 'mist' : 'brand'}
+            className="!px-4 sm:!px-5"
+          >
             Sign in
           </LinkButton>
         ) : (

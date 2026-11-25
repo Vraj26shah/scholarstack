@@ -4,6 +4,12 @@ Status as of 23 Oct 2026 (v0.7.0). **Me** = built here. **You** = an account ste
 Everything marked done is covered by an automated test (see QA_REPORT.md).
 
 ## Done
+- [x] 0.42.0 · Tiffin delivered/missed marks with 4-day make-ups, phone cart screen, easier owner phone box
+- [x] 0.41.0 · Owner Insights (day/week/month/year, chart + table, views/visitors, dishes, offers, hours, customers), restaurant offers (codes, deals, combos, server-priced), cancel at any step, demo history for sales demos
+- [ ] 0.41.0 · **You:** deploy so migrations `20261125000500`–`20261125000800` apply, then open My restaurant › Insights and Offers on the live site
+- [x] 0.40.0 · Sign-in popup for pages and actions that need an account, return to the exact page (also from the emailed link), cart kept across sign-in and always visible, easy mobile number box, owner dashboard swipe tabs + one board list at a time on phones, cancel notice on the board, notification queue and tap-to-open in open tabs
+- [x] 0.39.0 · Mobile numbers checked by SMS code and locked once verified (admin reset), /m/<slug> link + Share for every mess/restaurant (with link previews), loud owner alert on a student cancel and on auto-cancel, chat notifications stack the conversation, real reason when Turn on alerts fails, no scrollbar arrows on the owner tabs
+- [ ] 0.39.0 · **On hold (user, 25 Nov):** SMS codes. Later: Supabase phone change + Send SMS hook to an Android SIM gateway, or a 2Factor.in account (or Twilio Verify), put `TWOFACTOR_API_KEY` in .env and run `pnpm github:secrets`, then deploy (migration `20261125000500_user_phones` applies with it). Until then ordering keeps the tick box
 - [x] 0.38.0 · Mess menu as a ruled table, reminders by ticked dish (every dish / only ticked), on/off switch at the top of Mess menu and Timetable, reminders-off keeps order alerts, admin edits menu card + week chart inline, daily order limit, owners on unlimited devices
 - [x] 0.37.0 · Order chat (photos, quick replies, read ticks, unread badges, Call), per-side clear + admin clear for everyone, owner block/unblock, reports to admin, new-order alarm every minute, 3-min alert + WhatsApp nudge, 10-min auto-cancel, push for every message, live updates, public reply time, /my-orders, Admin › Orders & chats; notifications root cause fixed (failed deploy kept VAPID keys off the Worker)
 - [x] 0.37.0 · Migration `20261125000100_order_chat` applied by the deploy; live `/api/push/status` says `"configured": true` (25 Nov)

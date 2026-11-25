@@ -3,12 +3,15 @@ import {
   type MessDto,
   type MessOrderDto,
   type MessOrderStatus,
+  OPEN_MESS_ORDER,
   ORDER_TIMERS,
   type OwnedMessDto,
   type OwnerMessInput,
+  TIFFIN_MAKEUP_DAYS,
   TIFFIN_PLAN_TEXT,
   type TiffinRowDto,
   formatMobile,
+  offerProblem,
 } from '@ss/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -18,13 +21,17 @@ import { Button } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { Bell, Phone } from '../../shared/ui/icons';
+import { useSectionSwipe } from '../../shared/ui/swipe';
 import { useAccountAlerts } from '../chat/alerts';
 import { useLive, usePushWhileOpen } from '../chat/live';
 import { ChatButton, OrderChat } from '../chat/order-chat';
 import { DetailsEditor } from '../restaurant/details-editor';
+import { InsightsTab } from '../restaurant/insights-tab';
 import { MenuCardEditor, menuCardProblems } from '../restaurant/menu-card-editor';
+import { OffersEditor } from '../restaurant/offers-editor';
 import { rupees } from '../restaurant/shared';
 import { WeekChartEditor } from '../restaurant/week-chart-editor';
+import { RestaurantLink } from '../tools/mess/components/share-link';
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
@@ -63,6 +70,8 @@ const COLUMNS: { status: MessOrderStatus; title: string; empty: string }[] = [
 ];
 
 const DECLINE = ['Sold out', 'Closed now', 'Too far to deliver'];
+/** Cancelling after accepting: the usual reasons. */
+const CANCEL = ['Ran out of an item', 'Kitchen closed', "Can't deliver now", "Couldn't reach you"];
 const ACCEPT = ['Ready in 15 min', 'Ready in 30 min'];
 
 /** One kitchen ticket: what, for whom, the student's number, and the next step. */
@@ -126,8 +135,14 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
       {order.note && (
         <p className="m-0 border-l-[3px] border-marigold pl-2 text-[14px] text-ink">“{order.note}”</p>
       )}
+      {order.discount > 0 && (
+        <div className="flex justify-between text-[14px] text-teal-text">
+          <span>🏷️ Offer {order.offer}</span>
+          <span className="tabular-nums font-semibold">−{rupees(order.discount)}</span>
+        </div>
+      )}
       <div className="flex justify-between border-t border-dashed border-ink2/40 pt-2 text-[16px] font-bold text-ink">
-        <span>Total</span>
+        <span>{order.discount > 0 ? 'To collect' : 'Total'}</span>
         <span className="tabular-nums">{rupees(order.total)}</span>
       </div>
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -193,7 +208,7 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
           </div>
         </div>
       )}
-      {order.status === 'placed' && declining && (
+      {declining && (
         <form
           className="flex flex-col gap-2"
           onSubmit={(e) => {
@@ -201,9 +216,11 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
             if (reason.trim().length >= 3) move.mutate({ status: 'rejected', note: reason.trim() });
           }}
         >
-          <span className="text-[13px] font-semibold text-ink2">Tell the student why</span>
+          <span className="text-[13px] font-semibold text-ink2">
+            {order.status === 'placed' ? 'Tell the student why' : 'Cancel this order? Tell the student why'}
+          </span>
           <div className="flex flex-wrap gap-1.5">
-            {DECLINE.map((r) => (
+            {(order.status === 'placed' ? DECLINE : CANCEL).map((r) => (
               <button
                 key={r}
                 type="button"
@@ -225,7 +242,7 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
           />
           <div className="flex gap-2">
             <Button type="submit" variant="ink" disabled={reason.trim().length < 3 || move.isPending}>
-              Decline order
+              {order.status === 'placed' ? 'Decline order' : 'Cancel order'}
             </Button>
             <Button variant="ghost" onClick={() => setDeclining(false)}>
               Back
@@ -233,7 +250,7 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
           </div>
         </form>
       )}
-      {order.status === 'accepted' && (
+      {order.status === 'accepted' && !declining && (
         <Button
           disabled={move.isPending}
           onClick={() => move.mutate({ status: 'ready', note: order.ownerNote })}
@@ -241,7 +258,7 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
           {order.mode === 'delivery' ? 'Ready · out for delivery' : 'Ready for pickup'}
         </Button>
       )}
-      {order.status === 'ready' && (
+      {order.status === 'ready' && !declining && (
         <Button
           variant="ink"
           disabled={move.isPending}
@@ -249,6 +266,18 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
         >
           {order.mode === 'delivery' ? 'Delivered' : 'Picked up'}
         </Button>
+      )}
+      {(order.status === 'accepted' || order.status === 'ready') && !declining && (
+        <button
+          type="button"
+          onClick={() => {
+            setReason('');
+            setDeclining(true);
+          }}
+          className="self-start border-0 bg-transparent p-0 text-[13.5px] font-semibold text-blush-text underline underline-offset-4 cursor-pointer"
+        >
+          Cancel this order
+        </button>
       )}
     </article>
   );
@@ -307,22 +336,33 @@ function Board({
   onChat: (id: string) => void;
 }) {
   const [sound, setSound] = useState(() => localStorage.getItem('ss_owner_sound') === '1');
-  const seen = useRef<Set<string> | null>(null);
+  // Each order's last known status: new orders light up, and a cancellation by the student (or the
+  // 10-minute timer) is announced on the board, so nobody cooks a cancelled order. Several
+  // arriving in one refresh are all handled together (one chime, every one listed).
+  const seen = useRef<Map<string, MessOrderStatus> | null>(null);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
+  const [cancelled, setCancelled] = useState<MessOrderDto[]>([]);
   useEffect(() => {
     if (!orders.data) return;
-    const ids = new Set(orders.data.map((o) => o.id));
-    if (seen.current) {
-      const added = orders.data
-        .filter((o) => o.status === 'placed' && !seen.current!.has(o.id))
-        .map((o) => o.id);
-      if (added.length) {
-        setFresh(new Set(added));
-        if (sound) chime();
-      }
-    }
-    seen.current = ids;
+    const before = seen.current;
+    seen.current = new Map(orders.data.map((o) => [o.id, o.status]));
+    if (!before) return;
+    const added = orders.data.filter((o) => o.status === 'placed' && !before.has(o.id)).map((o) => o.id);
+    const gone = orders.data.filter(
+      (o) =>
+        o.status === 'cancelled' &&
+        o.endedBy !== 'owner' &&
+        OPEN_MESS_ORDER.includes(before.get(o.id) ?? 'done'),
+    );
+    if (added.length) setFresh((f) => new Set([...f, ...added]));
+    if (gone.length)
+      setCancelled((c) => [...gone, ...c.filter((x) => !gone.some((g) => g.id === x.id))].slice(0, 5));
+    if ((added.length || gone.length) && sound) chime();
   }, [orders.data, sound]);
+  // Phones show one column at a time: the first one with something in it.
+  const [col, setCol] = useState<MessOrderStatus | null>(null);
+  const countOf = (st: MessOrderStatus) => (orders.data ?? []).filter((o) => o.status === st).length;
+  const shownCol = col ?? COLUMNS.find((c) => countOf(c.status) > 0)?.status ?? 'placed';
 
   // Until every new order is accepted or declined: the alarm again every minute.
   const waiting = (orders.data ?? []).some((o) => o.status === 'placed');
@@ -371,6 +411,29 @@ function Board({
         </label>
       </div>
       <AlertsCard />
+      {cancelled.length > 0 && (
+        <div
+          role="alert"
+          className="flex flex-col gap-2 rounded-2xl bg-blush px-4 py-3 text-[15px] text-blush-text"
+        >
+          {cancelled.map((o) => (
+            <p key={o.id} className="m-0 flex flex-wrap items-center justify-between gap-2">
+              <span>
+                <strong>❌ Order {o.code} was cancelled</strong>
+                {o.endedBy === 'student' ? ` by ${o.name}` : ' (no answer in 10 minutes)'}. Don't make it:{' '}
+                {o.lines.map((l) => `${l.qty}× ${l.name}`).join(', ')}.
+              </span>
+              <button
+                type="button"
+                onClick={() => setCancelled((c) => c.filter((x) => x.id !== o.id))}
+                className="press h-9 rounded-full border-[1.5px] border-current bg-transparent px-3.5 text-[13.5px] font-semibold text-current cursor-pointer"
+              >
+                Got it
+              </button>
+            </p>
+          ))}
+        </div>
+      )}
       {!mess.ordersOpen && (
         <p className="m-0 rounded-2xl bg-marigold-soft px-4 py-3 text-[15px] text-marigold-text">
           <strong>You're not taking orders on the site.</strong> Students see your menu and prices and can
@@ -388,6 +451,36 @@ function Board({
         />
       ) : (
         <div className="grid gap-6 lg:grid-cols-3 items-start">
+          {/* Phones: New · Making · Ready as a switch, one list at a time (no endless scroll). */}
+          <div
+            role="tablist"
+            aria-label="Order lists"
+            className="lg:hidden sticky top-0 z-20 -mx-4 px-4 py-2 bg-bg/95 backdrop-blur grid grid-cols-3 gap-1.5"
+          >
+            {COLUMNS.map((c) => {
+              const n = countOf(c.status);
+              const on = shownCol === c.status;
+              return (
+                <button
+                  key={c.status}
+                  type="button"
+                  role="tab"
+                  aria-selected={on}
+                  onClick={() => setCol(c.status)}
+                  className={`press h-11 rounded-full text-[14.5px] font-semibold border-[1.5px] cursor-pointer ${
+                    on ? 'bg-ink text-bg border-ink' : 'bg-transparent text-ink border-line'
+                  }`}
+                >
+                  {c.title}{' '}
+                  <span
+                    className={`tabular-nums ${c.status === 'placed' && n > 0 && !on ? 'rounded-full bg-marigold px-1.5 text-on-marigold' : 'opacity-70'}`}
+                  >
+                    {n}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
           {COLUMNS.map((col) => {
             const list = (orders.data ?? [])
               .filter((o) => o.status === col.status)
@@ -396,7 +489,7 @@ function Board({
               <section
                 key={col.status}
                 aria-labelledby={`col-${col.status}`}
-                className="flex flex-col gap-3 min-w-0"
+                className={`flex flex-col gap-3 min-w-0 ${shownCol === col.status ? '' : 'max-lg:hidden'}`}
               >
                 <h2
                   id={`col-${col.status}`}
@@ -483,41 +576,117 @@ const shiftDay = (iso: string, n: number) => {
 };
 
 /** One person on the delivery sheet: where it goes, who, their number, chat. */
-function TiffinRow({ r, onChat }: { r: TiffinRowDto; onChat: (id: string) => void }) {
+/** One tiffin meal on the day's sheet: who, where, and Delivered / Missed in one tap. */
+function TiffinRow({
+  r,
+  date,
+  onChat,
+  onMark,
+  busy,
+}: {
+  r: TiffinRowDto;
+  date: string;
+  onChat: (id: string) => void;
+  onMark: (r: TiffinRowDto, status: 'delivered' | 'missed' | 'clear') => void;
+  busy: boolean;
+}) {
+  const makeup = !!r.makeupFor;
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3">
-      <div className="flex-1 min-w-[200px]">
-        <p className="m-0 text-[15px] font-semibold text-ink">
-          {r.mode === 'delivery' ? r.address || 'Delivery' : 'Pickup at the counter'}
-        </p>
-        <p className="m-0 text-[13.5px] text-ink2">
-          {r.name} · <span className="tabular-nums">{formatMobile(r.phone)}</span> ·{' '}
-          {TIFFIN_PLAN_TEXT[r.plan]} · till {dayLabel(r.endsOn)}
-          {r.note ? ` · “${r.note}”` : ''}
-        </p>
+    <li
+      className={`flex flex-col gap-2.5 py-3.5 ${r.mark === 'delivered' ? 'opacity-70' : ''}`}
+      aria-label={`${r.name}, ${r.meal}${makeup ? ' make-up' : ''}`}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="m-0 text-[15.5px] font-semibold text-ink">
+            {r.name}
+            {makeup && (
+              <span className="ml-2 rounded-full bg-marigold-soft px-2 py-0.5 text-[12px] font-semibold text-marigold-text">
+                Make-up · missed {dayLabel(r.makeupFor)}
+              </span>
+            )}
+          </p>
+          <p className="m-0 text-[13.5px] text-ink2">
+            {r.mode === 'delivery' ? r.address || 'Delivery' : 'Pickup at the counter'} ·{' '}
+            {makeup ? `give by ${dayLabel(r.makeupUntil)}` : `plan till ${dayLabel(r.endsOn)}`}
+            {r.note ? ` · “${r.note}”` : ''}
+          </p>
+        </div>
+        <a
+          href={`tel:+91${r.phone}`}
+          aria-label={`Call ${r.name}`}
+          className="grid place-items-center w-10 h-10 shrink-0 rounded-full border-[1.5px] border-line text-ink no-underline hover:border-ink2"
+        >
+          <Phone size={16} />
+        </a>
+        <ChatButton
+          unread={r.unread}
+          onClick={() => onChat(r.orderId)}
+          className="h-10 px-3 text-[13px] shrink-0"
+        />
       </div>
-      <a
-        href={`tel:+91${r.phone}`}
-        aria-label={`Call ${r.name}`}
-        className="grid place-items-center w-9 h-9 rounded-full border-[1.5px] border-line text-ink no-underline hover:border-ink2"
-      >
-        <Phone size={16} />
-      </a>
-      <ChatButton unread={r.unread} onClick={() => onChat(r.orderId)} className="h-9 px-3 text-[13px]" />
+      <div className="grid grid-cols-2 gap-2 print:hidden">
+        <button
+          type="button"
+          disabled={busy || date > todayIso()}
+          aria-pressed={r.mark === 'delivered'}
+          onClick={() => onMark(r, r.mark === 'delivered' ? 'clear' : 'delivered')}
+          className={`press h-11 rounded-xl border-[1.5px] text-[14.5px] font-semibold cursor-pointer disabled:opacity-40 ${
+            r.mark === 'delivered' ? 'border-teal bg-teal text-white' : 'border-line bg-surface text-ink'
+          }`}
+        >
+          {r.mark === 'delivered' ? '✓ Delivered' : 'Delivered'}
+        </button>
+        {makeup ? (
+          <span className="grid place-items-center text-[13px] text-ink2 text-center">
+            {r.mark === 'delivered' ? 'Made up' : 'Not given yet'}
+          </span>
+        ) : (
+          <button
+            type="button"
+            disabled={busy || date > todayIso()}
+            aria-pressed={r.mark === 'missed'}
+            onClick={() => onMark(r, r.mark === 'missed' ? 'clear' : 'missed')}
+            className={`press h-11 rounded-xl border-[1.5px] text-[14.5px] font-semibold cursor-pointer disabled:opacity-40 ${
+              r.mark === 'missed'
+                ? 'border-blush-text bg-blush text-blush-text'
+                : 'border-line bg-surface text-ink'
+            }`}
+          >
+            {r.mark === 'missed' ? '✗ Missed' : 'Missed'}
+          </button>
+        )}
+      </div>
     </li>
   );
 }
 
+const todayIso = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
 /**
  * The tiffin sheet: for any day, who gets lunch and who gets dinner (by address, so a delivery
- * round is easy), plans ending soon, and how many wait to be accepted. Prints cleanly.
+ * round is easy). Each meal is marked Delivered or Missed in one tap; a missed meal can be made up
+ * within the next 4 days and shows under "Make-up meals" until then.
  */
 function TiffinSheet({ mess, onChat }: { mess: OwnedMessDto; onChat: (id: string) => void }) {
+  const qc = useQueryClient();
   const [date, setDate] = useState<string | undefined>(undefined);
+  const key = ['owner-tiffin', mess.slug, date ?? 'today'];
   const q = useQuery({
-    queryKey: ['owner-tiffin', mess.slug, date ?? 'today'],
+    queryKey: key,
     queryFn: () => api.ownerTiffin(mess.slug, date),
     refetchInterval: 60_000,
+  });
+  const mark = useMutation({
+    mutationFn: ({ r, status }: { r: TiffinRowDto; status: 'delivered' | 'missed' | 'clear' }) =>
+      api.ownerMarkTiffin({
+        orderId: r.orderId,
+        day: q.data!.date,
+        meal: r.meal,
+        status,
+        makeupFor: r.makeupFor,
+      }),
+    onSuccess: (sheet) => qc.setQueryData(key, sheet),
   });
   if (q.isLoading) return <Skeleton className="h-48" />;
   if (q.isError || !q.data)
@@ -532,12 +701,22 @@ function TiffinSheet({ mess, onChat }: { mess: OwnedMessDto; onChat: (id: string
   const list = (title: string, rows: TiffinRowDto[], empty: string) => (
     <section aria-label={title} className="flex flex-col min-w-0">
       <h2 className="m-0 flex items-baseline gap-2 border-b-2 border-ink pb-1.5 text-[13px] font-semibold uppercase tracking-[0.12em] text-ink">
-        {title} <span className="tabular-nums text-ink2">{rows.length}</span>
+        {title}
+        <span className="tabular-nums text-ink2">
+          {rows.filter((r) => r.mark === 'delivered').length}/{rows.length} delivered
+        </span>
       </h2>
       {rows.length ? (
         <ul className="m-0 p-0 list-none divide-y divide-line">
           {rows.map((r) => (
-            <TiffinRow key={r.orderId} r={r} onChat={onChat} />
+            <TiffinRow
+              key={`${r.orderId}-${r.meal}-${r.makeupFor}`}
+              r={r}
+              date={s.date}
+              onChat={onChat}
+              busy={mark.isPending}
+              onMark={(row, status) => mark.mutate({ r: row, status })}
+            />
           ))}
         </ul>
       ) : (
@@ -574,26 +753,37 @@ function TiffinSheet({ mess, onChat }: { mess: OwnedMessDto; onChat: (id: string
           </Button>
         </div>
         <p className="m-0 font-display text-[24px] font-bold text-ink">{dayLabel(s.date)}</p>
-        <dl className="m-0 flex gap-8 sm:ml-auto">
-          <div>
-            <dt className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink2">Active plans</dt>
-            <dd className="m-0 font-display text-[30px] leading-none font-extrabold tabular-nums">
-              {s.active}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink2">To accept</dt>
-            <dd
-              className={`m-0 font-display text-[30px] leading-none font-extrabold tabular-nums ${s.waiting ? 'text-marigold-text' : ''}`}
-            >
-              {s.waiting}
-            </dd>
-          </div>
-        </dl>
-        <Button size="sm" variant="outline" className="print:hidden" onClick={() => window.print()}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="print:hidden sm:ml-auto"
+          onClick={() => window.print()}
+        >
           Print the list
         </Button>
       </div>
+      <dl className="m-0 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4">
+        {(
+          [
+            ['Active plans', s.active, ''],
+            ['Delivered', s.counts.delivered, 'text-teal-text'],
+            ['Still to do', s.counts.pending, s.counts.pending ? 'text-marigold-text' : ''],
+            ['Missed', s.counts.missed, s.counts.missed ? 'text-blush-text' : ''],
+          ] as const
+        ).map(([label, n, tone]) => (
+          <div key={label} className="border-t-2 border-ink pt-2">
+            <dt className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink2">{label}</dt>
+            <dd className={`m-0 font-display text-[30px] leading-none font-extrabold tabular-nums ${tone}`}>
+              {n}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {mark.error && (
+        <p role="alert" className="m-0 text-[14px] text-blush-text">
+          {friendly(mark.error)}
+        </p>
+      )}
       {s.waiting > 0 && (
         <p className="m-0 rounded-2xl bg-marigold-soft px-4 py-3 text-[15px] text-marigold-text">
           <strong>
@@ -602,11 +792,43 @@ function TiffinSheet({ mess, onChat }: { mess: OwnedMessDto; onChat: (id: string
           waiting on the Orders tab. Accept to start {s.waiting === 1 ? 'it' : 'them'}.
         </p>
       )}
+      {s.makeups.length > 0 && (
+        <section
+          aria-label="Make-up meals"
+          className="flex flex-col min-w-0 rounded-2xl bg-marigold-soft/50 px-4 py-3"
+        >
+          <h2 className="m-0 text-[13px] font-semibold uppercase tracking-[0.12em] text-marigold-text">
+            Make-up meals · {s.makeups.length}
+          </h2>
+          <p className="m-0 mt-1 text-[13.5px] text-ink2">
+            Meals missed in the last {TIFFIN_MAKEUP_DAYS} days. Give one as an extra and mark it Delivered;
+            after its date it lapses.
+          </p>
+          <ul className="m-0 p-0 list-none divide-y divide-line">
+            {s.makeups.map((r) => (
+              <TiffinRow
+                key={`${r.orderId}-${r.meal}-${r.makeupFor}`}
+                r={r}
+                date={s.date}
+                onChat={onChat}
+                busy={mark.isPending}
+                onMark={(row, status) => mark.mutate({ r: row, status })}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
       <div className="grid gap-8 lg:grid-cols-2 items-start">
         {list('Lunch', s.lunch, 'No lunch tiffins on this day.')}
         {list('Dinner', s.dinner, 'No dinner tiffins on this day.')}
       </div>
-      {s.ending.length > 0 && list('Ending in the next 3 days', s.ending, '')}
+      {s.ending.length > 0 && (
+        <p className="m-0 text-[14px] text-ink2">
+          <strong className="text-ink">Ending in the next 3 days:</strong>{' '}
+          {s.ending.map((r) => `${r.name} (${dayLabel(r.endsOn)})`).join(', ')}. A good time to ask about
+          renewing.
+        </p>
+      )}
       {!s.active && !s.waiting && (
         <p className="m-0 text-[15px] text-ink2 max-w-[640px]">
           No tiffin plans yet. Mark your tiffin dish as <strong>Monthly tiffin plan</strong> in the Menu card;
@@ -802,12 +1024,27 @@ function OpenSwitch({ mess }: { mess: OwnedMessDto }) {
   );
 }
 
-type Tab = 'orders' | 'tiffin' | 'customers' | 'menu' | 'week' | 'details' | 'blocked';
+type Tab =
+  | 'orders'
+  | 'insights'
+  | 'tiffin'
+  | 'customers'
+  | 'menu'
+  | 'offers'
+  | 'week'
+  | 'details'
+  | 'blocked';
+/** The tabs that share one unsaved draft (Editors). */
+const EDITOR_TABS: Tab[] = ['menu', 'offers', 'week', 'details'];
+/** Whether that draft has changes not saved yet (read when leaving those tabs). */
+const editorsDirty = { current: false };
 const TABS: [Tab, string][] = [
   ['orders', 'Orders'],
+  ['insights', 'Insights'],
   ['tiffin', 'Tiffin'],
   ['customers', 'Customers'],
   ['menu', 'Menu card'],
+  ['offers', 'Offers'],
   ['week', 'Weekly menu'],
   ['details', 'Details & timings'],
   ['blocked', 'Blocked'],
@@ -825,6 +1062,7 @@ const toForm = (m: MessDto): OwnerMessInput => ({
   weeks: m.weeks,
   cycleStart: m.cycleStart,
   dailyOrderCap: m.dailyOrderCap ?? 0,
+  offers: m.offers ?? [],
 });
 
 /**
@@ -834,7 +1072,7 @@ const toForm = (m: MessDto): OwnerMessInput => ({
 function Editors({
   tab,
   mess,
-}: { tab: Exclude<Tab, 'orders' | 'blocked' | 'tiffin' | 'customers'>; mess: OwnedMessDto }) {
+}: { tab: Exclude<Tab, 'orders' | 'insights' | 'blocked' | 'tiffin' | 'customers'>; mess: OwnedMessDto }) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['owner-mess', mess.slug], queryFn: () => api.ownerMess(mess.slug) });
   const [draft, setDraft] = useState<OwnerMessInput | null>(null);
@@ -848,6 +1086,12 @@ function Editors({
   };
 
   useEffect(() => {
+    editorsDirty.current = dirty;
+    return () => {
+      editorsDirty.current = false;
+    };
+  }, [dirty]);
+  useEffect(() => {
     if (!dirty) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener('beforeunload', warn);
@@ -857,6 +1101,15 @@ function Editors({
   const problems = form
     ? [
         ...menuCardProblems(form.order),
+        ...(form.offers ?? [])
+          .map((o) =>
+            offerProblem(
+              o,
+              form.order.flatMap((x) => x.items),
+            ),
+          )
+          .filter(Boolean)
+          .map((m) => `${m} (Offers)`),
         ...(form.name.trim().length < 2 ? ['Give your restaurant a name (Details).'] : []),
         ...(form.meals.some((m) => m.start >= m.end) ? ['A meal ends before it starts (Details).'] : []),
         ...(form.phone && !/^\+?\d[\d ]{6,17}$/.test(form.phone.trim())
@@ -892,6 +1145,9 @@ function Editors({
         <WeekChartEditor meals={form.meals} weeks={form.weeks} cycleStart={form.cycleStart} onChange={set} />
       )}
       {tab === 'details' && <DetailsEditor form={form} onChange={set} />}
+      {tab === 'offers' && (
+        <OffersEditor offers={form.offers ?? []} order={form.order} onChange={(offers) => set({ offers })} />
+      )}
 
       {(dirty || saved || save.error) && (
         <div
@@ -955,7 +1211,18 @@ export function OrdersPage() {
   const pickSlug = params.get('mess');
   const mess = owned.data?.find((m) => m.slug === pickSlug) ?? owned.data?.[0];
   const chatId = params.get('chat');
-  const go = (next: { tab?: Tab; mess?: string; chat?: string | null }) =>
+  const go = (next: { tab?: Tab; mess?: string; chat?: string | null }) => {
+    // Leaving the editing tabs with changes not saved: ask first (a swipe is easy to make).
+    const leavingEditors =
+      EDITOR_TABS.includes(tab) &&
+      ((next.tab && !EDITOR_TABS.includes(next.tab)) || (next.mess && next.mess !== mess?.slug));
+    if (
+      leavingEditors &&
+      editorsDirty.current &&
+      !window.confirm('You have changes that are not saved. Leave without saving?')
+    )
+      return;
+    if (leavingEditors) editorsDirty.current = false;
     setParams(
       {
         ...((next.mess ?? mess?.slug) ? { mess: next.mess ?? mess!.slug } : {}),
@@ -964,6 +1231,22 @@ export function OrdersPage() {
       },
       { replace: true },
     );
+  };
+  // Phones: swipe left or right to the next or previous tab, like the admin pages.
+  const at = TABS.findIndex(([k]) => k === tab);
+  useSectionSwipe({
+    enabled: !!mess && !chatId,
+    target: 'owner-panel',
+    ...(at < TABS.length - 1 ? { onNext: () => go({ tab: TABS[at + 1]![0] }) } : {}),
+    ...(at > 0 ? { onPrev: () => go({ tab: TABS[at - 1]![0] }) } : {}),
+  });
+  // The chosen tab stays in sight in the sideways-scrolling row.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the chosen tab changes.
+  useEffect(() => {
+    document
+      .querySelector('[aria-label="Dashboard"] [aria-selected="true"]')
+      ?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }, [tab]);
 
   const orders = useOwnerOrders(mess?.slug ?? '', mess?.topic);
   const placed = orders.data?.filter((o) => o.status === 'placed').length ?? 0;
@@ -1024,6 +1307,7 @@ export function OrdersPage() {
                 >
                   View my page as students see it ↗
                 </Link>
+                <RestaurantLink slug={mess.slug} name={mess.name} />
               </div>
               <OpenSwitch mess={mess} />
             </header>
@@ -1031,7 +1315,8 @@ export function OrdersPage() {
             <div
               role="tablist"
               aria-label="Dashboard"
-              className="flex gap-1 overflow-x-auto -mx-1 px-1 border-b border-line"
+              data-swipe-through
+              className="flex gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden -mx-1 px-1 border-b border-line max-sm:-mx-5 max-sm:px-5 max-sm:[mask-image:linear-gradient(to_right,transparent,black_16px,black_calc(100%-16px),transparent)]"
             >
               {TABS.map(([k, label]) => (
                 <button
@@ -1059,17 +1344,21 @@ export function OrdersPage() {
               ))}
             </div>
 
-            {tab === 'orders' ? (
-              <Board key={mess.slug} mess={mess} orders={orders} onChat={(id) => go({ chat: id })} />
-            ) : tab === 'blocked' ? (
-              <BlockedList key={mess.slug} mess={mess} />
-            ) : tab === 'tiffin' ? (
-              <TiffinSheet key={mess.slug} mess={mess} onChat={(id) => go({ chat: id })} />
-            ) : tab === 'customers' ? (
-              <Customers key={mess.slug} mess={mess} onChat={(id) => go({ chat: id })} />
-            ) : (
-              <Editors key={mess.slug} tab={tab} mess={mess} />
-            )}
+            <div id="owner-panel" className="min-w-0">
+              {tab === 'orders' ? (
+                <Board key={mess.slug} mess={mess} orders={orders} onChat={(id) => go({ chat: id })} />
+              ) : tab === 'insights' ? (
+                <InsightsTab key={mess.slug} mess={mess} />
+              ) : tab === 'blocked' ? (
+                <BlockedList key={mess.slug} mess={mess} />
+              ) : tab === 'tiffin' ? (
+                <TiffinSheet key={mess.slug} mess={mess} onChat={(id) => go({ chat: id })} />
+              ) : tab === 'customers' ? (
+                <Customers key={mess.slug} mess={mess} onChat={(id) => go({ chat: id })} />
+              ) : (
+                <Editors key={mess.slug} tab={tab} mess={mess} />
+              )}
+            </div>
             {chatId && <OrderChat orderId={chatId} asOwner onClose={() => go({ chat: null })} />}
           </>
         )}

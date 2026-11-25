@@ -4,12 +4,16 @@ import {
   ChatMessageBody,
   ChatReportBody,
   ChatReportStatusBody,
+  INSIGHT_PERIODS,
+  type InsightPeriod,
   MESS_PHOTO_MAX_BYTES,
   MessOrderStatusBody,
   MessOrdersOpenBody,
   MessReportBody,
   MessReportStatusBody,
   OwnerMessBody,
+  PhoneCheckBody,
+  PhoneStartBody,
   PlaceMessOrderBody,
   PushAccountBody,
   PushEndpointBody,
@@ -18,6 +22,7 @@ import {
   PushSubscribeBody,
   PushTestBody,
   SaveMessBody,
+  TiffinMarkBody,
 } from '@ss/contracts';
 import { type Context, Hono } from 'hono';
 import { fail } from '../../application/errors';
@@ -70,6 +75,35 @@ campusRoutes.get('/mess/:slug', async (c) => {
   return c.json(await c.get('container').mess.get(c.req.param('slug'), await callerIsAdmin(c)));
 });
 
+/** A restaurant page was opened (once per visitor per day, from the page): its owner's view count. */
+campusRoutes.post('/mess/:slug/view', async (c) => {
+  const { ipHash } = await requestMeta(c);
+  await throttle(c, 'mess-view', ipHash);
+  const principal = await maybeSignedIn(c);
+  const k = c.get('container');
+  await k.orders
+    .recordView(c.req.param('slug'), principal, await callerIsAdmin(c, principal), ipHash)
+    .catch(() => {});
+  return c.json({ ok: true });
+});
+
+/** The owner's insights: ?period=day|week|month|year&date=YYYY-MM-DD (default today). */
+campusRoutes.get('/owner/messes/:slug/insights', async (c) => {
+  const { principal } = await requireLive(c);
+  const k = c.get('container');
+  const raw = c.req.query('period');
+  const period = (INSIGHT_PERIODS as readonly string[]).includes(raw ?? '') ? (raw as InsightPeriod) : 'day';
+  return c.json(
+    await k.orders.insights(
+      principal,
+      await k.account.isAdmin(principal),
+      c.req.param('slug'),
+      period,
+      c.req.query('date'),
+    ),
+  );
+});
+
 /** "Something changed? Tell us": a correction to a menu, read in Admin › Campus. */
 campusRoutes.post('/mess/reports', async (c) => {
   const { ipHash } = await requestMeta(c);
@@ -91,6 +125,27 @@ campusRoutes.post('/mess/:slug/orders', async (c) => {
   return c.json(
     await k.orders.place(principal, await k.account.isAdmin(principal), c.req.param('slug'), body, ipHash),
   );
+});
+
+// ── The student's mobile number: checked once with an SMS code, then used on every order ──
+
+campusRoutes.get('/me/phone', async (c) => {
+  const { principal } = await requireLive(c);
+  return c.json(await c.get('container').phones.status(principal.userId));
+});
+
+campusRoutes.post('/me/phone/start', async (c) => {
+  const { principal } = await requireLive(c);
+  await throttle(c, 'phone-otp', principal.userId);
+  const { phone } = PhoneStartBody.parse(await c.req.json());
+  return c.json(await c.get('container').phones.start(principal.userId, phone));
+});
+
+campusRoutes.post('/me/phone/check', async (c) => {
+  const { principal } = await requireLive(c);
+  await throttle(c, 'phone-otp', principal.userId);
+  const { phone, code } = PhoneCheckBody.parse(await c.req.json());
+  return c.json(await c.get('container').phones.check(principal.userId, phone, code));
 });
 
 campusRoutes.get('/me/mess-orders', async (c) => {
@@ -124,6 +179,14 @@ campusRoutes.get('/owner/messes/:slug/customers', async (c) => {
 });
 
 /** The tiffin delivery sheet for a day (?date=YYYY-MM-DD, default today on campus). */
+/** The owner marks a tiffin meal delivered or missed (or a make-up meal given). */
+campusRoutes.put('/owner/tiffin/marks', async (c) => {
+  const { principal } = await requireLive(c);
+  const body = TiffinMarkBody.parse(await c.req.json());
+  const k = c.get('container');
+  return c.json(await k.orders.markTiffin(principal, await k.account.isAdmin(principal), body));
+});
+
 campusRoutes.get('/owner/messes/:slug/tiffin', async (c) => {
   const { principal } = await requireLive(c);
   const k = c.get('container');
@@ -494,6 +557,13 @@ campusRoutes.get('/admin/push/devices', async (c) => {
 });
 
 /** A test notification to every device of one person. */
+/** A student changed SIMs: forget their checked number so they can check the new one. */
+campusRoutes.post('/admin/phones/reset', async (c) => {
+  await requireAdmin(c);
+  const { email } = AdminPushTestBody.parse(await c.req.json());
+  return c.json(await c.get('container').phones.resetByEmail(email));
+});
+
 campusRoutes.post('/admin/push/test-person', async (c) => {
   await requireAdmin(c);
   const { email } = AdminPushTestBody.parse(await c.req.json());

@@ -110,6 +110,123 @@ export const MessOrderSection = z.object({
 });
 export type MessOrderSection = z.infer<typeof MessOrderSection>;
 
+// ── A restaurant's offers ───────────────────────────────────────────────────
+// Three kinds, all set up by the owner in their dashboard:
+//  • code:  a promo code students type ("WELCOME20": 20% off, first order only, up to ₹60)
+//  • deal:  applied by itself ("₹30 off orders above ₹299")
+//  • combo: dishes together for one price ("Paneer + 2 roti + lassi for ₹199")
+// One discount per order (the code if it works, else the best deal); combos are already a deal,
+// so discounts apply to the rest of the order.
+
+export const MESS_OFFER_KINDS = ['code', 'deal', 'combo'] as const;
+export type MessOfferKind = (typeof MESS_OFFER_KINDS)[number];
+
+export const MessOffer = z.object({
+  id: z
+    .string()
+    .regex(/^[a-z0-9]{4,16}$/)
+    .default(() => Math.random().toString(36).slice(2, 10)),
+  kind: z.enum(MESS_OFFER_KINDS),
+  /** What students see: "20% off your first order". */
+  title: z.string().trim().min(3, 'Give the offer a name').max(60),
+  active: z.boolean().default(true),
+  /** Promo codes only: letters and digits, saved in capitals. */
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^([A-Z0-9]{3,15})?$/, 'Codes are 3–15 letters or digits')
+    .default(''),
+  /** Code or deal: a percentage off, or rupees off (one of them). */
+  percentOff: z.number().int().min(0).max(90).default(0),
+  flatOff: z.number().int().min(0).max(2000).default(0),
+  /** The order (before the discount, combos left out) must reach this, in rupees. */
+  minTotal: z.number().int().min(0).max(10000).default(0),
+  /** Largest discount from a percentage (0 = no cap). */
+  maxOff: z.number().int().min(0).max(2000).default(0),
+  /** Only for a student's first order at this restaurant. */
+  firstOrderOnly: z.boolean().default(false),
+  /** Combos: the dishes in it (names from the menu card) and its price. */
+  items: z
+    .array(z.object({ name: z.string().trim().min(1).max(80), qty: z.number().int().min(1).max(10) }))
+    .max(8)
+    .default([]),
+  price: z.number().int().min(0).max(10000).default(0),
+  /** Optional dates it runs (campus dates, inclusive); empty = always. */
+  startsOn: z.union([isoDate, z.literal('')]).default(''),
+  endsOn: z.union([isoDate, z.literal('')]).default(''),
+});
+export type MessOffer = z.infer<typeof MessOffer>;
+
+/** What's wrong with an offer as the owner wrote it ('' = fine). */
+export function offerProblem(o: MessOffer, menu: { name: string }[]): string {
+  if (o.kind === 'code' && !o.code) return `"${o.title}": add the code students type.`;
+  if (o.kind !== 'combo' && !o.percentOff && !o.flatOff) return `"${o.title}": say how much it takes off.`;
+  if (o.kind !== 'combo' && o.percentOff && o.flatOff)
+    return `"${o.title}": a percentage or rupees off, not both.`;
+  if (o.kind === 'combo') {
+    if (o.items.length < 2) return `"${o.title}": a combo needs at least two dishes.`;
+    if (!o.price) return `"${o.title}": give the combo a price.`;
+    const names = new Set(menu.map((i) => i.name.toLowerCase()));
+    const missing = o.items.find((i) => !names.has(i.name.toLowerCase()));
+    if (missing) return `"${o.title}": "${missing.name}" isn't on your menu card.`;
+  }
+  if (o.startsOn && o.endsOn && o.endsOn < o.startsOn) return `"${o.title}": it ends before it starts.`;
+  return '';
+}
+
+/** Is it running on this campus date? */
+export const offerLive = (o: MessOffer, date: string) =>
+  o.active && (!o.startsOn || o.startsOn <= date) && (!o.endsOn || o.endsOn >= date);
+
+/** A combo's line on an order: its name says what's in it. */
+export const COMBO_PREFIX = 'combo:';
+export const comboLineName = (o: Pick<MessOffer, 'title'>) => `${o.title} (combo)`;
+
+/** The rupees an offer takes off a subtotal (0 when it doesn't apply). */
+export function offerSaving(o: MessOffer, subtotal: number): number {
+  if (o.kind === 'combo' || subtotal <= 0 || subtotal < o.minTotal) return 0;
+  const raw = o.flatOff ? o.flatOff : Math.floor((subtotal * o.percentOff) / 100);
+  return Math.max(0, Math.min(subtotal, o.maxOff && o.percentOff ? Math.min(raw, o.maxOff) : raw));
+}
+
+/**
+ * The one discount on an order: the typed code when it works here today, otherwise the best
+ * automatic deal. `subtotal` leaves combos out. The same sum runs on the order slip and on the
+ * server, so the student sees exactly what the restaurant gets.
+ */
+export function bestDiscount(
+  offers: MessOffer[],
+  subtotal: number,
+  opts: { date: string; code?: string; firstOrder: boolean },
+): { offer: MessOffer | null; saving: number; codeProblem: string } {
+  const live = offers.filter((o) => offerLive(o, opts.date) && (!o.firstOrderOnly || opts.firstOrder));
+  const typed = (opts.code ?? '').trim().toUpperCase();
+  let codeProblem = '';
+  if (typed) {
+    const any = offers.find((o) => o.kind === 'code' && o.code === typed);
+    const hit = live.find((o) => o.kind === 'code' && o.code === typed);
+    if (!any) codeProblem = `"${typed}" isn't a code here.`;
+    else if (!hit)
+      codeProblem =
+        any.firstOrderOnly && !opts.firstOrder
+          ? `"${typed}" is for a first order only.`
+          : `"${typed}" isn't running today.`;
+    else if (subtotal < hit.minTotal) codeProblem = `"${typed}" needs an order of ₹${hit.minTotal} or more.`;
+    else return { offer: hit, saving: offerSaving(hit, subtotal), codeProblem: '' };
+  }
+  let best: MessOffer | null = null;
+  let saving = 0;
+  for (const o of live.filter((x) => x.kind === 'deal')) {
+    const s = offerSaving(o, subtotal);
+    if (s > saving) {
+      best = o;
+      saving = s;
+    }
+  }
+  return { offer: best, saving, codeProblem };
+}
+
 const MessFields = z.object({
   slug,
   name: z.string().trim().min(2, 'Give it a name').max(80),
@@ -136,6 +253,8 @@ const MessFields = z.object({
   ordersOpen: z.boolean().default(false),
   /** Most orders the restaurant takes on the site in one day (campus time); 0 = no limit. */
   dailyOrderCap: z.number().int().min(0).max(2000).default(0),
+  /** Promo codes, automatic deals and combos (see MessOffer). */
+  offers: z.array(MessOffer).max(20).default([]),
   meals: z.array(MessMeal).min(1).max(4),
   /** A rotating menu: week 1, week 2… counted from cycleStart. One week repeats every week. */
   weeks: z.array(MessWeek).min(1).max(6),
@@ -169,6 +288,7 @@ export const OwnerMessBody = MessFields.pick({
   weeks: true,
   cycleStart: true,
   dailyOrderCap: true,
+  offers: true,
 })
   .refine(uniqueMeals, UNIQUE)
   .refine(mealsInOrder, IN_ORDER);
@@ -214,10 +334,12 @@ export const MESS_ORDER_STATUS_TEXT: Record<MessOrderStatus, string> = {
   cancelled: 'Cancelled',
 };
 /** What the owner may move an order to from each step. */
+/** Where the restaurant can move an order. 'rejected' at any open step = the restaurant cancels it
+ *  (with a reason the student sees). A running tiffin plan (status 'done') can be stopped too. */
 export const MESS_ORDER_NEXT: Record<MessOrderStatus, MessOrderStatus[]> = {
   placed: ['accepted', 'rejected'],
   accepted: ['ready', 'rejected'],
-  ready: ['done'],
+  ready: ['done', 'rejected'],
   done: [],
   rejected: [],
   cancelled: [],
@@ -248,8 +370,48 @@ export const PlaceMessOrderBody = z.object({
   phoneConfirmed: z.literal(true, { errorMap: () => ({ message: 'Confirm your phone number' }) }),
   /** Only for a monthly tiffin plan: which meals, and from which day. */
   tiffin: z.object({ plan: z.enum(['lunch', 'dinner', 'both']), startsOn: isoDate }).optional(),
+  /** A promo code the student typed (the server checks it again). */
+  promoCode: z.string().trim().max(20).default(''),
 });
 export type PlaceMessOrderInput = z.infer<typeof PlaceMessOrderBody>;
+
+// ── Mobile number check (an SMS code) ───────────────────────────────────────
+// A restaurant calls the number on an order, so it must be the student's real phone: once a code
+// sent by SMS is entered, the number is kept on the account and every order uses it.
+
+export const PHONE_OTP = {
+  /** A code works this long. */
+  ttlSeconds: 10 * 60,
+  /** Wait this long before asking for another code. */
+  resendSeconds: 45,
+  /** Wrong tries before a new code is needed. */
+  attempts: 5,
+  /** Codes per account per day, and per number per day (SMS costs money). */
+  perDay: 5,
+} as const;
+
+export const PhoneStartBody = z.object({
+  phone: z
+    .string()
+    .trim()
+    .max(20)
+    .refine((v) => normaliseMobile(v) !== null, 'Use a 10-digit Indian mobile number'),
+});
+export const PhoneCheckBody = PhoneStartBody.extend({
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{4,8}$/, 'Enter the code from the SMS'),
+});
+
+export interface PhoneStatusDto {
+  /** Can codes be sent at all (an SMS service is set up on the server)? */
+  available: boolean;
+  /** The checked number (10 digits), or null. Once set, orders always use it. */
+  phone: string | null;
+  /** A code sent and not yet used. */
+  pending: { phone: string; resendInSeconds: number; expiresInSeconds: number } | null;
+}
 
 // ── Tiffin (monthly meal plans) ──────────────────────────────────────────────
 
@@ -277,7 +439,35 @@ export interface TiffinDto {
   plan: TiffinPlan;
   startsOn: string;
   endsOn: string;
+  /** For the student: meals delivered and missed so far, and missed meals they can still get. */
+  delivered?: number;
+  missed?: number;
+  makeups?: { day: string; meal: TiffinMeal; until: string }[];
 }
+
+// ── Tiffin deliveries: delivered, missed, and make-up meals ──
+// Every day the owner marks each tiffin meal Delivered or Missed. A missed meal can be made up
+// (delivered as an extra) within the next TIFFIN_MAKEUP_DAYS days; after that it lapses.
+
+export const TIFFIN_MAKEUP_DAYS = 4;
+export const TIFFIN_MEALS = ['lunch', 'dinner'] as const;
+export type TiffinMeal = (typeof TIFFIN_MEALS)[number];
+export type TiffinMark = 'delivered' | 'missed';
+
+export const TiffinMarkBody = z.object({
+  orderId: z.string().min(1).max(64),
+  day: isoDate,
+  meal: z.enum(TIFFIN_MEALS),
+  /** 'clear' takes a mark back. */
+  status: z.enum(['delivered', 'missed', 'clear']),
+  /** A make-up meal: the day of the missed meal it makes up for. */
+  makeupFor: z.union([isoDate, z.literal('')]).default(''),
+});
+export type TiffinMarkInput = z.infer<typeof TiffinMarkBody>;
+
+/** The last day a meal missed on `day` can still be made up. */
+export const makeupUntil = (day: string) =>
+  new Date(Date.parse(`${day}T00:00:00Z`) + TIFFIN_MAKEUP_DAYS * 86_400_000).toISOString().slice(0, 10);
 
 /** One plan on the owner's delivery sheet. */
 export interface TiffinRowDto {
@@ -292,6 +482,12 @@ export interface TiffinRowDto {
   endsOn: string;
   note: string;
   unread: number;
+  /** Which meal this row is for, and how it was marked on the sheet's day (null = not yet). */
+  meal: TiffinMeal;
+  mark: TiffinMark | null;
+  /** A make-up row: the missed day it makes up for, and the last day it can be given. */
+  makeupFor: string;
+  makeupUntil: string;
 }
 
 /** The owner's tiffin sheet for a day: who gets lunch, who gets dinner, and plans ending soon. */
@@ -299,6 +495,10 @@ export interface TiffinSheetDto {
   date: string;
   lunch: TiffinRowDto[];
   dinner: TiffinRowDto[];
+  /** Missed meals from the last TIFFIN_MAKEUP_DAYS days that can still be given (or were today). */
+  makeups: TiffinRowDto[];
+  /** Today's regular meals: delivered, missed, still to do. */
+  counts: { delivered: number; missed: number; pending: number };
   /** Plans ending within 3 days of `date` (to remind about renewing). */
   ending: TiffinRowDto[];
   /** Plans waiting for the owner to accept. */
@@ -366,6 +566,9 @@ export interface MessOrderDto {
   topic: string;
   /** A monthly tiffin plan (null: an ordinary order). */
   tiffin: TiffinDto | null;
+  /** Rupees taken off by an offer (the total is after it), and which offer ('' = none). */
+  discount: number;
+  offer: string;
 }
 
 export interface OwnedMessDto {
@@ -905,4 +1108,69 @@ export function duePushes(
     }
   }
   return out;
+}
+
+// ── A restaurant's own insights (the owner's dashboard) ─────────────────────
+
+export const INSIGHT_PERIODS = ['day', 'week', 'month', 'year'] as const;
+export type InsightPeriod = (typeof INSIGHT_PERIODS)[number];
+
+/** The numbers for one period (and, for comparison, the one before it). */
+export interface InsightTotalsDto {
+  /** Every order placed. */
+  orders: number;
+  /** Accepted, ready or delivered: the orders that count as sales. */
+  confirmed: number;
+  /** Takings from confirmed orders, in rupees. */
+  revenue: number;
+  /** Takings ÷ confirmed orders (0 when none). */
+  avgOrder: number;
+  cancelledByStudent: number;
+  /** Declined, or cancelled later, by the restaurant. */
+  cancelledByYou: number;
+  /** Nobody answered in 10 minutes. */
+  autoCancelled: number;
+  /** Still waiting for an answer. */
+  waiting: number;
+  /** Different students who ordered. */
+  customers: number;
+  /** Of them: first order here in the year before. */
+  newCustomers: number;
+  /** Times the restaurant's page was opened (owners and admins not counted). */
+  views: number;
+  /** Different people (or devices, when signed out) who opened it. */
+  visitors: number;
+  /** Of them, signed in. */
+  signedInVisitors: number;
+  /** Signed-in visitors who had ordered here before. */
+  pastCustomersVisiting: number;
+  /** Ordering students ÷ visitors, as a percentage (0–100), or null with no visitors. */
+  conversion: number | null;
+  /** Middle time to accept or decline, in minutes (null with too few). */
+  replyMinutes: number | null;
+}
+
+export interface OwnerInsightsDto {
+  period: InsightPeriod;
+  /** First and last day covered (campus dates, inclusive). */
+  from: string;
+  to: string;
+  /** "Wed 25 Nov 2026", "23–29 Nov 2026", "November 2026", "2026". */
+  label: string;
+  /** The anchor dates for the arrows. */
+  prevAnchor: string;
+  nextAnchor: string | null;
+  totals: InsightTotalsDto;
+  previous: InsightTotalsDto;
+  /** Hours (day), days (week, month) or months (year). */
+  series: { key: string; label: string; orders: number; revenue: number; visitors: number; views: number }[];
+  topDishes: { name: string; qty: number; revenue: number; orders: number }[];
+  /** Orders by hour of day, 0–23 (campus time). */
+  hours: number[];
+  /** Orders by weekday, Monday first. */
+  weekdays: number[];
+  modes: { delivery: number; pickup: number };
+  topCustomers: { name: string; orders: number; spent: number }[];
+  /** Offers used on confirmed orders: how often, and how much they gave away. */
+  offers: { label: string; orders: number; discount: number; revenue: number }[];
 }

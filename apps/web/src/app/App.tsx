@@ -11,9 +11,12 @@ import {
 } from 'react-router-dom';
 import { AuthCallbackPage, RequireAuth, SessionSheets } from '../features/auth/session-ui';
 import { SignInPage } from '../features/auth/sign-in-page';
+import { SignInPrompt } from '../features/auth/sign-in-prompt';
 import { HomePage } from '../features/catalogue/home-page';
+import { useNotificationOpener } from '../features/chat/live';
 import { CoursePage } from '../features/course/course-page';
 import { ShelfPage } from '../features/shelf/shelf-page';
+import { MessShortLink } from '../features/tools/mess/components/share-link';
 import { setMonitoringUser, track, trackPageView } from '../lib/analytics';
 import { ApiError } from '../lib/api';
 import { authGateway } from '../lib/auth';
@@ -23,6 +26,7 @@ import { recordVisit } from '../lib/nav-history';
 import { usePageActivity } from '../lib/page-views';
 import { persistQueries, restoreQueries } from '../lib/persist-queries';
 import { loadScreen, releaseWaiting } from '../lib/release-sync';
+import { takeReturn } from '../lib/return-to';
 import { useSession } from '../lib/session';
 import { useTheme } from '../lib/theme';
 import { CatalogueLink } from '../shared/ui/back-link';
@@ -33,7 +37,6 @@ import { Eyebrow, PageTitle } from '../shared/ui/page-title';
 import { SwipeTabs } from '../shared/ui/swipe';
 
 /** Only ever return to a page on this site (never an outside address or "//evil.com"). */
-const localPath = (p: string | null) => (p?.startsWith('/') && !p.startsWith('//') ? p : null);
 
 const AccountPage = lazy(
   loadScreen(() => import('../features/account/account-page').then((m) => ({ default: m.AccountPage }))),
@@ -284,16 +287,12 @@ function RootAuthCodeHandler() {
         }
         await claim();
         track('login');
-        const target =
-          localPath(sessionStorage.getItem('auth_next')) || homeFor(useSession.getState().me, env.domain);
-        sessionStorage.removeItem('auth_next');
+        const target = takeReturn() || homeFor(useSession.getState().me, env.domain);
         if (active) navigate(target, { replace: true });
       } catch (error) {
         if (!active) return;
         if (error instanceof ApiError && error.code === 'SESSION_REPLACED') {
-          const target =
-            localPath(sessionStorage.getItem('auth_next')) || homeFor(useSession.getState().me, env.domain);
-          sessionStorage.removeItem('auth_next');
+          const target = takeReturn() || homeFor(useSession.getState().me, env.domain);
           navigate(target, { replace: true });
           return;
         }
@@ -350,6 +349,9 @@ function NotFound() {
 
 function Shell() {
   const { pathname: routeKey } = useLocation();
+  const navigateTo = useNavigate();
+  // A notification tapped while this tab is open: go to its page inside the app.
+  useNotificationOpener((path) => navigateTo(path));
   // A new release went live while this tab was open: move to it between screens, not mid-task.
   const lastRoute = useRef(routeKey);
   useEffect(() => {
@@ -406,6 +408,7 @@ function Shell() {
             <Route path="/b/:slug" element={<BundlePage />} />
             <Route path="/tools" element={<Navigate to="/#toolbox" replace />} />
             <Route path="/tools/:key" element={<ToolPage />} />
+            <Route path="/m/:slug" element={<MessShortLink />} />
             <Route path="/contribute" element={<ContributePage />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/unsubscribe" element={<UnsubscribePage />} />
@@ -429,6 +432,7 @@ function Shell() {
       <TabBar />
       <SwipeTabs />
       <SessionSheets />
+      <SignInPrompt />
     </>
   );
 }

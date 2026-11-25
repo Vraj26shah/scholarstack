@@ -66,9 +66,43 @@ export async function subscribeBrowser(publicKey: string) {
     await sub.unsubscribe();
     sub = null;
   }
-  sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  if (!sub) {
+    const ask = () => reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    try {
+      sub = await ask();
+    } catch (first) {
+      // Often a half-made subscription left by an earlier try (or a key change): clear it, try again.
+      await (await reg.pushManager.getSubscription().catch(() => null))?.unsubscribe().catch(() => {});
+      try {
+        sub = await ask();
+      } catch (second) {
+        throw new PushUnavailable(second ?? first);
+      }
+    }
+  }
   const json = sub.toJSON();
-  return { endpoint: json.endpoint!, keys: { p256dh: json.keys!.p256dh!, auth: json.keys!.auth! } };
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys.auth)
+    throw new PushUnavailable(new Error('The browser gave an incomplete push address.'));
+  return { endpoint: json.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } };
+}
+
+const isBrave = () => !!(navigator as Navigator & { brave?: unknown }).brave;
+
+/** The browser refused to make a push address: says why, in words a person can act on. */
+export class PushUnavailable extends Error {
+  constructor(readonly reason: unknown) {
+    const raw = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason);
+    super(
+      isBrave()
+        ? 'Brave blocks notifications by default. Open brave://settings/privacy, turn on "Use Google services for push messaging", restart Brave and try again.'
+        : /push service|AbortError/i.test(raw)
+          ? "This browser couldn't reach its notification service. Check you're online and not in a private (incognito) window, then try again, or use Chrome."
+          : /InvalidStateError|NotAllowedError/i.test(raw)
+            ? 'The browser refused. Reload the page and try again; if it keeps happening, allow notifications for this site in the browser settings.'
+            : `The browser couldn't turn on notifications (${raw.slice(0, 120)}). Reload the page and try again.`,
+    );
+    this.name = 'PushUnavailable';
+  }
 }
 
 /**

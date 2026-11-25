@@ -1,6 +1,7 @@
 import type { ConversionProgressReport } from '@ss/contracts';
-import { DEMO_DHABA_EXTRAS, SEED_MESSES } from '../application/campus-seed';
+import { DEMO_DHABA_EXTRAS, DEMO_DHABA_OFFERS, SEED_MESSES } from '../application/campus-seed';
 import type { AppConfig } from '../application/config';
+import type { SmsVerifier } from '../domain/campus-ports';
 import type { Clock, ConversionJob, IdGenerator } from '../domain/ports';
 import type { Container } from '../http/container';
 import { DemoAuth } from '../infrastructure/auth';
@@ -10,9 +11,12 @@ import {
   MemoryMessBlocks,
   MemoryMessOrders,
   MemoryMessReports,
+  MemoryMessViews,
   MemoryMesses,
   MemoryOrderChat,
+  MemoryPhones,
   MemoryPush,
+  MemoryTiffinMarks,
 } from '../infrastructure/campus-memory';
 import { InstantConversionQueue, MemoryRateLimiter } from '../infrastructure/cloudflare';
 import {
@@ -59,8 +63,10 @@ import {
   MemorySupport,
 } from '../infrastructure/memory-ledgers';
 import { DemoGateway } from '../infrastructure/payments';
+import { NoSms } from '../infrastructure/sms-verifier';
 import { MemoryPushSender } from '../infrastructure/web-push';
 import { buildConfig } from './config';
+import { seedDemoHistory } from './demo-history';
 import { DEMO_IMPORT_ROOT, seedDemo } from './demo-seed';
 import { buildServices } from './services';
 
@@ -86,6 +92,10 @@ export interface MemoryContainerOptions {
   config?: Partial<AppConfig>;
   /** Produces page images on demand (demo renders + scrambles them). */
   pageProducer?: (key: string) => Promise<Uint8Array | null>;
+  /** Demo site only: three months of made-up orders and visits for the demo restaurant. */
+  demoHistory?: boolean;
+  /** The SMS service for mobile-number codes (default: none, so orders take a ticked number). */
+  sms?: SmsVerifier;
 }
 
 /** Composition root for demo mode and tests: every port backed by memory. */
@@ -123,6 +133,12 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
     push: new MemoryPush(() => clock.now()),
     // A real (demo-only) key, so a browser on the demo site can subscribe; nothing is sent.
     pushSender: new MemoryPushSender(DEMO_VAPID_PUBLIC_KEY),
+    // SMS codes are on hold (25 Nov): like the live site, the demo takes a ticked number. Tests
+    // of the code flow pass the demo SMS service (code 123456) in options.sms.
+    phones: new MemoryPhones(),
+    messViews: new MemoryMessViews(),
+    tiffinMarks: new MemoryTiffinMarks(),
+    sms: options.sms ?? new NoSms(),
   };
   if (options.seed !== false)
     SEED_MESSES.forEach((m, sort) => {
@@ -130,11 +146,14 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
       // The demo gets a sample à la carte list (not in the live seed: no invented prices there).
       if (m.kind === 'restaurant') {
         row.order = [...row.order, ...structuredClone(DEMO_DHABA_EXTRAS)];
+        row.offers = structuredClone(DEMO_DHABA_OFFERS);
         // A demo owner (sign in as dhaba.demo@gmail.com) and orders switched on, to try it end to end.
         row.ownerEmails = ['dhaba.demo@gmail.com'];
         row.ordersOpen = true;
       }
       campus.messes.rows.set(m.slug, row);
+      if (options.demoHistory && m.kind === 'restaurant')
+        seedDemoHistory(row, campus.messOrders, campus.messViews, clock.now());
     });
 
   const catalogue = new MemoryCatalogue(db);

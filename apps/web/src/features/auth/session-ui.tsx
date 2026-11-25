@@ -1,26 +1,47 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ApiError, api, friendly } from '../../lib/api';
 import { authGateway } from '../../lib/auth';
 import { env } from '../../lib/env';
 import { homeFor } from '../../lib/landing';
+import { peekReturn, takeReturn } from '../../lib/return-to';
 import { useSession } from '../../lib/session';
 import { Button } from '../../shared/ui/button';
 import { Sheet, Spinner } from '../../shared/ui/feedback';
+import { askToSignIn, useSignInPrompt } from './sign-in-prompt';
 
 /** Wrap protected routes: waits for the session, sends signed-out visitors to sign in. */
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { status } = useSession();
-  const location = useLocation();
   if (status === 'loading')
     return (
       <div className="min-h-dvh flex items-center justify-center">
         <Spinner label="Loading your account" />
       </div>
     );
-  if (status === 'signed-out' || status === 'unavailable')
-    return <Navigate to={`/sign-in?next=${encodeURIComponent(location.pathname)}`} replace />;
+  if (status === 'signed-out' || status === 'unavailable') return <AskFirst />;
   return <>{children}</>;
+}
+
+/**
+ * A page that needs an account, opened while signed out: "Sign in to continue?" over an empty
+ * page. Sign in comes back to this exact page; "Not now" goes back to where they were.
+ */
+function AskFirst() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const here = `${location.pathname}${location.search}${location.hash}`;
+  useEffect(() => {
+    askToSignIn({
+      title: 'Sign in to open this page',
+      body: 'This page is part of your account. Sign in with your college email and you come straight back here.',
+      next: here,
+      // Opened from inside the site: back to that page. Typed or opened from a link: home.
+      onCancel: () => (window.history.state?.idx > 0 ? navigate(-1) : navigate('/', { replace: true })),
+    });
+    return () => useSignInPrompt.getState().close();
+  }, [here, navigate]);
+  return <div className="min-h-[60dvh]" aria-hidden="true" />;
 }
 
 /** OAuth and email sign-in links redirect here to finish the session exchange. */
@@ -54,7 +75,7 @@ export function AuthCallbackPage() {
     return null;
   })();
   const backToSignIn = () => {
-    const next = sessionStorage.getItem('auth_next');
+    const next = peekReturn();
     navigate(next ? `/sign-in?next=${encodeURIComponent(next)}` : '/sign-in');
   };
 
@@ -84,8 +105,7 @@ export function AuthCallbackPage() {
         return;
       }
       await claim();
-      const target = sessionStorage.getItem('auth_next') || homeFor(useSession.getState().me, env.domain);
-      sessionStorage.removeItem('auth_next');
+      const target = takeReturn() || homeFor(useSession.getState().me, env.domain);
       navigate(target, { replace: true });
     } catch (error) {
       await showCallbackFailure(error);
@@ -101,14 +121,12 @@ export function AuthCallbackPage() {
       }
       if (await authGateway.completeRedirect()) {
         await claim();
-        const target = sessionStorage.getItem('auth_next') || homeFor(useSession.getState().me, env.domain);
-        sessionStorage.removeItem('auth_next');
+        const target = takeReturn() || homeFor(useSession.getState().me, env.domain);
         navigate(target, { replace: true });
       } else setFailed(true);
     })().catch((error: unknown) => {
       if (error instanceof ApiError && error.code === 'SESSION_REPLACED') {
-        const target = sessionStorage.getItem('auth_next') || homeFor(useSession.getState().me, env.domain);
-        sessionStorage.removeItem('auth_next');
+        const target = takeReturn() || homeFor(useSession.getState().me, env.domain);
         navigate(target, { replace: true });
         return;
       }

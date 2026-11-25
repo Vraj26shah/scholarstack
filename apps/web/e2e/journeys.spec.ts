@@ -59,9 +59,15 @@ test.describe('browsing (signed out)', () => {
     expect(errors).toEqual([]);
   });
 
-  test('protected pages send you to sign in', async ({ page }) => {
+  test('protected pages ask to sign in: yes comes back here, not now leaves', async ({ page }) => {
     await page.goto('/shelf');
-    await page.waitForURL(/\/sign-in\?next=%2Fshelf/);
+    const ask = page.getByRole('dialog', { name: 'Sign in to open this page' });
+    await expect(ask).toBeVisible();
+    await ask.getByRole('button', { name: 'Not now' }).click();
+    await page.waitForURL((u) => u.pathname === '/');
+    await page.goto('/shelf?tab=x');
+    await page.getByRole('dialog').getByRole('button', { name: 'Sign in', exact: true }).click();
+    await page.waitForURL(/\/sign-in\?next=%2Fshelf%3Ftab%3Dx/);
   });
 
   test('unknown routes show the 404 card', async ({ page }) => {

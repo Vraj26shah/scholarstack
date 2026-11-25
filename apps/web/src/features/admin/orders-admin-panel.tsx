@@ -11,7 +11,7 @@ import { Button } from '../../shared/ui/button';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { OrderChat } from '../chat/order-chat';
 import { rupees } from '../restaurant/shared';
-import { DeviceReceipts } from './push-test';
+import { DeviceReceipts, PhoneReset } from './push-test';
 import { Panel, StatusPill, plural } from './ui';
 
 const when = (iso: string) =>
@@ -434,7 +434,12 @@ export function OrdersAdminPanel() {
       {tab === 'workflow' && <Workflow />}
       {tab === 'orders' && <OrdersList onOpen={setChat} />}
       {tab === 'reports' && <Reports onOpen={setChat} />}
-      {tab === 'blocks' && <Blocks />}
+      {tab === 'blocks' && (
+        <div className="flex flex-col gap-8">
+          <Blocks />
+          <PhoneReset />
+        </div>
+      )}
       {chat && <OrderChat orderId={chat} admin onClose={() => setChat(null)} />}
     </Panel>
   );

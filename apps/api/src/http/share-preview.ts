@@ -13,11 +13,37 @@ const SHARE_BOT =
 
 export const isShareBot = (userAgent: string | null | undefined) => !!userAgent && SHARE_BOT.test(userAgent);
 
-/** "/c/dbms-2025-cse-core" → a course; "/b/pack-2026-bcy" → a bundle; anything else → null. */
-export function sharedItem(pathname: string): { kind: 'course' | 'bundle'; slug: string } | null {
-  const m = /^\/(c|b)\/([a-z0-9][a-z0-9-]{0,120})\/?$/i.exec(pathname);
+export type SharedKind = 'course' | 'bundle' | 'mess';
+
+/** "/c/dbms-2025-cse-core" → a course; "/b/pack-2026-bcy" → a bundle; "/m/radha-rani-dhaba" → a
+ *  mess or restaurant; anything else → null. */
+export function sharedItem(pathname: string): { kind: SharedKind; slug: string } | null {
+  const m = /^\/(c|b|m)\/([a-z0-9][a-z0-9-]{0,120})\/?$/i.exec(pathname);
   if (!m) return null;
-  return { kind: m[1] === 'c' ? 'course' : 'bundle', slug: m[2]!.toLowerCase() };
+  return { kind: m[1] === 'c' ? 'course' : m[1] === 'b' ? 'bundle' : 'mess', slug: m[2]!.toLowerCase() };
+}
+
+/** Where each kind's data is read, and its own page address. */
+export const sharedApiPath = (i: { kind: SharedKind; slug: string }) =>
+  `/api/${i.kind === 'course' ? 'courses' : i.kind === 'bundle' ? 'bundles' : 'mess'}/${i.slug}`;
+export const sharedPagePath = (i: { kind: SharedKind; slug: string }) =>
+  `/${i.kind === 'course' ? 'c' : i.kind === 'bundle' ? 'b' : 'm'}/${i.slug}`;
+
+/** A mess or restaurant link: its name, where it is, and what you can do there. */
+export function messMeta(
+  m: { name: string; kind: string; place?: string; prices?: string; ordersOpen?: boolean },
+  url: string,
+): ShareMeta {
+  const restaurant = m.kind === 'restaurant';
+  const where = m.place ? ` · ${m.place}` : '';
+  const what = restaurant
+    ? `Today's menu, prices${m.ordersOpen ? ' and ordering' : ''}`
+    : "Today's food and the whole week";
+  return {
+    title: clip(`${m.name}${where} · ${restaurant ? 'menu & ordering' : 'mess menu'}`, 90),
+    description: clip(`${what} on Scholars Stack.${m.prices ? ` ${m.prices}.` : ''}`, 200),
+    url,
+  };
 }
 
 export interface ShareMeta {

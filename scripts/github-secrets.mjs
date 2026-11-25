@@ -31,6 +31,12 @@ const SECRETS = [
   'VAPID_PUBLIC_KEY',
   'VAPID_PRIVATE_KEY',
   'VAPID_SUBJECT',
+  // SMS codes for students' mobile numbers (fill one of the two services)
+  'TWOFACTOR_API_KEY',
+  'TWOFACTOR_TEMPLATE',
+  'TWILIO_ACCOUNT_SID',
+  'TWILIO_AUTH_TOKEN',
+  'TWILIO_VERIFY_SID',
   // migrations when the access token has expired, and the nightly backup
   'SUPABASE_DB_PASSWORD',
   'SUPABASE_DB_URL',

@@ -24,6 +24,11 @@ const optional = new Set([
   'VAPID_PUBLIC_KEY',
   'VAPID_PRIVATE_KEY',
   'VAPID_SUBJECT',
+  'TWOFACTOR_API_KEY',
+  'TWOFACTOR_TEMPLATE',
+  'TWILIO_ACCOUNT_SID',
+  'TWILIO_AUTH_TOKEN',
+  'TWILIO_VERIFY_SID',
 ]);
 const todo = [...env].filter(
   ([k, v]) =>

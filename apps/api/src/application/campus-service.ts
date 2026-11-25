@@ -139,7 +139,8 @@ export class MessService {
     const current = await this.messes.find(slug);
     if (!current) throw fail.notFound('That mess');
     if (input.slug !== slug) throw fail.badRequest("A mess's short name can't be changed.");
-    return toDto(await this.messes.save({ ...input, sort: current.sort }));
+    // Offers belong to the owner's dashboard: an admin save never replaces them.
+    return toDto(await this.messes.save({ ...input, offers: current.offers ?? [], sort: current.sort }));
   }
 
   async remove(slug: string) {

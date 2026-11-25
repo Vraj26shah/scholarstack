@@ -1,10 +1,12 @@
 import { deviceLabel } from '@ss/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
-import { api, friendly } from '../../lib/api';
+import { captureException } from '../../lib/analytics';
+import { ApiError, api, friendly } from '../../lib/api';
 import {
   PermissionRefused,
   type PushSupport,
+  PushUnavailable,
   browserSubscription,
   pushSupport,
   subscribeBrowser,
@@ -50,7 +52,13 @@ export function useAccountAlerts() {
             ? 'Notifications are blocked for this site. Allow them in the browser settings.'
             : 'Tap "Allow" when the browser asks.',
         );
-      } else setError(friendly(e));
+      } else {
+        // Anything from the browser (not our server) gets its real reason, and is reported.
+        const shown =
+          e instanceof ApiError ? null : e instanceof PushUnavailable ? e : new PushUnavailable(e);
+        if (shown) captureException(shown.reason);
+        setError(shown ? shown.message : friendly(e));
+      }
     } finally {
       setBusy(false);
     }

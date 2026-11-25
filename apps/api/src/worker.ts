@@ -5,7 +5,17 @@ import { workerContainer } from './composition/worker';
 import { createApp } from './http/app';
 import { withEdgeCache } from './http/edge-cache';
 import { SECURITY_HEADERS } from './http/security-headers';
-import { bundleMeta, courseMeta, isShareBot, sharedItem, withShareMeta } from './http/share-preview';
+import {
+  type SharedKind,
+  bundleMeta,
+  courseMeta,
+  isShareBot,
+  messMeta,
+  sharedApiPath,
+  sharedItem,
+  sharedPagePath,
+  withShareMeta,
+} from './http/share-preview';
 
 const app = createApp((env) => workerContainer(env as WorkerEnv));
 
@@ -23,22 +33,24 @@ setErrorReporter((error, { where, requestId }) => {
 async function sharePage(
   request: Request,
   url: URL,
-  item: { kind: 'course' | 'bundle'; slug: string },
+  item: { kind: SharedKind; slug: string },
   env: WorkerEnv,
   ctx: ExecutionContext,
 ): Promise<Response | null> {
-  const api = new URL(`/api/${item.kind === 'course' ? 'courses' : 'bundles'}/${item.slug}`, url);
+  const api = new URL(sharedApiPath(item), url);
   const [shell, data] = await Promise.all([
     env.ASSETS!.fetch(new Request(new URL('/', url), request)),
     app.fetch(new Request(api, { headers: { accept: 'application/json' } }), env, ctx),
   ]);
   if (!shell.ok || !data.ok) return null;
-  const pageUrl = `${url.origin}/${item.kind === 'course' ? 'c' : 'b'}/${item.slug}`;
+  const pageUrl = `${url.origin}${sharedPagePath(item)}`;
   const json = await data.json();
   const meta =
     item.kind === 'course'
       ? courseMeta(json as Parameters<typeof courseMeta>[0], pageUrl)
-      : bundleMeta(json as Parameters<typeof bundleMeta>[0], pageUrl);
+      : item.kind === 'bundle'
+        ? bundleMeta(json as Parameters<typeof bundleMeta>[0], pageUrl)
+        : messMeta(json as Parameters<typeof messMeta>[0], pageUrl);
   const out = new Response(withShareMeta(await shell.text(), meta), {
     status: 200,
     headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' },

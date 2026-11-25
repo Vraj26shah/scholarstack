@@ -22,10 +22,15 @@ import type {
   MessReportRecord,
   MessReportRepository,
   MessRepository,
+  MessViewRepository,
   OrderChatRepository,
   OrderChatState,
+  PhoneRecord,
+  PhoneRepository,
   PushRepository,
   PushSubscriptionRecord,
+  TiffinMarkRecord,
+  TiffinMarkRepository,
 } from '../domain/campus-ports';
 import { sha256Hex } from './crypto';
 import { type Row, must } from './supabase';
@@ -43,6 +48,7 @@ const toMess = (r: Row): MessRecord => ({
   phone: (r.phone as string) ?? '',
   orderNote: (r.order_note as string) ?? '',
   order: (r.order_menu as MessRecord['order']) ?? [],
+  offers: (r.offers as MessRecord['offers']) ?? [],
   ownerEmails: (r.owner_emails as string[]) ?? [],
   ordersOpen: !!r.orders_open,
   dailyOrderCap: Number(r.daily_order_cap ?? 0),
@@ -83,6 +89,7 @@ export class SupabaseMesses implements MessRepository {
               owner_emails: m.ownerEmails,
               orders_open: m.ordersOpen,
               daily_order_cap: m.dailyOrderCap ?? 0,
+              offers: m.offers ?? [],
               meals: m.meals,
               weeks: m.weeks,
               cycle_start: m.cycleStart,
@@ -259,7 +266,7 @@ export class SupabasePush implements PushRepository {
 }
 
 const ORDER_COLS =
-  'id, code, mess_slug, user_id, email, lines, total, mode, address, name, phone, note, status, owner_note, ip_hash, created_at, updated_at, student_unread, owner_unread, student_read_at, owner_read_at, student_cleared_at, owner_cleared_at, last_body, last_sender, last_at, responded_at, nudged_at, ended_by, alert_note, tiffin_plan, tiffin_starts, tiffin_ends';
+  'id, code, mess_slug, user_id, email, lines, total, mode, address, name, phone, note, status, owner_note, ip_hash, created_at, updated_at, student_unread, owner_unread, student_read_at, owner_read_at, student_cleared_at, owner_cleared_at, last_body, last_sender, last_at, responded_at, nudged_at, ended_by, alert_note, tiffin_plan, tiffin_starts, tiffin_ends, discount, offer_label';
 
 const when = (v: unknown) => (v ? new Date(v as string) : null);
 
@@ -321,6 +328,8 @@ const toOrder = (r: Row): MessOrderRecord => ({
         endsOn: String(r.tiffin_ends).slice(0, 10),
       }
     : null,
+  discount: Number(r.discount ?? 0),
+  offer: (r.offer_label as string) ?? '',
 });
 
 const count = (res: { count: number | null; error: { message: string } | null }) => {
@@ -351,6 +360,8 @@ export class SupabaseMessOrders implements MessOrderRepository {
             tiffin_plan: o.tiffin?.plan ?? null,
             tiffin_starts: o.tiffin?.startsOn ?? null,
             tiffin_ends: o.tiffin?.endsOn ?? null,
+            discount: o.discount ?? 0,
+            offer_label: o.offer ?? '',
           })
           .select(ORDER_COLS)
           .single(),
@@ -674,5 +685,141 @@ export class SupabaseLiveSignal implements LiveSignal {
         messages: list.map((topic) => ({ topic, event: 'changed', payload: {}, private: false })),
       }),
     }).catch(() => {});
+  }
+}
+
+const toPhone = (r: Row): PhoneRecord => ({
+  userId: r.user_id as string,
+  phone: (r.phone as string) ?? '',
+  verifiedAt: r.verified_at ? new Date(r.verified_at as string) : null,
+  pendingPhone: (r.pending_phone as string) ?? '',
+  pendingRef: (r.pending_ref as string) ?? '',
+  pendingAt: r.pending_at ? new Date(r.pending_at as string) : null,
+  attempts: Number(r.attempts ?? 0),
+  sendsDay: (r.sends_day as string) ?? '',
+  sends: Number(r.sends ?? 0),
+});
+
+export class SupabasePhones implements PhoneRepository {
+  constructor(private readonly db: SupabaseClient) {}
+  async find(userId: string) {
+    if (!isUuid(userId)) return null;
+    const rows = must(await this.db.from('user_phones').select('*').eq('user_id', userId).limit(1)) as Row[];
+    return rows[0] ? toPhone(rows[0]) : null;
+  }
+  async save(r: PhoneRecord) {
+    if (!isUuid(r.userId)) return;
+    must(
+      await this.db.from('user_phones').upsert(
+        {
+          user_id: r.userId,
+          phone: r.phone,
+          verified_at: r.verifiedAt?.toISOString() ?? null,
+          pending_phone: r.pendingPhone,
+          pending_ref: r.pendingRef,
+          pending_at: r.pendingAt?.toISOString() ?? null,
+          attempts: r.attempts,
+          sends_day: r.sendsDay || null,
+          sends: r.sends,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      ),
+    );
+  }
+  async sendsTo(phone: string, day: string) {
+    if (!/^\d{10}$/.test(phone) || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return 0;
+    const rows = must(
+      await this.db
+        .from('user_phones')
+        .select('sends')
+        .eq('pending_phone', phone)
+        .eq('sends_day', day)
+        .limit(200),
+    ) as Row[];
+    return rows.reduce((n, r) => n + Number(r.sends ?? 0), 0);
+  }
+}
+
+export class SupabaseMessViews implements MessViewRepository {
+  constructor(private readonly db: SupabaseClient) {}
+  async hit(slug: string, day: string, visitor: string, userId: string | null) {
+    must(
+      await this.db.rpc('mess_view_hit', {
+        p_slug: slug,
+        p_day: day,
+        p_visitor: visitor.slice(0, 80),
+        p_user: userId && isUuid(userId) ? userId : null,
+      }),
+    );
+  }
+  async between(slug: string, fromDay: string, toDay: string) {
+    const rows = must(
+      await this.db
+        .from('mess_views_daily')
+        .select('day, visitor, user_id, views')
+        .eq('mess_slug', slug)
+        .gte('day', fromDay)
+        .lte('day', toDay)
+        .limit(20000),
+    ) as Row[];
+    return rows.map((r) => ({
+      day: r.day as string,
+      visitor: r.visitor as string,
+      userId: (r.user_id as string) ?? null,
+      views: Number(r.views ?? 0),
+    }));
+  }
+}
+
+export class SupabaseTiffinMarks implements TiffinMarkRepository {
+  constructor(private readonly db: SupabaseClient) {}
+  async list(orderIds: string[], fromDay: string, toDay: string) {
+    const ids = orderIds.filter(isUuid);
+    if (!ids.length) return [];
+    const rows = must(
+      await this.db
+        .from('tiffin_marks')
+        .select('order_id, day, meal, makeup_for, status')
+        .in('order_id', ids)
+        .gte('day', fromDay)
+        .lte('day', toDay)
+        .limit(20000),
+    ) as Row[];
+    return rows.map((r) => ({
+      orderId: r.order_id as string,
+      day: String(r.day).slice(0, 10),
+      meal: r.meal as TiffinMarkRecord['meal'],
+      makeupFor: (r.makeup_for as string) ?? '',
+      status: r.status as TiffinMarkRecord['status'],
+    }));
+  }
+  async set(m: TiffinMarkRecord) {
+    if (!isUuid(m.orderId)) return;
+    must(
+      await this.db.from('tiffin_marks').upsert(
+        {
+          order_id: m.orderId,
+          day: m.day,
+          meal: m.meal,
+          makeup_for: m.makeupFor,
+          status: m.status,
+          marked_at: new Date().toISOString(),
+        },
+        { onConflict: 'order_id,day,meal,makeup_for' },
+      ),
+    );
+  }
+  async clear(m: Omit<TiffinMarkRecord, 'status'>) {
+    if (!isUuid(m.orderId)) return;
+    must(
+      await this.db
+        .from('tiffin_marks')
+        .delete()
+        .eq('order_id', m.orderId)
+        .eq('day', m.day)
+        .eq('meal', m.meal)
+        .eq('makeup_for', m.makeupFor),
+    );
   }
 }

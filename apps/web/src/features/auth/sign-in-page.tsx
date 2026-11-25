@@ -7,6 +7,7 @@ import { authGateway } from '../../lib/auth';
 import { env, isDemo } from '../../lib/env';
 import { STUDENT_HOME, homeFor } from '../../lib/landing';
 import { reportProblem } from '../../lib/problems';
+import { rememberReturn } from '../../lib/return-to';
 import { useSession } from '../../lib/session';
 import { Ambient } from '../../shared/ui/ambient';
 import { useBack } from '../../shared/ui/back-link';
@@ -22,7 +23,9 @@ import { Turnstile, turnstileProblem } from './turnstile';
  * restaurant owner (no college address) lands on their orders when they only asked for home.
  */
 const landingFor = (me: { isAdmin: boolean; email: string } | null | undefined, next: string) => {
-  if (me?.isAdmin) return next.startsWith('/admin') ? next : '/admin';
+  // Admins asked for nothing in particular land on the admin page; otherwise, like everyone,
+  // they go back to the page they signed in from.
+  if (me?.isAdmin && next === STUDENT_HOME) return '/admin';
   return next === STUDENT_HOME ? homeFor(me, env.domain) : next;
 };
 
@@ -114,7 +117,7 @@ export function SignInPage() {
     setError(null);
     setBusy(true);
     try {
-      sessionStorage.setItem('auth_next', returnTo);
+      rememberReturn(returnTo);
       await authGateway.startGoogle(isAdmin);
     } catch (e) {
       setError(
@@ -155,7 +158,7 @@ export function SignInPage() {
       // The server decides which full addresses may sign in (answering only ever "yes" or
       // "not a college address"), and blocks a network that keeps trying addresses that can't.
       await api.checkSignInEmail(email);
-      sessionStorage.setItem('auth_next', returnTo);
+      rememberReturn(returnTo);
       await authGateway.startEmail(email, captcha, isAdmin);
       if (isDemo) await finish();
       else {

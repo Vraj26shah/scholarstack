@@ -572,7 +572,7 @@ function Report({ data, activity }: { data: AdminInsightsDto; activity: Activity
       <div
         role="tablist"
         aria-label="Insights views"
-        className="flex gap-1 overflow-x-auto -mx-1 px-1 pb-1 border-b border-line"
+        className="flex gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden -mx-1 px-1 pb-1 border-b border-line"
       >
         {VIEWS.map(([k, label]) => (
           <button

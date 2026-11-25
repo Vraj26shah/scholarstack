@@ -39,6 +39,12 @@ export interface WorkerEnv {
   /** mailto: address the push services can contact. */
   VAPID_SUBJECT?: string;
   PUSH_PER_RUN?: string;
+  /** SMS codes for mobile numbers: 2Factor.in, or Twilio Verify. Optional. */
+  TWOFACTOR_API_KEY?: string;
+  TWOFACTOR_TEMPLATE?: string;
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string;
+  TWILIO_VERIFY_SID?: string;
   NOTES: R2Bucket;
   PAGE_LIMITER?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   ASSETS?: Fetcher;

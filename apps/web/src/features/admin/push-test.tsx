@@ -126,3 +126,50 @@ export function PersonTest() {
     </section>
   );
 }
+
+/**
+ * A student changed SIMs: their checked mobile number is locked on the order form, so the admin
+ * forgets it here and they check the new one with an SMS code next time they order.
+ */
+export function PhoneReset() {
+  const [email, setEmail] = useState('');
+  const reset = useMutation({ mutationFn: (e: string) => api.adminResetPhone(e) });
+  const ok = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  return (
+    <section aria-label="Reset a student's mobile number" className="flex flex-col gap-3 max-w-[760px]">
+      <h3 className="m-0 text-[17px] font-bold text-ink">Reset a student's mobile number</h3>
+      <p className="m-0 text-[14px] text-ink2">
+        For a student who changed their number. They check the new one with an SMS code next time they order.
+      </p>
+      <form
+        className="flex flex-wrap gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (ok) reset.mutate(email.trim().toLowerCase());
+        }}
+      >
+        <input
+          className={`${input} flex-1 min-w-[240px]`}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="name@vitbhopal.ac.in"
+          aria-label="Student's email"
+          type="email"
+        />
+        <Button type="submit" variant="ink" disabled={!ok || reset.isPending}>
+          {reset.isPending ? 'Resetting…' : 'Reset number'}
+        </Button>
+      </form>
+      {reset.error && <p className="m-0 text-[14px] text-blush-text">{friendly(reset.error)}</p>}
+      {reset.data && (
+        <p role="status" className="m-0 text-[14px] text-ink">
+          {!reset.data.found
+            ? 'No account with that email.'
+            : reset.data.phone
+              ? `Done. ${reset.data.phone} is no longer on their account.`
+              : 'They had no checked number. Nothing to reset.'}
+        </p>
+      )}
+    </section>
+  );
+}

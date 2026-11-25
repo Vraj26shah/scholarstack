@@ -127,6 +127,9 @@ export interface MessOrderRecord {
   chat: OrderChatState;
   /** A monthly tiffin plan (null for an ordinary order). */
   tiffin: { plan: TiffinPlan; startsOn: string; endsOn: string } | null;
+  /** Rupees an offer took off (`total` is after it), and which offer ("WELCOME20", "₹30 off above ₹299"). */
+  discount: number;
+  offer: string;
 }
 
 /** The chat's bookkeeping on each order. */
@@ -269,4 +272,78 @@ export interface LiveSignal {
   /** An unguessable channel name for this key ('' when not configured). */
   topic(key: string): Promise<string>;
   ping(topics: string[]): Promise<void>;
+}
+
+// ── Mobile number checks ──
+
+/** One account's mobile number: the checked one, and a code waiting to be entered. */
+export interface PhoneRecord {
+  userId: string;
+  /** The checked number (10 digits), '' until one is checked. */
+  phone: string;
+  verifiedAt: Date | null;
+  /** The number a code was last sent to, and the SMS service's handle for that code. */
+  pendingPhone: string;
+  pendingRef: string;
+  pendingAt: Date | null;
+  /** Wrong tries for the pending code. */
+  attempts: number;
+  /** Codes sent on `sendsDay` (campus date, YYYY-MM-DD). */
+  sendsDay: string;
+  sends: number;
+}
+
+export interface PhoneRepository {
+  find(userId: string): Promise<PhoneRecord | null>;
+  save(r: PhoneRecord): Promise<void>;
+  /** Codes sent to this number on this day, by any account. */
+  sendsTo(phone: string, day: string): Promise<number>;
+}
+
+/**
+ * Sends a one-time code by SMS and checks what was typed (2Factor or Twilio Verify in production).
+ * The service makes and keeps the code; we only keep its handle.
+ */
+export interface SmsVerifier {
+  /** False when no SMS service is set up (then codes can't be sent). */
+  readonly configured: boolean;
+  /** Sends a code to this 10-digit Indian number; returns the service's handle for it. */
+  start(phone: string): Promise<string>;
+  check(phone: string, ref: string, code: string): Promise<boolean>;
+}
+
+// ── Restaurant page views (for the owner's insights) ──
+
+/** One visitor's opens of one restaurant's page on one campus day. */
+export interface MessViewRecord {
+  day: string;
+  /** "u:<account id>" when signed in, else "a:<hashed network>" (changes daily, not reversible). */
+  visitor: string;
+  userId: string | null;
+  views: number;
+}
+
+export interface MessViewRepository {
+  /** Count one open of the page. */
+  hit(slug: string, day: string, visitor: string, userId: string | null): Promise<void>;
+  /** Every visitor-day from `fromDay` to `toDay` (inclusive). */
+  between(slug: string, fromDay: string, toDay: string): Promise<MessViewRecord[]>;
+}
+
+// ── Tiffin delivery marks ──
+
+/** One tiffin meal marked on a day. `makeupFor` is '' for the regular meal, or the missed day it makes up. */
+export interface TiffinMarkRecord {
+  orderId: string;
+  day: string;
+  meal: 'lunch' | 'dinner';
+  makeupFor: string;
+  status: 'delivered' | 'missed';
+}
+
+export interface TiffinMarkRepository {
+  /** Marks on these plans between two days (inclusive). */
+  list(orderIds: string[], fromDay: string, toDay: string): Promise<TiffinMarkRecord[]>;
+  set(m: TiffinMarkRecord): Promise<void>;
+  clear(m: Omit<TiffinMarkRecord, 'status'>): Promise<void>;
 }

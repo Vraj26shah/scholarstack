@@ -21,10 +21,16 @@ import {
   type MessReportRecord,
   type MessReportRepository,
   type MessRepository,
+  type MessViewRecord,
+  type MessViewRepository,
   type OrderChatRepository,
   type OrderChatState,
+  type PhoneRecord,
+  type PhoneRepository,
   type PushRepository,
   type PushSubscriptionRecord,
+  type TiffinMarkRecord,
+  type TiffinMarkRepository,
 } from '../domain/campus-ports';
 
 let seq = 0;
@@ -320,5 +326,53 @@ export class MemoryLiveSignal implements LiveSignal {
   }
   async ping(topics: string[]) {
     this.pings.push(topics);
+  }
+}
+
+export class MemoryPhones implements PhoneRepository {
+  readonly rows = new Map<string, PhoneRecord>();
+  async find(userId: string) {
+    const r = this.rows.get(userId);
+    return r ? structuredClone(r) : null;
+  }
+  async save(r: PhoneRecord) {
+    this.rows.set(r.userId, structuredClone(r));
+  }
+  async sendsTo(phone: string, day: string) {
+    let n = 0;
+    for (const r of this.rows.values()) if (r.pendingPhone === phone && r.sendsDay === day) n += r.sends;
+    return n;
+  }
+}
+
+export class MemoryMessViews implements MessViewRepository {
+  readonly rows = new Map<string, MessViewRecord & { slug: string }>();
+  async hit(slug: string, day: string, visitor: string, userId: string | null) {
+    const k = `${slug}|${day}|${visitor}`;
+    const r = this.rows.get(k);
+    if (r) r.views += 1;
+    else this.rows.set(k, { slug, day, visitor, userId, views: 1 });
+  }
+  async between(slug: string, fromDay: string, toDay: string) {
+    return [...this.rows.values()]
+      .filter((r) => r.slug === slug && r.day >= fromDay && r.day <= toDay)
+      .map(({ slug: _s, ...r }) => ({ ...r }));
+  }
+}
+
+export class MemoryTiffinMarks implements TiffinMarkRepository {
+  readonly rows = new Map<string, TiffinMarkRecord>();
+  private key = (m: Omit<TiffinMarkRecord, 'status'>) => `${m.orderId}|${m.day}|${m.meal}|${m.makeupFor}`;
+  async list(orderIds: string[], fromDay: string, toDay: string) {
+    const ids = new Set(orderIds);
+    return [...this.rows.values()]
+      .filter((r) => ids.has(r.orderId) && r.day >= fromDay && r.day <= toDay)
+      .map((r) => ({ ...r }));
+  }
+  async set(m: TiffinMarkRecord) {
+    this.rows.set(this.key(m), { ...m });
+  }
+  async clear(m: Omit<TiffinMarkRecord, 'status'>) {
+    this.rows.delete(this.key(m));
   }
 }

@@ -13,7 +13,9 @@ import type {
 import type { Clock } from '../domain/ports';
 
 const rupees = (n: number) => `₹${n.toLocaleString('en-IN')}`;
-const items = (o: MessOrderRecord) => o.lines.reduce((n, l) => n + l.qty, 0);
+/** "2× Thali, 1× Paneer tikka · ₹260 · Pickup". */
+export const orderSummary = (o: MessOrderRecord) =>
+  `${o.lines.map((l) => `${l.qty}× ${l.name}`).join(', ')} · ${rupees(o.total)} · ${o.mode === 'delivery' ? `to ${o.address}` : 'Pickup'}`;
 
 /** Where a notification opens, for each side of an order. */
 export const studentChatUrl = (o: { id: string }) => `/my-orders?chat=${encodeURIComponent(o.id)}`;
@@ -128,10 +130,7 @@ export class OrderEvents {
       mess,
       {
         title: `🔔 New order ${order.code} · ${rupees(order.total)}`,
-        body: `${items(order)} item${items(order) === 1 ? '' : 's'} · ${order.mode === 'delivery' ? `Deliver to ${order.address}` : 'Pickup'} · ${order.name}`.slice(
-          0,
-          160,
-        ),
+        body: `${order.name}: ${orderSummary(order)}`.slice(0, 200),
         tag: `order-${order.id}`,
         url: ownerChatUrl(order).replace(/&chat=.*/, ''),
         requireInteraction: true,
@@ -149,26 +148,45 @@ export class OrderEvents {
   }
 
   /** The order moved on: a line in the chat, a notification to whoever didn't do it, and a ping. */
-  async statusChanged(order: MessOrderRecord, mess: MessRecord, by: 'owner' | 'student' | 'auto' | 'admin') {
+  async statusChanged(
+    order: MessOrderRecord,
+    mess: MessRecord,
+    by: 'owner' | 'student' | 'auto' | 'admin',
+    /** The step it was at before (a restaurant cancelling after accepting says so). */
+    from?: MessOrderStatus,
+  ) {
     const note = order.ownerNote ? ` “${order.ownerNote}”` : '';
     const line =
       by === 'student' && order.status === 'cancelled'
         ? 'The student cancelled this order.'
-        : by === 'auto'
-          ? "Cancelled automatically: the restaurant didn't answer within 10 minutes."
-          : `${STATUS_LINE[order.status] ?? MESS_ORDER_STATUS_TEXT[order.status]}${note}`;
+        : order.status === 'rejected' && from && from !== 'placed'
+          ? `The restaurant cancelled this order.${note}`
+          : by === 'auto'
+            ? "Cancelled automatically: the restaurant didn't answer within 10 minutes."
+            : `${STATUS_LINE[order.status] ?? MESS_ORDER_STATUS_TEXT[order.status]}${note}`;
     await this.system(order, line).catch(() => {});
     // The student's own cancellation isn't news to them: no unread badge for it.
     if (by === 'student')
       await this.orders.patch(order.id, { studentUnread: order.chat.studentUnread }).catch(() => null);
-    if (by === 'student') {
-      await this.toOwners(mess, {
-        title: `Order ${order.code} cancelled`,
-        body: `${order.name} cancelled their order.`,
-        tag: `order-${order.id}`,
-        url: ownerChatUrl(order),
-      }).catch(() => null);
-    } else {
+    if (by === 'student' || by === 'auto') {
+      // The kitchen may already be cooking: this one stays on screen (and rings) until tapped, and
+      // says exactly what not to make. Its tag replaces the "new order" alert for the same order.
+      await this.toOwners(
+        mess,
+        {
+          title: `❌ Order ${order.code} cancelled${by === 'student' ? ` by ${order.name}` : ''}`,
+          body: `${by === 'student' ? "Don't make it" : 'Nobody answered in 10 minutes, so it was cancelled'}: ${orderSummary(order)}`.slice(
+            0,
+            200,
+          ),
+          tag: `order-${order.id}`,
+          url: ownerChatUrl(order),
+          requireInteraction: by === 'student',
+        },
+        3600,
+      ).catch(() => null);
+    }
+    if (by !== 'student') {
       await this.toStudent(order, {
         title: `${mess.name} · ${order.code}`,
         body: line.slice(0, 160),

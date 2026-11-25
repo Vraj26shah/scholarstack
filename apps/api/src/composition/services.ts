@@ -24,6 +24,7 @@ import { ChatService } from '../application/order-chat';
 import { OrderEvents } from '../application/order-events';
 import { OrderService } from '../application/order-service';
 import { PackService } from '../application/packs';
+import { PhoneService } from '../application/phone-service';
 import { PreviewService } from '../application/preview-service';
 import { PriceBook } from '../application/price-book';
 import { ProblemService } from '../application/problems';
@@ -43,9 +44,13 @@ import type {
   MessOrderRepository,
   MessReportRepository,
   MessRepository,
+  MessViewRepository,
   OrderChatRepository,
+  PhoneRepository,
   PushRepository,
   PushSender,
+  SmsVerifier,
+  TiffinMarkRepository,
 } from '../domain/campus-ports';
 import type {
   AcademicRepository,
@@ -128,6 +133,13 @@ export interface Ports {
   live: LiveSignal;
   push: PushRepository;
   pushSender: PushSender;
+  /** Students' checked mobile numbers, and the SMS service that sends the codes. */
+  phones: PhoneRepository;
+  sms: SmsVerifier;
+  /** Opens of each restaurant page per day (owner insights). */
+  messViews: MessViewRepository;
+  /** Tiffin meals marked delivered or missed. */
+  tiffinMarks: TiffinMarkRepository;
   signInStrikes: SignInStrikes;
   admins: AdminDirectory;
   academic: AcademicRepository;
@@ -214,8 +226,12 @@ export function buildServices(p: Ports, config: AppConfig) {
   );
   const admins = new AdminAccess(p.admins, config.adminEmails);
   const orderEvents = new OrderEvents(p.messOrders, p.orderChat, p.push, p.pushSender, p.live, p.clock);
+  const phones = new PhoneService(p.phones, p.sms, p.clock, p.profiles);
   const orders = new OrderService(p.messes, p.messOrders, p.features, p.clock, p.uploads, {
     events: orderEvents,
+    phones,
+    views: p.messViews,
+    tiffinMarks: p.tiffinMarks,
     blocks: p.messBlocks,
     chat: p.orderChat,
   });
@@ -306,6 +322,7 @@ export function buildServices(p: Ports, config: AppConfig) {
     books: new BookService(p.catalogueReader, p.books),
     mess: new MessService(p.messes, p.messReports, p.features),
     orders,
+    phones,
     chats,
     outsideAllowed,
     reminders: new ReminderService(

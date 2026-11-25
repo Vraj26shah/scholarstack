@@ -76,6 +76,11 @@ self.addEventListener('fetch', (event) => {
 // The server sends a small encrypted message; the browser wakes this worker to show it, even
 // when no tab of the site is open. Each kind has one tag, so a new one replaces the last.
 
+// Pushes are handled one at a time, in arrival order. Several arriving together (a burst of chat
+// messages, a new order and a message) would otherwise read the same old notification at once and
+// the later one would drop the earlier line.
+let pushQueue = Promise.resolve();
+
 self.addEventListener('push', (event) => {
   let data = {};
   try {
@@ -84,21 +89,35 @@ self.addEventListener('push', (event) => {
     data = { title: 'Scholars Stack', body: event.data ? event.data.text() : '' };
   }
   const title = data.title || 'Scholars Stack';
+  // A chat keeps one notification per order, but the earlier unread lines stay in it (newest last),
+  // so someone away from the site still reads the whole conversation from the notification.
+  const bodyFor = () =>
+    String(data.tag || '').startsWith('chat-')
+      ? self.registration
+          .getNotifications({ tag: data.tag })
+          .then((open) => {
+            const earlier = open.length ? String(open[open.length - 1].body || '').split('\n') : [];
+            return [...earlier, data.body || ''].filter(Boolean).slice(-5).join('\n');
+          })
+          .catch(() => data.body || '')
+      : Promise.resolve(data.body || '');
   const show = () =>
-    self.registration.showNotification(title, {
-      body: data.body || '',
-      tag: data.tag || 'ss',
-      renotify: true,
-      requireInteraction: !!data.requireInteraction,
-      vibrate: data.requireInteraction ? [300, 120, 300, 120, 300] : [120, 60, 120],
-      icon: '/apple-touch-icon.png',
-      badge: '/favicon.svg',
-      lang: 'en-IN',
-      data: { url: data.url || '/' },
-      actions: Array.isArray(data.actions) ? data.actions.slice(0, 2) : [],
-    });
+    bodyFor().then((body) =>
+      self.registration.showNotification(title, {
+        body,
+        tag: data.tag || 'ss',
+        renotify: true,
+        requireInteraction: !!data.requireInteraction,
+        vibrate: data.requireInteraction ? [300, 120, 300, 120, 300] : [120, 60, 120],
+        icon: '/apple-touch-icon.png',
+        badge: '/favicon.svg',
+        lang: 'en-IN',
+        data: { url: data.url || '/' },
+        actions: Array.isArray(data.actions) ? data.actions.slice(0, 2) : [],
+      }),
+    );
   // A chat message for a chat that's open and in front of the person: the page shows it already.
-  event.waitUntil(
+  const handle = () =>
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((tabs) => {
       const quiet =
         data.quietWhen &&
@@ -111,7 +130,8 @@ self.addEventListener('push', (event) => {
       return show().then(
         () => {
           for (const t of tabs) t.postMessage({ type: 'shown', tag: data.tag || '' });
-          return myEndpoint().then(
+          // The receipt never holds up the next notification: at most 4 s.
+          const receipt = myEndpoint().then(
             (endpoint) =>
               endpoint &&
               fetch('/api/push/receipt', {
@@ -120,6 +140,7 @@ self.addEventListener('push', (event) => {
                 body: JSON.stringify({ endpoint }),
               }).catch(() => {}),
           );
+          return Promise.race([receipt, new Promise((r) => setTimeout(r, 4000))]);
         },
         (error) => {
           for (const t of tabs)
@@ -130,8 +151,10 @@ self.addEventListener('push', (event) => {
             });
         },
       );
-    }),
-  );
+    });
+  const run = pushQueue.then(handle, handle).catch(() => {});
+  pushQueue = run;
+  event.waitUntil(run);
 });
 
 /** This device's push address, for "Mute today". */
@@ -157,15 +180,40 @@ self.addEventListener('notificationclick', (event) => {
     );
     return;
   }
-  // Open exactly that page: reuse an open tab of the site if there is one.
-  const target = new URL(n.data?.url || '/', self.location.origin).href;
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((tabs) => {
-      for (const tab of tabs) {
-        if (new URL(tab.url).origin === self.location.origin && 'focus' in tab)
-          return tab.navigate(target).then((t) => (t || tab).focus());
+  // Open exactly that page. An open tab of the site is reused: the app inside it moves to the page
+  // itself (keeping anything half-typed in other tabs of the app); if it doesn't answer, the tab is
+  // navigated; if that fails too (a tab this worker doesn't control), a new window opens.
+  const target = new URL(n.data?.url || '/', self.location.origin);
+  const path = target.pathname + target.search + target.hash;
+  const askApp = (tab) =>
+    new Promise((resolve) => {
+      const ch = new MessageChannel();
+      const timer = setTimeout(() => resolve(false), 1200);
+      ch.port1.onmessage = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      try {
+        tab.postMessage({ type: 'open', url: path }, [ch.port2]);
+      } catch {
+        clearTimeout(timer);
+        resolve(false);
       }
-      return self.clients.openWindow(target);
+    });
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (tabs) => {
+      const mine = tabs.filter((t) => new URL(t.url).origin === self.location.origin);
+      // The tab in front first, then the most recent.
+      mine.sort((a, b) => Number(b.focused) - Number(a.focused));
+      const tab = mine[0];
+      if (!tab) return self.clients.openWindow(target.href);
+      await tab.focus().catch(() => {});
+      if (new URL(tab.url).href === target.href) return undefined;
+      if (await askApp(tab)) return undefined;
+      return tab
+        .navigate(target.href)
+        .then((t) => t || self.clients.openWindow(target.href))
+        .catch(() => self.clients.openWindow(target.href));
     }),
   );
 });

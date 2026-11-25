@@ -1,4 +1,6 @@
 import {
+  COMBO_PREFIX,
+  type InsightPeriod,
   MESS_ORDER_NEXT,
   MESS_PHOTO_MAX_BYTES,
   type MessDto,
@@ -9,13 +11,22 @@ import {
   type OwnerMessInput,
   type PlaceMessOrderInput,
   type ReplyTimeDto,
+  TIFFIN_MAKEUP_DAYS,
+  TIFFIN_MEALS,
   TIFFIN_START_WITHIN_DAYS,
+  type TiffinMarkInput,
+  type TiffinMeal,
   type TiffinRowDto,
   type TiffinSheetDto,
+  bestDiscount,
   campusClock,
+  comboLineName,
   isTiffinItem,
+  makeupUntil,
   normaliseEmail,
   normaliseMobile,
+  offerLive,
+  offerProblem,
   tiffinEnds,
 } from '@ss/contracts';
 import type {
@@ -24,13 +35,17 @@ import type {
   MessOrderRepository,
   MessRecord,
   MessRepository,
+  MessViewRepository,
   OrderChatRepository,
+  TiffinMarkRepository,
 } from '../domain/campus-ports';
 import type { Principal } from '../domain/entities';
 import type { Clock, FeatureRepository, UploadStore } from '../domain/ports';
 import { MESS_FEATURE, toDto as messDto } from './campus-service';
 import { fail } from './errors';
 import type { OrderEvents } from './order-events';
+import { addDays, computeInsights, periodRange } from './owner-insights';
+import type { PhoneService } from './phone-service';
 
 /**
  * Limits that keep ordering honest without getting in a hungry student's way. A student is signed
@@ -109,6 +124,8 @@ const baseDto = (o: MessOrderRecord, messName: string) => ({
   note: o.note,
   status: o.status,
   ownerNote: o.ownerNote,
+  discount: o.discount ?? 0,
+  offer: o.offer ?? '',
   createdAt: o.createdAt.toISOString(),
   updatedAt: o.updatedAt.toISOString(),
 });
@@ -125,6 +142,12 @@ export interface OrderExtras {
   events?: OrderEvents;
   blocks?: MessBlockRepository;
   chat?: OrderChatRepository;
+  /** Checked mobile numbers: with an SMS service set up, every order needs one. */
+  phones?: PhoneService;
+  /** Opens of each restaurant page, for the owner's insights. */
+  views?: MessViewRepository;
+  /** Tiffin meals marked delivered or missed. */
+  tiffinMarks?: TiffinMarkRepository;
 }
 
 /** Orders from students to restaurants for day scholars, and the owner's side of them. */
@@ -235,6 +258,14 @@ export class OrderService {
    */
   async ownerSave(p: Principal, admin: boolean, slug: string, input: OwnerMessInput): Promise<MessDto> {
     const current = await this.ownedMess(p, admin, slug);
+    // Offers must make sense against the menu they're saved with.
+    const menu = input.order.flatMap((s) => s.items);
+    for (const o of input.offers ?? []) {
+      const problem = offerProblem(o, menu);
+      if (problem) throw fail.badRequest(problem);
+    }
+    const codes = (input.offers ?? []).filter((o) => o.kind === 'code').map((o) => o.code);
+    if (new Set(codes).size !== codes.length) throw fail.badRequest('Two offers use the same code.');
     const { updatedAt: _u, ...rest } = current;
     const saved = await this.messes.save({ ...rest, ...input, source: 'owner' });
     const dto = messDto(saved);
@@ -297,7 +328,10 @@ export class OrderService {
     const order = await this.orders.find(id);
     if (!order) throw fail.notFound('That order');
     const mess = await this.ownedMess(p, admin, order.messSlug);
-    if (!MESS_ORDER_NEXT[order.status].includes(status))
+    // A tiffin plan still running can be stopped by the restaurant (out of tiffins, closing…).
+    const runningTiffin =
+      order.status === 'done' && !!order.tiffin && order.tiffin.endsOn >= campusClock(this.clock.now()).date;
+    if (!MESS_ORDER_NEXT[order.status].includes(status) && !(runningTiffin && status === 'rejected'))
       throw fail.badRequest(`This order is already ${order.status}; it can't be moved to ${status}.`);
     if (status === 'rejected' && note.length < 3) throw fail.badRequest('Say why, so the student knows.');
     // A tiffin plan has no kitchen steps: accepting it switches it on for its 30 days.
@@ -311,10 +345,44 @@ export class OrderService {
     if (order.status === 'placed')
       saved = (await this.orders.patch(id, { respondedAt: this.clock.now() })) ?? saved;
     if (status === 'rejected') saved = (await this.orders.patch(id, { endedBy: 'owner' })) ?? saved;
-    await this.events?.statusChanged(saved, mess, 'owner');
+    await this.events?.statusChanged(saved, mess, 'owner', order.status);
     saved = (await this.orders.find(id)) ?? saved;
     this.replyCache.delete(mess.slug);
     return toDto(saved, mess.name, 'owner', await this.topic(saved));
+  }
+
+  /**
+   * Someone opened a restaurant's page: counted once per visitor per day for its owner's insights.
+   * The owners themselves (and admins) are not counted, so the numbers are real customers.
+   */
+  async recordView(
+    slug: string,
+    who: { userId: string; email: string } | null,
+    admin: boolean,
+    ipHash: string,
+  ) {
+    if (!this.extras.views || admin) return;
+    const mess = await this.messes.find(slug);
+    if (!mess || mess.kind !== 'restaurant' || !mess.published) return;
+    if (who && mess.ownerEmails.includes(normaliseEmail(who.email))) return;
+    const day = campusClock(this.clock.now()).date;
+    await this.extras.views.hit(slug, day, who ? `u:${who.userId}` : `a:${ipHash}`, who?.userId ?? null);
+  }
+
+  /** The owner's numbers for a day, week, month or year (campus time), with the period before. */
+  async insights(p: Principal, admin: boolean, slug: string, period: InsightPeriod, anchor?: string) {
+    await this.ownedMess(p, admin, slug);
+    const today = campusClock(this.clock.now()).date;
+    const at = anchor && /^\d{4}-\d{2}-\d{2}$/.test(anchor) && anchor <= today ? anchor : today;
+    const r = periodRange(period, at);
+    const prev = periodRange(period, r.prev);
+    // A year before the previous period too: to tell new customers from returning ones.
+    const since = new Date(`${addDays(prev.from, -365)}T00:00:00+05:30`);
+    const [orders, views] = await Promise.all([
+      this.orders.listSince(since, 10000, slug),
+      this.extras.views ? this.extras.views.between(slug, prev.from, r.to) : Promise.resolve([]),
+    ]);
+    return computeInsights({ period, anchor: at, now: this.clock.now(), orders, views });
   }
 
   /** Everyone who ordered here in the last 90 days, newest first: the owner's customer list. */
@@ -354,16 +422,35 @@ export class OrderService {
     return [...by.values()].sort((a, b) => b.lastOrderAt.localeCompare(a.lastOrderAt));
   }
 
-  /** The tiffin delivery sheet for a day: who gets lunch, who gets dinner, and plans ending soon. */
+  /**
+   * The tiffin delivery sheet for a day: who gets lunch and dinner (with how each was marked),
+   * missed meals from the last few days that can still be made up, and plans ending soon.
+   */
   async tiffinSheet(p: Principal, admin: boolean, slug: string, date?: string): Promise<TiffinSheetDto> {
     await this.ownedMess(p, admin, slug);
     const day = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : campusClock(this.clock.now()).date;
-    const since = new Date(this.clock.now().getTime() - 60 * DAY_MS);
-    const plans = (await this.orders.listSince(since, 2000, slug)).filter((o) => o.tiffin);
-    const soon = new Date(`${day}T00:00:00Z`);
-    soon.setUTCDate(soon.getUTCDate() + 3);
-    const soonDay = soon.toISOString().slice(0, 10);
-    const row = (o: MessOrderRecord): TiffinRowDto => ({
+    const since = new Date(this.clock.now().getTime() - 75 * DAY_MS);
+    const all = (await this.orders.listSince(since, 3000, slug)).filter((o) => o.tiffin);
+    const plans = all.filter((o) => o.status === 'done');
+    const marks = this.extras.tiffinMarks
+      ? await this.extras.tiffinMarks.list(
+          plans.map((o) => o.id),
+          addDays(day, -TIFFIN_MAKEUP_DAYS),
+          addDays(day, TIFFIN_MAKEUP_DAYS),
+        )
+      : [];
+    const markOf = (id: string, d: string, meal: TiffinMeal, makeupFor = '') =>
+      marks.find((m) => m.orderId === id && m.day === d && m.meal === meal && m.makeupFor === makeupFor)
+        ?.status ?? null;
+    const serves = (o: MessOrderRecord, meal: TiffinMeal) =>
+      o.tiffin!.plan === 'both' || o.tiffin!.plan === meal;
+    const soonDay = addDays(day, 3);
+    const row = (
+      o: MessOrderRecord,
+      meal: TiffinMeal,
+      mark: TiffinRowDto['mark'],
+      makeupFor = '',
+    ): TiffinRowDto => ({
       orderId: o.id,
       code: o.code,
       name: o.name,
@@ -375,26 +462,95 @@ export class OrderService {
       endsOn: o.tiffin!.endsOn,
       note: o.note,
       unread: o.chat.ownerUnread,
+      meal,
+      mark,
+      makeupFor,
+      makeupUntil: makeupFor ? makeupUntil(makeupFor) : '',
     });
-    const on = plans.filter(
-      (o) => o.status === 'done' && o.tiffin!.startsOn <= day && o.tiffin!.endsOn >= day,
-    );
-    const byName = (a: TiffinRowDto, b: TiffinRowDto) =>
-      a.address.localeCompare(b.address) || a.name.localeCompare(b.name);
+    const on = plans.filter((o) => o.tiffin!.startsOn <= day && o.tiffin!.endsOn >= day);
+    const byPlace = (x: TiffinRowDto, y: TiffinRowDto) =>
+      x.address.localeCompare(y.address) || x.name.localeCompare(y.name);
+    const meals = (meal: TiffinMeal) =>
+      on
+        .filter((o) => serves(o, meal))
+        .map((o) => row(o, meal, markOf(o.id, day, meal)))
+        .sort(byPlace);
+    const lunch = meals('lunch');
+    const dinner = meals('dinner');
+    // A meal missed in the last few days, not yet made up on another day: it can still be given.
+    const makeups: TiffinRowDto[] = [];
+    for (const o of plans)
+      for (let back = TIFFIN_MAKEUP_DAYS; back >= 1; back--) {
+        const missedOn = addDays(day, -back);
+        for (const meal of TIFFIN_MEALS) {
+          if (!serves(o, meal) || markOf(o.id, missedOn, meal) !== 'missed') continue;
+          const usedElsewhere = marks.some(
+            (m) =>
+              m.orderId === o.id &&
+              m.meal === meal &&
+              m.makeupFor === missedOn &&
+              m.day !== day &&
+              m.status === 'delivered',
+          );
+          if (!usedElsewhere) makeups.push(row(o, meal, markOf(o.id, day, meal, missedOn), missedOn));
+        }
+      }
+    const regular = [...lunch, ...dinner];
     return {
       date: day,
-      lunch: on
-        .filter((o) => o.tiffin!.plan !== 'dinner')
-        .map(row)
-        .sort(byName),
-      dinner: on
-        .filter((o) => o.tiffin!.plan !== 'lunch')
-        .map(row)
-        .sort(byName),
-      ending: on.filter((o) => o.tiffin!.endsOn <= soonDay).map(row),
-      waiting: plans.filter((o) => o.status === 'placed').length,
+      lunch,
+      dinner,
+      makeups: makeups.sort((x, y) => x.makeupUntil.localeCompare(y.makeupUntil) || byPlace(x, y)),
+      counts: {
+        delivered: regular.filter((r) => r.mark === 'delivered').length,
+        missed: regular.filter((r) => r.mark === 'missed').length,
+        pending: regular.filter((r) => !r.mark).length,
+      },
+      ending: on
+        .filter((o) => o.tiffin!.endsOn <= soonDay)
+        .map((o) => row(o, o.tiffin!.plan === 'dinner' ? 'dinner' : 'lunch', null)),
+      waiting: all.filter((o) => o.status === 'placed').length,
       active: on.length,
     };
+  }
+
+  /**
+   * The owner marks a tiffin meal: delivered, missed, or takes the mark back. A make-up meal (for a
+   * meal missed on `makeupFor`) can only be given within TIFFIN_MAKEUP_DAYS days of the miss.
+   */
+  async markTiffin(p: Principal, admin: boolean, input: TiffinMarkInput) {
+    const order = await this.orders.find(input.orderId);
+    if (!order || !order.tiffin) throw fail.notFound('That tiffin plan');
+    const mess = await this.ownedMess(p, admin, order.messSlug);
+    if (!this.extras.tiffinMarks) throw fail.badRequest('Tiffin marks are not set up.');
+    if (order.status !== 'done') throw fail.badRequest("This tiffin plan isn't running.");
+    const today = campusClock(this.clock.now()).date;
+    if (input.day > today) throw fail.badRequest("You can't mark a day that hasn't come yet.");
+    const t = order.tiffin;
+    if (t.plan !== 'both' && t.plan !== input.meal)
+      throw fail.badRequest(`This plan doesn't include ${input.meal}.`);
+    const key = { orderId: order.id, day: input.day, meal: input.meal, makeupFor: input.makeupFor };
+    if (input.makeupFor) {
+      if (input.status === 'missed') throw fail.badRequest('A make-up meal is either given or not.');
+      const missed = await this.extras.tiffinMarks.list([order.id], input.makeupFor, input.makeupFor);
+      if (!missed.some((m) => m.meal === input.meal && !m.makeupFor && m.status === 'missed'))
+        throw fail.badRequest('That meal was not marked missed.');
+      if (input.day <= input.makeupFor || input.day > makeupUntil(input.makeupFor))
+        throw fail.badRequest(`A missed meal can be made up within ${TIFFIN_MAKEUP_DAYS} days.`);
+    } else if (input.day < t.startsOn || input.day > t.endsOn) {
+      throw fail.badRequest('That day is outside the plan.');
+    }
+    if (input.status === 'clear') await this.extras.tiffinMarks.clear(key);
+    else await this.extras.tiffinMarks.set({ ...key, status: input.status });
+    if (input.status === 'missed' && !input.makeupFor)
+      await this.events
+        ?.system(
+          order,
+          `${input.meal === 'lunch' ? 'Lunch' : 'Dinner'} on ${input.day} was missed. It can be made up until ${makeupUntil(input.day)}.`,
+        )
+        .catch(() => {});
+    await this.events?.ping(order);
+    return this.tiffinSheet(p, admin, mess.slug, input.day);
   }
 
   /**
@@ -442,7 +598,12 @@ export class OrderService {
       throw fail.badRequest(`${mess.name} isn't taking orders on the site right now. Call them instead.`);
     if (input.mode === 'delivery' && input.address.length < 3)
       throw fail.badRequest('Add where it should be delivered.');
-    const phone = normaliseMobile(input.phone);
+    let phone = normaliseMobile(input.phone);
+    // With SMS codes set up, the order carries the account's checked number, never a typed one.
+    if (this.extras.phones?.available) {
+      phone = await this.extras.phones.verified(p.userId);
+      if (!phone) throw fail.badRequest('Check your mobile number with the SMS code first.');
+    }
     if (!phone) throw fail.badRequest('Use a 10-digit Indian mobile number.');
     if (await this.extras.blocks?.find(slug, p.userId, phone))
       throw fail.badRequest(`${mess.name} isn't taking orders from this account.`);
@@ -471,12 +632,40 @@ export class OrderService {
         endsOn: tiffinEnds(input.tiffin.startsOn),
       };
     }
-    const lines = input.lines.map((l) => {
+    const today = campusClock(this.clock.now()).date;
+    const offers = (mess.offers ?? []).filter((o) => offerLive(o, today));
+    // A combo comes in as "combo:<offer id>": its price and contents are the owner's, never the browser's.
+    const priced = input.lines.map((l) => {
+      if (l.name.startsWith(COMBO_PREFIX)) {
+        const combo = offers.find((o) => o.kind === 'combo' && `${COMBO_PREFIX}${o.id}` === l.name);
+        if (!combo) throw fail.badRequest("That combo isn't on offer any more.");
+        const out = combo.items.find((i) => items.get(i.name.toLowerCase())?.available === false);
+        if (out) throw fail.badRequest(`"${out.name}" in the combo is sold out right now.`);
+        const detail = combo.items
+          .map((i) => `${i.qty}× ${i.name}`)
+          .join(', ')
+          .slice(0, 200);
+        return { combo: true, line: { name: comboLineName(combo), qty: l.qty, price: combo.price, detail } };
+      }
       const item = items.get(l.name.toLowerCase());
       if (!item) throw fail.badRequest(`"${l.name}" isn't on ${mess.name}'s list any more.`);
       if (item.available === false) throw fail.badRequest(`"${item.name}" is sold out right now.`);
-      return { name: l.name, qty: l.qty, price: item.price, detail: l.detail };
+      return { combo: false, line: { name: l.name, qty: l.qty, price: item.price, detail: l.detail } };
     });
+    const lines = priced.map((x) => x.line);
+    // One discount: the typed code if it works, else the best automatic deal. Combos and tiffin
+    // plans are priced already, so the discount is on the rest.
+    const subtotal = tiffin
+      ? 0
+      : priced.filter((x) => !x.combo).reduce((n, { line: l }) => n + l.qty * l.price, 0);
+    const firstOrder = !(await this.orders.listForUser(p.userId, 50)).some(
+      (o) => o.messSlug === slug && ['accepted', 'ready', 'done', 'placed'].includes(o.status),
+    );
+    const deal = bestDiscount(offers, subtotal, { date: today, code: input.promoCode, firstOrder });
+    if (input.promoCode && deal.codeProblem) throw fail.badRequest(deal.codeProblem);
+    const discount = deal.saving;
+    const offerLabel =
+      !deal.offer || !discount ? '' : deal.offer.kind === 'code' ? deal.offer.code : deal.offer.title;
 
     await this.checkLimits(p.userId, ipHash, slug);
     if (mess.dailyOrderCap > 0) {
@@ -493,7 +682,9 @@ export class OrderService {
       userId: p.userId,
       email: p.email,
       lines,
-      total: lines.reduce((n, l) => n + l.qty * l.price, 0),
+      total: Math.max(0, lines.reduce((n, l) => n + l.qty * l.price, 0) - discount),
+      discount,
+      offer: offerLabel,
       mode: input.mode,
       address: input.mode === 'delivery' ? input.address : '',
       name: input.name,
@@ -528,9 +719,39 @@ export class OrderService {
   async mine(p: Principal): Promise<MessOrderDto[]> {
     const names = new Map((await this.messes.list()).map((m) => [m.slug, m.name]));
     const list = await this.swept(await this.orders.listForUser(p.userId, 20));
-    return Promise.all(
+    const dtos = await Promise.all(
       list.map(async (o) => toDto(o, names.get(o.messSlug) ?? '', 'student', await this.topic(o))),
     );
+    // A running tiffin plan: meals delivered and missed, and missed meals still to come.
+    const plans = list.filter((o) => o.tiffin && o.status === 'done');
+    if (plans.length && this.extras.tiffinMarks) {
+      const today = campusClock(this.clock.now()).date;
+      const from = plans.reduce((d, o) => (o.tiffin!.startsOn < d ? o.tiffin!.startsOn : d), today);
+      const marks = await this.extras.tiffinMarks.list(
+        plans.map((o) => o.id),
+        from,
+        today,
+      );
+      for (const d of dtos) {
+        if (!d.tiffin || !plans.some((o) => o.id === d.id)) continue;
+        const mine = marks.filter((m) => m.orderId === d.id);
+        const regular = mine.filter((m) => !m.makeupFor);
+        d.tiffin = {
+          ...d.tiffin,
+          delivered: mine.filter((m) => m.status === 'delivered').length,
+          missed: regular.filter((m) => m.status === 'missed').length,
+          makeups: regular
+            .filter(
+              (m) =>
+                m.status === 'missed' &&
+                makeupUntil(m.day) >= today &&
+                !mine.some((x) => x.makeupFor === m.day && x.meal === m.meal && x.status === 'delivered'),
+            )
+            .map((m) => ({ day: m.day, meal: m.meal, until: makeupUntil(m.day) })),
+        };
+      }
+    }
+    return dtos;
   }
 
   async cancel(p: Principal, id: string): Promise<MessOrderDto> {

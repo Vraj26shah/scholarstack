@@ -5563,3 +5563,160 @@ create index if not exists mess_orders_tiffin on public.mess_orders (mess_slug, 
 $m$;
   insert into supabase_migrations.schema_migrations (version, name) values ('20261125000400', 'tiffin_plans');
 end $migration$;
+
+-- ═══ 20261125000500_user_phones ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261125000500') then
+    raise notice 'skip 20261125000500';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Checked mobile numbers
+--
+-- Restaurants call the number on an order, so a student proves it's theirs once with a code sent
+-- by SMS. The checked number is kept here and every order uses it; the order form can't change
+-- it. The SMS service makes and checks the code: only its handle (pending_ref) is stored here.
+-- Server only (the API's service key).
+--
+-- Safe to run more than once. Rollback:
+--   drop table if exists public.user_phones;
+-- ════════════════════════════════════════════════════════════════════════════
+
+create table if not exists public.user_phones (
+  user_id        uuid primary key,
+  phone          text not null default '',
+  verified_at    timestamptz,
+  pending_phone  text not null default '',
+  pending_ref    text not null default '',
+  pending_at     timestamptz,
+  attempts       int not null default 0,
+  sends_day      date,
+  sends          int not null default 0,
+  updated_at     timestamptz not null default now(),
+  constraint user_phones_phone check (phone = '' or phone ~ '^[6-9][0-9]{9}$'),
+  constraint user_phones_pending check (pending_phone = '' or pending_phone ~ '^[6-9][0-9]{9}$')
+);
+create index if not exists user_phones_pending on public.user_phones (pending_phone, sends_day)
+  where pending_phone <> '';
+create index if not exists user_phones_phone on public.user_phones (phone) where phone <> '';
+alter table public.user_phones enable row level security; -- server only
+revoke all on public.user_phones from anon, authenticated;
+comment on table public.user_phones is 'Mobile numbers students proved with an SMS code; orders use them.';
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261125000500', 'user_phones');
+end $migration$;
+
+-- ═══ 20261125000600_mess_views ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261125000600') then
+    raise notice 'skip 20261125000600';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Restaurant page views
+--
+-- How many people open each restaurant's page, per campus day, for the owner's Insights tab. One
+-- row per restaurant, day and visitor: "u:<account id>" when signed in, otherwise a hash of the
+-- network that changes every day (not reversible, never an address). Owners and admins opening
+-- their own page are not counted. Server only.
+--
+-- Safe to run more than once. Rollback:
+--   drop function if exists public.mess_view_hit(text, date, text, uuid);
+--   drop table if exists public.mess_views_daily;
+-- ════════════════════════════════════════════════════════════════════════════
+
+create table if not exists public.mess_views_daily (
+  mess_slug   text not null references public.messes(slug) on delete cascade,
+  day         date not null,
+  visitor     text not null,
+  user_id     uuid,
+  views       int not null default 1,
+  first_at    timestamptz not null default now(),
+  last_at     timestamptz not null default now(),
+  primary key (mess_slug, day, visitor),
+  constraint mess_views_visitor check (char_length(visitor) between 3 and 80)
+);
+create index if not exists mess_views_daily_day on public.mess_views_daily (mess_slug, day);
+alter table public.mess_views_daily enable row level security; -- server only
+revoke all on public.mess_views_daily from anon, authenticated;
+comment on table public.mess_views_daily is 'Opens of each restaurant page per day and visitor (owner insights).';
+
+-- One open: a new row, or one more on today's row (one call, no read-then-write race).
+create or replace function public.mess_view_hit(p_slug text, p_day date, p_visitor text, p_user uuid)
+returns void
+language sql security definer set search_path = public as $$
+  insert into public.mess_views_daily (mess_slug, day, visitor, user_id)
+  values (p_slug, p_day, p_visitor, p_user)
+  on conflict (mess_slug, day, visitor)
+  do update set views = least(public.mess_views_daily.views + 1, 100000), last_at = now(),
+    user_id = coalesce(excluded.user_id, public.mess_views_daily.user_id);
+$$;
+revoke execute on function public.mess_view_hit(text, date, text, uuid) from public, anon, authenticated;
+grant execute on function public.mess_view_hit(text, date, text, uuid) to service_role;
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261125000600', 'mess_views');
+end $migration$;
+
+-- ═══ 20261125000700_mess_offers ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261125000700') then
+    raise notice 'skip 20261125000700';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Restaurant offers
+--
+-- Owners set up promo codes, automatic deals and combos in their dashboard (kept as a list on the
+-- restaurant, like its menu card). An order keeps what an offer took off and which one, so the
+-- owner's Insights can show what each offer brought in. The total stays the amount to pay.
+--
+-- Safe to run more than once. Rollback:
+--   alter table public.messes drop column if exists offers;
+--   alter table public.mess_orders drop column if exists discount, drop column if exists offer_label;
+-- ════════════════════════════════════════════════════════════════════════════
+
+alter table public.messes add column if not exists offers jsonb not null default '[]'::jsonb;
+alter table public.mess_orders add column if not exists discount int not null default 0;
+alter table public.mess_orders add column if not exists offer_label text not null default '';
+alter table public.mess_orders drop constraint if exists mess_orders_discount;
+alter table public.mess_orders add constraint mess_orders_discount check (discount >= 0 and char_length(offer_label) <= 80);
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261125000700', 'mess_offers');
+end $migration$;
+
+-- ═══ 20261125000800_tiffin_marks ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261125000800') then
+    raise notice 'skip 20261125000800';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Tiffin deliveries
+--
+-- Each day the restaurant marks every tiffin meal Delivered or Missed. A missed meal can be made
+-- up within the next 4 days (a row with makeup_for = the missed day); after that it lapses.
+-- makeup_for is '' for the day's regular meal. Server only.
+--
+-- Safe to run more than once. Rollback:
+--   drop table if exists public.tiffin_marks;
+-- ════════════════════════════════════════════════════════════════════════════
+
+create table if not exists public.tiffin_marks (
+  order_id    uuid not null references public.mess_orders(id) on delete cascade,
+  day         date not null,
+  meal        text not null,
+  makeup_for  text not null default '',
+  status      text not null,
+  marked_at   timestamptz not null default now(),
+  primary key (order_id, day, meal, makeup_for),
+  constraint tiffin_marks_meal check (meal in ('lunch', 'dinner')),
+  constraint tiffin_marks_status check (status in ('delivered', 'missed')),
+  constraint tiffin_marks_makeup check (makeup_for = '' or makeup_for ~ '^\d{4}-\d{2}-\d{2}$')
+);
+create index if not exists tiffin_marks_day on public.tiffin_marks (day);
+alter table public.tiffin_marks enable row level security; -- server only
+revoke all on public.tiffin_marks from anon, authenticated;
+comment on table public.tiffin_marks is 'Tiffin meals marked delivered or missed per day, and make-up meals (within 4 days).';
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261125000800', 'tiffin_marks');
+end $migration$;

@@ -1,5 +1,6 @@
 import { MEAL_KEYS, MEAL_NAMES, type MealKey, type MessMeal, type OwnerMessInput } from '@ss/contracts';
 import type { ReactNode } from 'react';
+import { mobileHint, tidyMobile } from '../../lib/mobile';
 import { Phone } from '../../shared/ui/icons';
 
 const box =
@@ -62,24 +63,41 @@ export function DetailsEditor({
         label="Phone number for orders"
         hint="Students tap Call on your page and in the order chat. Orders themselves arrive on your Orders screen."
       >
-        <span className="flex gap-2">
+        {/* Just the 10 digits: +91 is added for them, and it tidies itself as they type or paste. */}
+        <span className="flex items-center gap-2">
+          <span className="shrink-0 text-[16px] font-semibold text-ink">+91</span>
           <input
-            className={box}
-            value={form.phone}
-            inputMode="tel"
+            className={`${box} tabular-nums`}
+            value={tidyMobile(form.phone)}
+            inputMode="numeric"
+            autoComplete="tel-national"
             maxLength={20}
-            onChange={(e) => onChange({ phone: e.target.value })}
-            placeholder="+91 98765 43210"
+            aria-label="Phone number for orders"
+            aria-describedby="owner-phone-hint"
+            onChange={(e) => {
+              const t = tidyMobile(e.target.value);
+              onChange({ phone: t.replace(/\D/g, '').length === 10 ? `+91 ${t}` : t });
+            }}
+            placeholder="98765 43210"
           />
           {digits.length >= 10 && (
             <a
               href={`tel:${digits.length === 10 ? `+91${digits}` : `+${digits}`}`}
+              aria-label="Call this number to check it"
               className="shrink-0 inline-flex items-center gap-1.5 h-12 rounded-xl border-[1.5px] border-line px-3 text-[14px] font-semibold text-ink no-underline hover:border-ink2"
             >
-              <Phone size={17} /> Test
+              <Phone size={17} /> Call
             </a>
           )}
         </span>
+        {mobileHint(form.phone) && (
+          <span
+            id="owner-phone-hint"
+            className={`text-[13px] ${mobileHint(form.phone)!.ok ? 'text-teal-text' : 'text-ink2'}`}
+          >
+            {mobileHint(form.phone)!.ok ? '✓ Looks right' : mobileHint(form.phone)!.text}
+          </span>
+        )}
       </Row>
       <Row label="Delivery and parcels" hint="One line, e.g. Free delivery to hostels · Parcel available.">
         <input

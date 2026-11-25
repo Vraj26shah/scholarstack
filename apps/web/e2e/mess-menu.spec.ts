@@ -16,6 +16,8 @@ async function signIn(page: Page, username: string) {
 test('mess menu: students see "coming soon"; an admin picks a mess, reads the day and reports a change', async ({
   page,
 }, info) => {
+  // A long journey (ordering, chat, the owner board); full-page pictures make it longer still.
+  test.setTimeout(90_000);
   // Not signed in: the tool isn't launched yet.
   await page.goto('/tools/mess-menu');
   await expect(page.getByText('Coming soon')).toBeVisible();
@@ -72,7 +74,15 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await page.getByRole('button', { name: /Your mess/ }).click();
   await page.getByRole('option', { name: /Radha Rani/ }).click();
   await expect(page.getByText('Menu as given by the owner.')).toBeVisible();
+  // Every mess has its own address: the page's URL names it, and /m/<slug> opens it directly.
+  await expect(page).toHaveURL(/[?&]mess=radha-rani-ka-dhaba/);
+  await page.goto('/m/safal-hostel-mess');
+  await expect(page.getByRole('heading', { name: 'Safal hostel mess' })).toBeVisible();
+  await page.goto('/m/radha-rani-ka-dhaba');
+  await expect(page.getByRole('heading', { name: /Radha Rani/, level: 2 })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Share link' }).first()).toBeVisible();
   await expect(page.getByText('Mess thali ₹80')).toBeVisible();
+  await page.getByRole('tab', { name: 'Day', exact: true }).click(); // a fresh page opens on the week (laptop)
   await page.getByRole('tab', { name: 'Thursday' }).click();
   await expect(page.getByRole('heading', { name: 'Lunch', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Breakfast', exact: true })).toHaveCount(0);
@@ -88,13 +98,24 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await page.getByRole('button', { name: /^Add .*thali/ }).click();
   await page.getByRole('button', { name: /^One more .*thali/ }).click();
   await page.getByRole('button', { name: 'Add Butter roti' }).click();
+  // The cart bar; on a phone it opens the cart screen (like food apps), on a laptop the slip is beside the menu.
+  if (info.project.name === 'phone') {
+    await page.getByRole('button', { name: /3 items · ₹172.*View cart/ }).click();
+    await expect(page.getByRole('dialog', { name: 'Your cart' })).toBeVisible();
+  }
   const bill = page.getByRole('complementary', { name: 'Order slip' });
   await expect(bill.getByText('₹172', { exact: true }).first()).toBeVisible();
   await bill.getByRole('button', { name: /Confirm order/ }).click();
   await expect(bill.getByText('Add where to deliver it.')).toBeVisible();
   await bill.getByLabel('Deliver to').fill('Block B, room 214');
   await bill.getByLabel('Name').fill('Asha');
-  await bill.getByLabel(/Mobile number/).fill('98765 43210');
+  // The number box takes any way of writing it and says what's missing (SMS codes are on hold).
+  const mobile = bill.getByLabel(/Mobile number/);
+  await mobile.fill('98765');
+  await expect(bill.getByText('5 more digits')).toBeVisible();
+  await mobile.fill('+91-98765-43210');
+  await expect(mobile).toHaveValue('98765 43210');
+  await expect(bill.getByText('✓ Looks right')).toBeVisible();
   await bill.getByRole('button', { name: /Confirm order/ }).click();
   await expect(bill.getByText('Tick to confirm your number.')).toBeVisible();
   await bill.getByRole('checkbox', { name: /\+91 98765 43210 is my number/ }).check();
@@ -144,10 +165,42 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await page.getByRole('tab', { name: 'Customers' }).click();
   await expect(page.getByText('Asha').first()).toBeVisible();
   await shot(page, 'owner-customers', info.project.name);
+  // A phone swipes between the dashboard's tabs (a real touch swipe, right to left).
+  if (info.project.name === 'phone') {
+    await page.getByRole('tab', { name: 'Customers' }).scrollIntoViewIfNeeded();
+    const cdp = await page.context().newCDPSession(page);
+    const y = 600;
+    const touch = (type: string, x: number) =>
+      cdp.send('Input.dispatchTouchEvent', {
+        type,
+        touchPoints: type === 'touchEnd' ? [] : [{ x, y }],
+      } as never);
+    await touch('touchStart', 360);
+    for (const x of [320, 260, 200, 140, 80]) await touch('touchMove', x);
+    await touch('touchEnd', 80);
+    await expect(page.getByRole('tab', { name: 'Menu card' })).toHaveAttribute('aria-selected', 'true');
+  }
   await page.getByRole('tab', { name: 'Tiffin' }).click();
   await expect(page.getByText('Active plans')).toBeVisible();
   await shot(page, 'owner-tiffin', info.project.name);
-  await page.getByRole('tab', { name: 'Orders' }).click();
+  // Insights: today, then this month (the demo has three months of sample orders and visits).
+  await page.getByRole('tab', { name: 'Insights' }).click();
+  await expect(page.getByText('Takings', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Visitors who ordered')).toBeVisible();
+  await page.getByRole('tab', { name: 'Month', exact: true }).click();
+  await expect(page.getByRole('img', { name: 'Takings chart' })).toBeVisible();
+  await expect(page.getByText('What sells')).toBeVisible();
+  await page.getByRole('button', { name: 'Show as a table' }).click();
+  await expect(page.getByRole('columnheader', { name: 'Day' })).toBeVisible();
+  await page.getByRole('button', { name: /Previous month/ }).click();
+  await expect(page.getByRole('img', { name: 'Takings chart' }).or(page.getByRole('table'))).toBeVisible();
+  await shot(page, 'owner-insights', info.project.name);
+  // Offers: the demo's code, deal and combos.
+  await page.getByRole('tab', { name: 'Offers' }).click();
+  await expect(page.getByText('WELCOME20').first()).toBeVisible();
+  await expect(page.getByText('Paneer meal')).toBeVisible();
+  await shot(page, 'owner-offers', info.project.name);
+  await page.getByRole('tab', { name: 'Orders', exact: true }).click();
 
   // The owner's own menu card (a dish this test doesn't order): a new price and a photo, saved, and on the student page at once.
   await page.getByRole('tab', { name: 'Menu card' }).click();
@@ -175,7 +228,13 @@ test('mess menu: students see "coming soon"; an admin picks a mess, reads the da
   await shot(page, 'owner-details', info.project.name);
 
   await page.goto('/tools/mess-menu#order');
+  // On a phone the order's progress is one tap away: the bar says where it is and opens it.
+  if (info.project.name === 'phone') {
+    await page.getByRole('button', { name: /Order .* · Accepted, being made.*Track/ }).click();
+    await expect(page.getByRole('dialog', { name: 'Your cart' })).toBeVisible();
+  }
   await expect(page.getByText('Accepted, being made · “Ready in 15 min”')).toBeVisible();
+  if (info.project.name === 'phone') await page.getByRole('button', { name: 'Back to the menu' }).click();
 
   // Meal reminders live in the menu page itself.
   await expect(page.getByRole('heading', { name: 'Meal reminders' })).toBeVisible();

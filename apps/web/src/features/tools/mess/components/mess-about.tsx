@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { buttonClass } from '../../../../shared/ui/button';
 import { jumpTo } from '../../../../shared/ui/jump';
 import { KIND_LABEL } from './mess-picker';
+import { ShareMessButton } from './share-link';
 
 /**
  * Who serves it, the owner's prices, and one honest line about how far to trust the menu, with a
@@ -63,6 +64,12 @@ export function MessAbout({
               {cta}
             </button>
           )}
+          <ShareMessButton slug={mess.slug} name={mess.name} />
+        </p>
+      )}
+      {!(mess.prices || canOrder) && (
+        <p className="m-0 print:hidden">
+          <ShareMessButton slug={mess.slug} name={mess.name} />
         </p>
       )}
 

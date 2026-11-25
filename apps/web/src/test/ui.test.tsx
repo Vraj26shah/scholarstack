@@ -1,7 +1,8 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthCallbackPage, RequireAuth, SessionSheets } from '../features/auth/session-ui';
+import { SignInPrompt } from '../features/auth/sign-in-prompt';
 import { ApiError, friendly } from '../lib/api';
 import { authGateway } from '../lib/auth';
 import { useSession } from '../lib/session';
@@ -52,13 +53,17 @@ describe('RequireAuth', () => {
           <Route path="/shelf" element={<RequireAuth>secret shelf</RequireAuth>} />
           <Route path="/sign-in" element={<p>sign-in page</p>} />
         </Routes>
+        <SignInPrompt />
       </MemoryRouter>,
     );
 
-  it('sends signed-out visitors to sign in', () => {
+  it('asks signed-out visitors to sign in, and Sign in goes there', async () => {
     useSession.setState({ status: 'signed-out', me: null });
     app();
-    expect(screen.getByText('sign-in page')).toBeInTheDocument();
+    expect(screen.queryByText('secret shelf')).toBeNull();
+    const ask = await screen.findByRole('dialog', { name: 'Sign in to open this page' });
+    fireEvent.click(within(ask).getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText('sign-in page')).toBeInTheDocument();
   });
 
   it('shows the page once the session is ready', () => {
@@ -80,11 +85,11 @@ describe('RequireAuth', () => {
     expect(screen.getByText('secret shelf')).toBeInTheDocument();
   });
 
-  it('redirects to sign in when account validation is unavailable', () => {
+  it('asks to sign in when account validation is unavailable', async () => {
     useSession.setState({ status: 'unavailable', me: null });
     app();
     expect(screen.queryByText('secret shelf')).toBeNull();
-    expect(screen.getByText('sign-in page')).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Sign in to open this page' })).toBeInTheDocument();
   });
 });
 

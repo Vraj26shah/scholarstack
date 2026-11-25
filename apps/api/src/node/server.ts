@@ -53,6 +53,8 @@ const { container, db, seeder, sources } = memoryContainer({
   // Demo sign-in is instant and sends no email, so there is no mail to protect: without this the
   // end-to-end suite (dozens of sign-ins from one machine) hits the per-network link budget.
   config: { signinLinkBudgets: false },
+  // Past orders and visits for the demo restaurant, so its Insights have something to show.
+  demoHistory: true,
 });
 dbRef = db;
 seederRef = seeder;

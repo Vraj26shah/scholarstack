@@ -7,9 +7,12 @@ import {
   SupabaseMessBlocks,
   SupabaseMessOrders,
   SupabaseMessReports,
+  SupabaseMessViews,
   SupabaseMesses,
   SupabaseOrderChat,
+  SupabasePhones,
   SupabasePush,
+  SupabaseTiffinMarks,
 } from '../infrastructure/campus-supabase';
 import { MemoryRateLimiter } from '../infrastructure/cloudflare';
 import {
@@ -21,6 +24,7 @@ import {
 } from '../infrastructure/crypto';
 import { BrevoMailer, NoMailer } from '../infrastructure/mail';
 import { RazorpayGateway } from '../infrastructure/payments';
+import { NoSms, TwilioVerifySms, TwoFactorSms } from '../infrastructure/sms-verifier';
 import {
   SupabaseAnnouncements,
   SupabaseBundles,
@@ -119,6 +123,20 @@ export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): C
               env.VAPID_SUBJECT?.trim() || `mailto:${config.adminEmails[0] ?? 'admin@example.com'}`,
             )
           : new MemoryPushSender(''),
+      phones: new SupabasePhones(db),
+      messViews: new SupabaseMessViews(db),
+      tiffinMarks: new SupabaseTiffinMarks(db),
+      // One SMS service: 2Factor (India) when its key is set, else Twilio Verify, else none (then
+      // ordering keeps the "tick to confirm your number" box).
+      sms: env.TWOFACTOR_API_KEY?.trim()
+        ? new TwoFactorSms(env.TWOFACTOR_API_KEY.trim(), env.TWOFACTOR_TEMPLATE?.trim() ?? '')
+        : env.TWILIO_ACCOUNT_SID?.trim() && env.TWILIO_AUTH_TOKEN?.trim() && env.TWILIO_VERIFY_SID?.trim()
+          ? new TwilioVerifySms(
+              env.TWILIO_ACCOUNT_SID.trim(),
+              env.TWILIO_AUTH_TOKEN.trim(),
+              env.TWILIO_VERIFY_SID.trim(),
+            )
+          : new NoSms(),
       courseUpdates: new SupabaseCourseUpdates(db),
       signInStrikes: new SupabaseSignInStrikes(db),
       admins: new SupabaseAdmins(db),

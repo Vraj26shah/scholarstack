@@ -189,7 +189,7 @@ export class ChatService {
       side === 'student'
         ? this.events
             .toOwners(mess, {
-              title: `${order.name} · order ${order.code}`,
+              title: `💬 ${order.name} · order ${order.code}`,
               body: preview,
               tag: `chat-${order.id}`,
               url: ownerChatUrl(order),
@@ -198,7 +198,7 @@ export class ChatService {
             .catch(() => null)
         : this.events
             .toStudent(order, {
-              title: `${mess.name} · ${order.code}`,
+              title: `💬 ${mess.name} · order ${order.code}`,
               body: preview,
               tag: `chat-${order.id}`,
               url: studentChatUrl(order),

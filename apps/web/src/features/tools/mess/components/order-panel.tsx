@@ -18,21 +18,26 @@ import {
   tiffinEnds,
   toMinutes,
 } from '@ss/contracts';
+import { COMBO_PREFIX, bestDiscount, offerLive } from '@ss/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { type ReactElement, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { signal, track } from '../../../../lib/analytics';
 import { ApiError, api } from '../../../../lib/api';
+import { mobileHint, tidyMobile } from '../../../../lib/mobile';
 import { useSession } from '../../../../lib/session';
 import { Button, buttonClass } from '../../../../shared/ui/button';
 import { Minus, Phone, Plus, SearchIcon } from '../../../../shared/ui/icons';
 import { jumpTo } from '../../../../shared/ui/jump';
+import { askToSignIn } from '../../../auth/sign-in-prompt';
 import { useLive } from '../../../chat/live';
 import { ChatButton, OrderChat } from '../../../chat/order-chat';
 import { rupees } from '../../../restaurant/shared';
 import { useToolState } from '../../core/storage';
 import { field } from '../../core/ui';
+import { CartBar } from './cart-bar';
 import { mealState } from './mess-grid';
+import { PhoneCheck, usePhoneStatus } from './phone-check';
 
 interface Item {
   key: string;
@@ -55,6 +60,35 @@ interface Details {
   address: string;
   phone: string;
   note: string;
+  /** The number last ticked as "my number" on this device. */
+  confirmedPhone: string;
+}
+
+const CART_MAX_AGE_MS = 24 * 3600_000;
+/** A saved cart, as { itemKey: qty }; anything unreadable or older than a day is an empty cart. */
+/** Below the laptop layout (1024px): the cart is its own screen. */
+function useIsPhone() {
+  const query = '(max-width: 1023px)';
+  const [on, setOn] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia?.(query);
+    if (!m) return;
+    const change = () => setOn(m.matches);
+    m.addEventListener('change', change);
+    return () => m.removeEventListener('change', change);
+  }, []);
+  return on;
+}
+
+export function readCart(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== 'object') return {};
+  const { items, at } = raw as { items?: unknown; at?: unknown };
+  if (typeof at !== 'number' || Date.now() - at > CART_MAX_AGE_MS) return {};
+  if (!items || typeof items !== 'object') return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(items as Record<string, unknown>))
+    if (typeof v === 'number' && Number.isInteger(v) && v > 0 && v <= 20) out[k] = v;
+  return out;
 }
 
 const ago = (iso: string) => {
@@ -237,9 +271,31 @@ function Tracker({
             Say this code if they call · {ago(order.createdAt)}
           </p>
         </div>
-        <span className="text-[18px] font-bold tabular-nums text-ink">{rupees(order.total)}</span>
+        <span className="flex flex-col items-end text-[18px] font-bold tabular-nums text-ink">
+          {rupees(order.total)}
+          {order.discount > 0 && (
+            <span className="text-[12.5px] font-semibold text-teal-text">
+              saved {rupees(order.discount)} · {order.offer}
+            </span>
+          )}
+        </span>
       </div>
 
+      {tiffinOn && order.tiffin && (
+        <div className="flex flex-col gap-1.5 rounded-xl bg-sunk px-3.5 py-3 text-[14px] text-ink">
+          <p className="m-0 font-semibold">Tiffin on · till {order.tiffin.endsOn}</p>
+          <p className="m-0 text-ink2">
+            {order.tiffin.delivered ?? 0} meal{(order.tiffin.delivered ?? 0) === 1 ? '' : 's'} delivered
+            {order.tiffin.missed ? ` · ${order.tiffin.missed} missed` : ''}
+          </p>
+          {(order.tiffin.makeups ?? []).map((m) => (
+            <p key={`${m.day}-${m.meal}`} className="m-0 text-marigold-text">
+              Missed {m.meal} on {m.day}: you can still get it until {m.until}. Ask the restaurant in the
+              chat.
+            </p>
+          ))}
+        </div>
+      )}
       {tiffinOn ? null : stopped ? (
         <p className="m-0 border-l-[3px] border-blush-text pl-3 text-[15px] text-ink">
           <strong>{MESS_ORDER_STATUS_TEXT[order.status]}.</strong>
@@ -372,7 +428,21 @@ export function OrderPanel({
   const { status: session, me } = useSession();
   const signedIn = session === 'ready' && !!me;
   const qc = useQueryClient();
-  const [cart, setCart] = useState<Record<string, number>>({});
+  // The cart is kept on this device per restaurant, so it survives a reload, switching mess and
+  // the trip to the sign-in page and back. Old or odd saved shapes are read field by field.
+  const [carts, setCarts] = useToolState<Record<string, unknown>>('mess_carts', {});
+  const cart = useMemo(() => readCart(carts?.[mess.slug]), [carts, mess.slug]);
+  const setCart = (next: Record<string, number> | ((c: Record<string, number>) => Record<string, number>)) =>
+    setCarts((all) => {
+      const safe = all && typeof all === 'object' ? all : {};
+      const items = typeof next === 'function' ? next(readCart(safe[mess.slug])) : next;
+      const out: Record<string, unknown> = {};
+      // Keep other restaurants' carts from the last day only.
+      for (const [k, v] of Object.entries(safe))
+        if (k !== mess.slug && Object.keys(readCart(v)).length) out[k] = v;
+      if (Object.keys(items).length) out[mess.slug] = { items, at: Date.now() };
+      return out;
+    });
   const [saved, setDetails] = useToolState<Partial<Details>>('mess_order_details', {});
   // Saved by an older version of this page, a field may be missing (or not text): fill it in.
   const text = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -382,12 +452,34 @@ export function OrderPanel({
     address: text(saved?.address),
     phone: text(saved?.phone),
     note: text(saved?.note),
+    confirmedPhone: text(saved?.confirmedPhone),
   };
-  const [confirmed, setConfirmed] = useState(false);
+  const [confirmedNow, setConfirmed] = useState(false);
+  const confirmed =
+    confirmedNow || (!!details.confirmedPhone && details.confirmedPhone === normaliseMobile(details.phone));
   const [tried, setTried] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [chatOpen, setChatOpen] = useState(false);
+  const isPhone = useIsPhone();
+  const [cartOpen, setCartOpen] = useState(
+    () => typeof window !== 'undefined' && window.location.hash === '#order-slip',
+  );
+  // The cart screen covers the page: the page behind it doesn't scroll, and Escape closes it.
+  useEffect(() => {
+    if (!isPhone || !cartOpen) return;
+    const before = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && setCartOpen(false);
+    window.addEventListener('keydown', key);
+    return () => {
+      document.body.style.overflow = before;
+      window.removeEventListener('keydown', key);
+    };
+  }, [isPhone, cartOpen]);
+  // With SMS codes set up, the number is checked once and then fixed; otherwise a tick box.
+  const phoneStatus = usePhoneStatus(signedIn);
+  const otp = !!phoneStatus.data?.available;
   const [activeSection, setActiveSection] = useState<string | null>(null);
 
   const mine = useQuery({
@@ -463,6 +555,32 @@ export function OrderPanel({
         .filter((s) => s.items.length),
     [mess.order, thali],
   );
+  // The owner's combos running today, as dishes of their own (the server prices them by id).
+  const liveOffers = useMemo(
+    () => (mess.offers ?? []).filter((o) => offerLive(o, today)),
+    [mess.offers, today],
+  );
+  const comboSection = useMemo(() => {
+    const menu = new Map(mess.order.flatMap((s) => s.items).map((i) => [i.name.toLowerCase(), i]));
+    const items = liveOffers
+      .filter((o) => o.kind === 'combo' && o.items.length >= 2 && o.price > 0)
+      .map<Item>((o) => {
+        const full = o.items.reduce((n, i) => n + i.qty * (menu.get(i.name.toLowerCase())?.price ?? 0), 0);
+        const what = o.items.map((i) => `${i.qty}× ${i.name}`).join(' + ');
+        return {
+          key: `${COMBO_PREFIX}${o.id}`,
+          name: `${COMBO_PREFIX}${o.id}`,
+          label: o.title,
+          note: full > o.price ? `${what} · save ${rupees(full - o.price)}` : what,
+          price: o.price,
+          detail: what,
+          photo: '',
+          available: o.items.every((i) => menu.get(i.name.toLowerCase())?.available !== false),
+          tiffin: false,
+        };
+      });
+    return items.length ? [{ title: 'Combos', items }] : [];
+  }, [liveOffers, mess.order]);
   const q = query.trim().toLowerCase();
   const shown = q
     ? sections
@@ -473,8 +591,12 @@ export function OrderPanel({
         .filter((s) => s.items.length)
     : sections;
   const all = useMemo(
-    () => [...(thali ? [thali.item] : []), ...sections.flatMap((s) => s.items)],
-    [thali, sections],
+    () => [
+      ...(thali ? [thali.item] : []),
+      ...comboSection.flatMap((s) => s.items),
+      ...sections.flatMap((s) => s.items),
+    ],
+    [thali, sections, comboSection],
   );
 
   // Which category is on screen (for the rail).
@@ -498,6 +620,24 @@ export function OrderPanel({
 
   const lines = all.filter((i) => cart[i.key] && i.available).map((i) => ({ ...i, qty: cart[i.key]! }));
   const total = lines.reduce((n, l) => n + l.qty * l.price, 0);
+  const comboTotal = lines
+    .filter((l) => l.name.startsWith(COMBO_PREFIX))
+    .reduce((n, l) => n + l.qty * l.price, 0);
+  const [promo, setPromo] = useState('');
+  const [promoDraft, setPromoDraft] = useState('');
+  const firstOrder = !(mine.data ?? []).some(
+    (o) => o.messSlug === mess.slug && !['cancelled', 'rejected'].includes(o.status),
+  );
+  const dishTotal = lines.some((l) => l.tiffin) ? 0 : total - comboTotal;
+  const withCode = bestDiscount(liveOffers, dishTotal, { date: today, code: promo, firstOrder });
+  // A code that doesn't work here is shown as such, and the best automatic deal still applies.
+  const deal = withCode.codeProblem
+    ? bestDiscount(liveOffers, dishTotal, { date: today, firstOrder })
+    : withCode;
+  const sendCode = promo && !withCode.codeProblem ? promo : '';
+  const discount = deal.saving;
+  const payable = Math.max(0, total - discount);
+  const hasCodes = liveOffers.some((o) => o.kind === 'code');
   const count = lines.reduce((n, l) => n + l.qty, 0);
   const byKey = useMemo(() => new Map(all.map((i) => [i.key, i])), [all]);
   const setQty = (key: string, qty: number) =>
@@ -528,7 +668,8 @@ export function OrderPanel({
   const hasCard = all.length > 0;
   const taking = mess.ordersOpen && hasCard;
   const tel = telOf(mess.phone);
-  const phone = normaliseMobile(details.phone);
+  const phone = otp ? (phoneStatus.data?.phone ?? null) : normaliseMobile(details.phone);
+  const hint = mobileHint(details.phone);
   const problem = !lines.length
     ? 'Add something first.'
     : tiffinLine && (startsOn < todayIso || startsOn > lastStart)
@@ -538,8 +679,10 @@ export function OrderPanel({
         : details.name.trim().length < 2
           ? 'Add your name.'
           : !phone
-            ? 'Add a 10-digit mobile number.'
-            : !confirmed
+            ? otp
+              ? 'Verify your mobile number with the code we text you.'
+              : 'Add a 10-digit mobile number.'
+            : !otp && !confirmed
               ? 'Tick to confirm your number.'
               : null;
   // A student pressed Confirm and was told something's missing: counted as stuck on a form.
@@ -561,9 +704,12 @@ export function OrderPanel({
         phone: phone ?? '',
         note: details.note.trim(),
         phoneConfirmed: true,
+        promoCode: sendCode,
         ...(tiffinLine ? { tiffin: { plan, startsOn } } : {}),
       }),
+    onError: () => void qc.invalidateQueries({ queryKey: ['my-phone'] }),
     onSuccess: (o) => {
+      if (!otp && phone) set({ confirmedPhone: phone });
       track('mess_order_placed', { items: count, total: o.total });
       setCart({});
       setTried(false);
@@ -577,6 +723,42 @@ export function OrderPanel({
   });
 
   if (!hasCard) return <MenuOnly mess={mess} />;
+  // Phones: the order slip is a cart screen of its own (like food apps), opened from the cart bar.
+  // Laptops: it stays beside the menu.
+  const slipWrap = (el: ReactElement) =>
+    !isPhone
+      ? el
+      : cartOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Your cart"
+              className="fixed inset-0 z-50 flex flex-col bg-bg"
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 pt-[calc(12px+env(safe-area-inset-top))]">
+                <div className="min-w-0">
+                  <p className="m-0 text-[17px] font-bold text-ink">
+                    {showTracker ? 'Your order' : 'Your cart'}
+                  </p>
+                  <p className="m-0 truncate text-[13px] text-ink2">{mess.name}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCartOpen(false)}
+                  aria-label="Back to the menu"
+                  className="press h-10 rounded-full border-[1.5px] border-line bg-surface px-4 text-[14px] font-semibold text-ink cursor-pointer"
+                >
+                  {showTracker ? 'Done' : '+ Add more'}
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 pb-[calc(24px+env(safe-area-inset-bottom))]">
+                {el}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null;
   const showTracker = !!current && !count;
   const readOnly = !taking;
 
@@ -621,6 +803,46 @@ export function OrderPanel({
           </a>
         )}
       </header>
+
+      {taking && liveOffers.some((o) => o.kind !== 'combo') && (
+        <ul
+          aria-label="Offers"
+          className="m-0 p-0 list-none flex gap-3 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap [scrollbar-width:none]"
+        >
+          {liveOffers
+            .filter((o) => o.kind !== 'combo' && (!o.firstOrderOnly || firstOrder))
+            .map((o) => (
+              <li
+                key={o.id}
+                className="flex-none w-[260px] sm:w-auto sm:max-w-[320px] flex flex-col gap-1 rounded-2xl border-[1.5px] border-dashed border-teal/60 bg-mist/30 px-4 py-3"
+              >
+                <span className="text-[15px] font-bold text-ink">🏷️ {o.title}</span>
+                <span className="text-[13px] text-ink2">
+                  {o.kind === 'deal'
+                    ? `Applied by itself${o.minTotal ? ` on orders of ${rupees(o.minTotal)}+` : ''}`
+                    : `Code ${o.code}${o.minTotal ? ` · orders of ${rupees(o.minTotal)}+` : ''}${o.firstOrderOnly ? ' · first order' : ''}`}
+                </span>
+                {o.kind === 'code' && promo !== o.code && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPromo(o.code);
+                      setPromoDraft(o.code);
+                    }}
+                    className="self-start mt-1 border-0 bg-transparent p-0 text-[13.5px] font-semibold text-teal-text underline underline-offset-4 cursor-pointer"
+                  >
+                    Use {o.code}
+                  </button>
+                )}
+                {o.kind === 'code' && promo === o.code && (
+                  <span className="mt-1 text-[13px] font-semibold text-teal-text">
+                    ✓ Applied to your order
+                  </span>
+                )}
+              </li>
+            ))}
+        </ul>
+      )}
 
       <div
         className={`grid gap-8 items-start ${readOnly ? 'lg:grid-cols-[190px_minmax(0,1fr)]' : 'lg:grid-cols-[190px_minmax(0,1fr)_360px]'}`}
@@ -700,7 +922,7 @@ export function OrderPanel({
               />
             </ul>
           )}
-          {shown.map((s) => (
+          {[...(q ? [] : comboSection), ...shown].map((s) => (
             <section key={s.title} id={sectionId(s.title)} aria-label={s.title} className="scroll-mt-28 pt-4">
               <h3 className="m-0 flex items-baseline justify-between gap-3 border-b-2 border-ink pb-2 font-display text-[22px] font-bold tracking-[-0.01em] text-ink">
                 {s.title}
@@ -727,264 +949,347 @@ export function OrderPanel({
           )}
         </div>
 
-        {!readOnly && (
-          <aside
-            id="order-slip"
-            aria-label="Order slip"
-            className={`scroll-mt-24 lg:sticky lg:top-24 flex flex-col gap-4 bg-surface p-5 pb-9 [box-shadow:inset_0_0_0_1px_var(--line)] ${TORN} ${showTracker ? 'order-first lg:order-none' : ''}`}
-          >
-            {showTracker ? (
-              <>
-                <Tracker
-                  order={current}
-                  mess={mess}
-                  onCancel={() => cancel.mutate(current.id)}
-                  cancelling={cancel.isPending}
-                  onChat={() => setChatOpen(true)}
-                />
-                {!OPEN_MESS_ORDER.includes(current.status) && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="self-start"
-                    onClick={() => setDismissed(current.id)}
-                  >
-                    New order
-                  </Button>
-                )}
-              </>
-            ) : (
-              <>
-                <div className="flex flex-col gap-0.5 border-b border-dashed border-ink2/40 pb-3">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <h3 className="m-0 text-[13px] font-semibold uppercase tracking-[0.14em] text-ink">
-                      Order slip
-                    </h3>
-                    <span className="text-[13px] text-ink2">
-                      {count ? `${count} item${count === 1 ? '' : 's'}` : 'Empty'}
-                    </span>
+        {!readOnly &&
+          slipWrap(
+            <aside
+              id="order-slip"
+              aria-label="Order slip"
+              className={`scroll-mt-24 lg:sticky lg:top-24 flex flex-col gap-4 bg-surface p-5 pb-9 [box-shadow:inset_0_0_0_1px_var(--line)] ${TORN} ${showTracker ? 'order-first lg:order-none' : ''}`}
+            >
+              {showTracker ? (
+                <>
+                  <Tracker
+                    order={current}
+                    mess={mess}
+                    onCancel={() => cancel.mutate(current.id)}
+                    cancelling={cancel.isPending}
+                    onChat={() => setChatOpen(true)}
+                  />
+                  {!OPEN_MESS_ORDER.includes(current.status) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="self-start"
+                      onClick={() => setDismissed(current.id)}
+                    >
+                      New order
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-0.5 border-b border-dashed border-ink2/40 pb-3">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <h3 className="m-0 text-[13px] font-semibold uppercase tracking-[0.14em] text-ink">
+                        Order slip
+                      </h3>
+                      <span className="text-[13px] text-ink2">
+                        {count ? `${count} item${count === 1 ? '' : 's'}` : 'Empty'}
+                      </span>
+                    </div>
+                    <p className="m-0 font-display text-[19px] font-bold text-ink">{mess.name}</p>
+                    <p className="m-0 text-[12.5px] text-ink2">{slipTime()}</p>
                   </div>
-                  <p className="m-0 font-display text-[19px] font-bold text-ink">{mess.name}</p>
-                  <p className="m-0 text-[12.5px] text-ink2">{slipTime()}</p>
-                </div>
-                {lines.length ? (
-                  <ul className="m-0 p-0 list-none flex flex-col gap-2 text-[14px] tabular-nums">
-                    {lines.map((l) => (
-                      <li key={l.key} className="flex items-center justify-between gap-3">
-                        <span className="min-w-0 text-ink">
-                          <strong>{l.qty} ×</strong> {l.label}
-                          <span className="block text-[12.5px] text-ink2">{rupees(l.price)} each</span>
-                        </span>
-                        <span className="shrink-0 font-semibold text-ink">{rupees(l.qty * l.price)}</span>
+                  {lines.length ? (
+                    <ul className="m-0 p-0 list-none flex flex-col gap-2 text-[14px] tabular-nums">
+                      {lines.map((l) => (
+                        <li key={l.key} className="flex items-center justify-between gap-3">
+                          <span className="min-w-0 text-ink">
+                            <strong>{l.qty} ×</strong> {l.label}
+                            <span className="block text-[12.5px] text-ink2">{rupees(l.price)} each</span>
+                          </span>
+                          <span className="shrink-0 font-semibold text-ink">{rupees(l.qty * l.price)}</span>
+                        </li>
+                      ))}
+                      {discount > 0 && deal.offer && (
+                        <li className="flex items-center justify-between gap-3 text-teal-text">
+                          <span className="min-w-0">
+                            🏷️ {deal.offer.kind === 'code' ? `Code ${deal.offer.code}` : deal.offer.title}
+                          </span>
+                          <span className="shrink-0 font-semibold">−{rupees(discount)}</span>
+                        </li>
+                      )}
+                      <li className="mt-1 flex justify-between gap-3 border-t border-dashed border-ink2/40 pt-2 text-[19px] font-bold text-ink">
+                        <span>Total</span>
+                        <span>{rupees(payable)}</span>
                       </li>
-                    ))}
-                    <li className="mt-1 flex justify-between gap-3 border-t border-dashed border-ink2/40 pt-2 text-[19px] font-bold text-ink">
-                      <span>Total</span>
-                      <span>{rupees(total)}</span>
-                    </li>
-                  </ul>
-                ) : (
-                  <p className="m-0 text-[14px] text-ink2">Tap Add on a dish to start your order.</p>
-                )}
+                      {hasCodes && !lines.some((l) => l.tiffin) && (
+                        <li className="list-none pt-1">
+                          {promo && !withCode.codeProblem ? (
+                            <span className="inline-flex items-center gap-2 text-[13.5px] text-ink">
+                              Code <strong className="tracking-[0.08em]">{promo}</strong> applied
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPromo('');
+                                  setPromoDraft('');
+                                }}
+                                className="border-0 bg-transparent p-0 text-[13px] font-semibold text-ink2 underline underline-offset-2 cursor-pointer"
+                              >
+                                Remove
+                              </button>
+                            </span>
+                          ) : (
+                            <form
+                              className="flex gap-2"
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                setPromo(promoDraft.trim().toUpperCase());
+                              }}
+                            >
+                              <input
+                                value={promoDraft}
+                                onChange={(e) =>
+                                  setPromoDraft(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))
+                                }
+                                maxLength={15}
+                                placeholder="Promo code"
+                                aria-label="Promo code"
+                                className={`${field} h-10 flex-1 uppercase tracking-[0.08em]`}
+                              />
+                              <Button type="submit" variant="outline" size="sm" disabled={!promoDraft.trim()}>
+                                Apply
+                              </Button>
+                            </form>
+                          )}
+                          {promo && withCode.codeProblem && (
+                            <p role="alert" className="m-0 mt-1 text-[13px] text-blush-text">
+                              {withCode.codeProblem}
+                            </p>
+                          )}
+                        </li>
+                      )}
+                    </ul>
+                  ) : (
+                    <p className="m-0 text-[14px] text-ink2">Tap Add on a dish to start your order.</p>
+                  )}
 
-                {tiffinLine && (
-                  <fieldset className="m-0 p-0 border-0 flex flex-col gap-2.5 rounded-xl bg-marigold-soft/60 p-3.5">
-                    <legend className="sr-only">Tiffin plan</legend>
-                    <p className="m-0 text-[13px] font-semibold uppercase tracking-[0.1em] text-marigold-text">
-                      Tiffin plan · {TIFFIN_DAYS} days
-                    </p>
-                    <div role="radiogroup" aria-label="Meals" className="grid grid-cols-3 gap-1.5">
-                      {TIFFIN_PLANS.map((k) => (
-                        <button
-                          key={k}
-                          type="button"
-                          role="radio"
-                          aria-checked={plan === k}
-                          onClick={() => setPlan(k)}
-                          className={`h-10 rounded-lg text-[13.5px] font-semibold border-[1.5px] ${plan === k ? 'bg-ink text-bg border-ink' : 'border-line bg-surface text-ink'}`}
-                        >
-                          {TIFFIN_PLAN_TEXT[k]}
-                        </button>
-                      ))}
-                    </div>
-                    <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
-                      First day
-                      <input
-                        type="date"
-                        className={field}
-                        value={startsOn}
-                        min={todayIso}
-                        max={lastStart}
-                        onChange={(e) => e.target.value && setStartsOn(e.target.value)}
-                      />
-                    </label>
-                    <p className="m-0 text-[12.5px] text-ink2">
-                      Runs {startsOn} to {tiffinEnds(startsOn)}. It starts once the restaurant accepts it.
-                    </p>
-                  </fieldset>
-                )}
-
-                {!signedIn ? (
-                  <div className="flex flex-col gap-2">
-                    <Link
-                      to="/sign-in?next=%2Ftools%2Fmess-menu%23order"
-                      className={buttonClass('brand', 'lg', 'w-full')}
-                    >
-                      Sign in to order
-                    </Link>
-                    <p className="m-0 text-[12.5px] leading-relaxed text-ink2">
-                      Sign in with your college email, so the restaurant knows the order is real and you can
-                      track it and chat with them here.
-                    </p>
-                  </div>
-                ) : (
-                  <form
-                    noValidate
-                    className="flex flex-col gap-3"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      setTried(true);
-                      if (!problem) place.mutate();
-                    }}
-                  >
-                    <div
-                      role="radiogroup"
-                      aria-label="Delivery or pickup"
-                      className="grid grid-cols-2 border-[1.5px] border-ink rounded-full overflow-hidden"
-                    >
-                      {(
-                        [
-                          ['delivery', 'Delivery'],
-                          ['pickup', 'Pickup'],
-                        ] as const
-                      ).map(([k, label]) => (
-                        <button
-                          key={k}
-                          type="button"
-                          role="radio"
-                          aria-checked={details.mode === k}
-                          onClick={() => set({ mode: k })}
-                          className={`h-10 text-[14px] font-semibold ${details.mode === k ? 'bg-ink text-bg' : 'text-ink'}`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    {details.mode === 'delivery' && (
+                  {tiffinLine && (
+                    <fieldset className="m-0 p-0 border-0 flex flex-col gap-2.5 rounded-xl bg-marigold-soft/60 p-3.5">
+                      <legend className="sr-only">Tiffin plan</legend>
+                      <p className="m-0 text-[13px] font-semibold uppercase tracking-[0.1em] text-marigold-text">
+                        Tiffin plan · {TIFFIN_DAYS} days
+                      </p>
+                      <div role="radiogroup" aria-label="Meals" className="grid grid-cols-3 gap-1.5">
+                        {TIFFIN_PLANS.map((k) => (
+                          <button
+                            key={k}
+                            type="button"
+                            role="radio"
+                            aria-checked={plan === k}
+                            onClick={() => setPlan(k)}
+                            className={`h-10 rounded-lg text-[13.5px] font-semibold border-[1.5px] ${plan === k ? 'bg-ink text-bg border-ink' : 'border-line bg-surface text-ink'}`}
+                          >
+                            {TIFFIN_PLAN_TEXT[k]}
+                          </button>
+                        ))}
+                      </div>
                       <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
-                        Deliver to
+                        First day
+                        <input
+                          type="date"
+                          className={field}
+                          value={startsOn}
+                          min={todayIso}
+                          max={lastStart}
+                          onChange={(e) => e.target.value && setStartsOn(e.target.value)}
+                        />
+                      </label>
+                      <p className="m-0 text-[12.5px] text-ink2">
+                        Runs {startsOn} to {tiffinEnds(startsOn)}. It starts once the restaurant accepts it.
+                      </p>
+                    </fieldset>
+                  )}
+
+                  {!signedIn ? (
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        variant="brand"
+                        size="lg"
+                        className="w-full"
+                        disabled={!count}
+                        onClick={() => {
+                          setCartOpen(false);
+                          askToSignIn({
+                            title: 'Sign in to place your order',
+                            body: 'Your order slip stays just as it is. Sign in with your college email and you come straight back to it, so the restaurant knows the order is real.',
+                            next: `/tools/mess-menu?mess=${encodeURIComponent(mess.slug)}#order-slip`,
+                          });
+                        }}
+                      >
+                        {count ? `Place order · ${rupees(payable)}` : 'Add a dish to order'}
+                      </Button>
+                      <p className="m-0 text-[12.5px] leading-relaxed text-ink2">
+                        Ordering needs you signed in, so you can track it and chat with the restaurant here.
+                      </p>
+                    </div>
+                  ) : (
+                    <form
+                      noValidate
+                      className="flex flex-col gap-3"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        setTried(true);
+                        if (!problem) place.mutate();
+                      }}
+                    >
+                      <div
+                        role="radiogroup"
+                        aria-label="Delivery or pickup"
+                        className="grid grid-cols-2 border-[1.5px] border-ink rounded-full overflow-hidden"
+                      >
+                        {(
+                          [
+                            ['delivery', 'Delivery'],
+                            ['pickup', 'Pickup'],
+                          ] as const
+                        ).map(([k, label]) => (
+                          <button
+                            key={k}
+                            type="button"
+                            role="radio"
+                            aria-checked={details.mode === k}
+                            onClick={() => set({ mode: k })}
+                            className={`h-10 text-[14px] font-semibold ${details.mode === k ? 'bg-ink text-bg' : 'text-ink'}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {details.mode === 'delivery' && (
+                        <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
+                          Deliver to
+                          <input
+                            className={field}
+                            value={details.address}
+                            maxLength={120}
+                            onChange={(e) => set({ address: e.target.value })}
+                            placeholder="Hostel block & room, or address"
+                            aria-invalid={tried && details.address.trim().length < 3}
+                          />
+                        </label>
+                      )}
+                      <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
+                        Name
                         <input
                           className={field}
-                          value={details.address}
-                          maxLength={120}
-                          onChange={(e) => set({ address: e.target.value })}
-                          placeholder="Hostel block & room, or address"
-                          aria-invalid={tried && details.address.trim().length < 3}
+                          value={details.name}
+                          maxLength={60}
+                          autoComplete="name"
+                          onChange={(e) => set({ name: e.target.value })}
+                          aria-invalid={tried && details.name.trim().length < 2}
                         />
                       </label>
-                    )}
-                    <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
-                      Name
-                      <input
-                        className={field}
-                        value={details.name}
-                        maxLength={60}
-                        autoComplete="name"
-                        onChange={(e) => set({ name: e.target.value })}
-                        aria-invalid={tried && details.name.trim().length < 2}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
-                      Mobile number (for the restaurant to reach you)
-                      <span className="flex items-center gap-2">
-                        <span className="text-[15px] font-semibold text-ink">+91</span>
-                        <input
-                          className={`${field} flex-1`}
-                          value={details.phone}
-                          inputMode="tel"
-                          autoComplete="tel-national"
-                          maxLength={14}
-                          onChange={(e) => {
-                            set({ phone: e.target.value });
-                            setConfirmed(false);
-                          }}
-                          placeholder="98765 43210"
-                          aria-invalid={tried && !phone}
+                      {!phoneStatus.data ? (
+                        <p className="m-0 text-[13px] text-ink2">Loading your number…</p>
+                      ) : otp ? (
+                        <PhoneCheck
+                          status={phoneStatus.data}
+                          draft={details.phone}
+                          onDraft={(v) => set({ phone: v })}
+                          tried={tried}
                         />
-                      </span>
-                    </label>
-                    {phone && (
-                      <label className="flex items-start gap-2.5 text-[14px] leading-snug text-ink cursor-pointer">
+                      ) : (
+                        <>
+                          <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
+                            Mobile number (for the restaurant to reach you)
+                            <span className="flex items-center gap-2">
+                              <span className="text-[15px] font-semibold text-ink">+91</span>
+                              <input
+                                className={`${field} flex-1`}
+                                value={details.phone}
+                                inputMode="tel"
+                                autoComplete="tel-national"
+                                maxLength={20}
+                                onChange={(e) => {
+                                  set({ phone: tidyMobile(e.target.value) });
+                                  setConfirmed(false);
+                                }}
+                                placeholder="98765 43210"
+                                aria-invalid={tried && !phone}
+                                aria-describedby="mobile-hint"
+                              />
+                            </span>
+                            {hint && (
+                              <span
+                                id="mobile-hint"
+                                className={`text-[12.5px] font-normal ${hint.ok ? 'text-teal-text' : 'text-ink2'}`}
+                              >
+                                {hint.ok ? `✓ ${hint.text}` : hint.text}
+                              </span>
+                            )}
+                          </label>
+                          {phone && (
+                            <label className="flex items-start gap-2.5 text-[14px] leading-snug text-ink cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={confirmed}
+                                onChange={(e) => setConfirmed(e.target.checked)}
+                                className="mt-0.5 w-5 h-5 shrink-0 accent-[var(--teal)]"
+                              />
+                              <span>
+                                <strong className="tabular-nums">{formatMobile(phone)}</strong> is my number,
+                                and the restaurant may call it about this order.
+                              </span>
+                            </label>
+                          )}
+                        </>
+                      )}
+                      <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
+                        Note (optional)
                         <input
-                          type="checkbox"
-                          checked={confirmed}
-                          onChange={(e) => setConfirmed(e.target.checked)}
-                          className="mt-0.5 w-5 h-5 shrink-0 accent-[var(--teal)]"
+                          className={field}
+                          value={details.note}
+                          maxLength={160}
+                          onChange={(e) => set({ note: e.target.value })}
+                          placeholder="Less spicy, no onion…"
                         />
-                        <span>
-                          <strong className="tabular-nums">{formatMobile(phone)}</strong> is my number, and
-                          the restaurant may call it about this order.
-                        </span>
                       </label>
-                    )}
-                    <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink2">
-                      Note (optional)
-                      <input
-                        className={field}
-                        value={details.note}
-                        maxLength={160}
-                        onChange={(e) => set({ note: e.target.value })}
-                        placeholder="Less spicy, no onion…"
-                      />
-                    </label>
-                    {tried && problem && (
-                      <p role="alert" className="m-0 text-[14px] text-blush-text">
-                        {problem}
+                      {tried && problem && (
+                        <p role="alert" className="m-0 text-[14px] text-blush-text">
+                          {problem}
+                        </p>
+                      )}
+                      {place.error && (
+                        <p role="alert" className="m-0 text-[14px] text-blush-text">
+                          {place.error instanceof ApiError && place.error.code === 'RATE_LIMITED'
+                            ? 'You just ordered. Give it a minute.'
+                            : place.error.message}
+                        </p>
+                      )}
+                      <Button
+                        type="submit"
+                        variant="brand"
+                        size="lg"
+                        disabled={place.isPending}
+                        className="w-full"
+                      >
+                        {place.isPending
+                          ? 'Sending…'
+                          : count
+                            ? `Confirm order · ${rupees(payable)}`
+                            : 'Confirm order'}
+                      </Button>
+                      <p className="m-0 text-[12.5px] leading-relaxed text-ink2">
+                        It goes straight to the restaurant's order screen and rings there. Track it and chat
+                        with them here. Your name, number and address go only to the restaurant.
                       </p>
-                    )}
-                    {place.error && (
-                      <p role="alert" className="m-0 text-[14px] text-blush-text">
-                        {place.error instanceof ApiError && place.error.code === 'RATE_LIMITED'
-                          ? 'You just ordered. Give it a minute.'
-                          : place.error.message}
-                      </p>
-                    )}
-                    <Button
-                      type="submit"
-                      variant="brand"
-                      size="lg"
-                      disabled={place.isPending}
-                      className="w-full"
-                    >
-                      {place.isPending
-                        ? 'Sending…'
-                        : count
-                          ? `Confirm order · ${rupees(total)}`
-                          : 'Confirm order'}
-                    </Button>
-                    <p className="m-0 text-[12.5px] leading-relaxed text-ink2">
-                      It goes straight to the restaurant's order screen and rings there. Track it and chat
-                      with them here. Your name, number and address go only to the restaurant.
-                    </p>
-                  </form>
-                )}
-              </>
-            )}
-          </aside>
-        )}
+                    </form>
+                  )}
+                </>
+              )}
+            </aside>,
+          )}
       </div>
 
-      {!readOnly && count > 0 && !showTracker && (
-        <button
-          type="button"
-          onClick={jumpTo('order-slip')}
-          className="lg:hidden fixed inset-x-4 bottom-[calc(84px+env(safe-area-inset-bottom))] z-30 flex items-center justify-between rounded-2xl bg-teal px-5 h-14 text-white no-underline shadow-[0_18px_34px_-18px_rgba(0,0,0,0.6)] border-0 cursor-pointer"
-        >
-          <span className="text-[15px] font-semibold">
-            {count} item{count === 1 ? '' : 's'} · {rupees(total)}
-          </span>
-          <span className="text-[15px] font-bold">View order →</span>
-        </button>
+      {!readOnly && (
+        <CartBar
+          hidden={cartOpen}
+          onOpen={isPhone ? () => setCartOpen(true) : undefined}
+          count={count}
+          total={payable}
+          order={showTracker || (current && OPEN_MESS_ORDER.includes(current.status)) ? current : undefined}
+        />
       )}
       {chatOpen && current && <OrderChat orderId={current.id} onClose={() => setChatOpen(false)} />}
     </section>
