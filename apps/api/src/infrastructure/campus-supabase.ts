@@ -5,6 +5,8 @@ import {
   type MessOrderStatus,
   type MessReportStatus,
   OPEN_MESS_ORDER,
+  type PushDailyDto,
+  type PushKind,
   ReminderPrefs,
   type TiffinPlan,
 } from '@ss/contracts';
@@ -27,6 +29,7 @@ import type {
   OrderChatState,
   PhoneRecord,
   PhoneRepository,
+  PushCounter,
   PushRepository,
   PushSubscriptionRecord,
   TiffinMarkRecord,
@@ -226,8 +229,24 @@ export class SupabasePush implements PushRepository {
     const ok = ids.filter(isUuid);
     if (ok.length) must(await this.db.from('push_subscriptions').delete().in('id', ok));
   }
+  /**
+   * Every device. The database hands back at most 1,000 rows per request whatever the limit asks
+   * for, so read page by page (ordered, so no row is skipped or read twice).
+   */
   async listAll() {
-    return (must(await this.db.from('push_subscriptions').select('*').limit(5000)) as Row[]).map(toSub);
+    const out: Row[] = [];
+    for (let from = 0; from < 50_000; from += PAGE) {
+      const page = must(
+        await this.db
+          .from('push_subscriptions')
+          .select('*')
+          .order('id')
+          .range(from, from + PAGE - 1),
+      ) as Row[];
+      out.push(...page);
+      if (page.length < PAGE) break;
+    }
+    return out.map(toSub);
   }
   async listForUser(userId: string) {
     if (!isUuid(userId)) return [];
@@ -245,11 +264,21 @@ export class SupabasePush implements PushRepository {
     ).map(toSub);
   }
   async sentSince(day: string) {
-    return (
-      must(
-        await this.db.from('push_sent').select('subscription_id, key').gte('day', day).limit(20000),
-      ) as Row[]
-    ).map((r) => ({ subscriptionId: r.subscription_id as string, key: r.key as string }));
+    const out: Row[] = [];
+    for (let from = 0; from < 200_000; from += PAGE) {
+      const page = must(
+        await this.db
+          .from('push_sent')
+          .select('subscription_id, key')
+          .gte('day', day)
+          .order('subscription_id')
+          .order('key')
+          .range(from, from + PAGE - 1),
+      ) as Row[];
+      out.push(...page);
+      if (page.length < PAGE) break;
+    }
+    return out.map((r) => ({ subscriptionId: r.subscription_id as string, key: r.key as string }));
   }
   async recordSent(rows: { subscriptionId: string; key: string; day: string }[]) {
     if (!rows.length) return;
@@ -260,10 +289,65 @@ export class SupabasePush implements PushRepository {
       ),
     );
   }
+  async unrecordSent(rows: { subscriptionId: string; key: string }[]) {
+    const ok = rows.filter((r) => isUuid(r.subscriptionId));
+    // One request per 40: or(and(subscription_id.eq.X,key.eq."class:2026-11-25:540"),...) keeps
+    // the address short enough for the database's web server.
+    const quote = (v: string) => `"${v.replace(/["\\]/g, '')}"`;
+    for (let i = 0; i < ok.length; i += 40)
+      must(
+        await this.db
+          .from('push_sent')
+          .delete()
+          .or(
+            ok
+              .slice(i, i + 40)
+              .map((r) => `and(subscription_id.eq.${r.subscriptionId},key.eq.${quote(r.key)})`)
+              .join(','),
+          ),
+      );
+  }
   async pruneSent(beforeDay: string) {
     must(await this.db.from('push_sent').delete().lt('day', beforeDay));
   }
+  async bumpDaily(day: string, kind: PushKind, add: Partial<Record<PushCounter, number>>) {
+    must(
+      await this.db.rpc('push_daily_add', {
+        p_day: day,
+        p_kind: kind,
+        p_sent: add.sent ?? 0,
+        p_seen: add.seen ?? 0,
+        p_opened: add.opened ?? 0,
+        p_failed: add.failed ?? 0,
+        p_gone: add.gone ?? 0,
+      }),
+    );
+  }
+  async daily(sinceDay: string): Promise<PushDailyDto[]> {
+    return (
+      must(
+        await this.db
+          .from('push_daily')
+          .select('day, kind, sent, seen, opened, failed, gone')
+          .gte('day', sinceDay)
+          .order('day', { ascending: false })
+          .order('kind')
+          .limit(500),
+      ) as Row[]
+    ).map((r) => ({
+      day: String(r.day),
+      kind: r.kind as PushKind,
+      sent: Number(r.sent ?? 0),
+      seen: Number(r.seen ?? 0),
+      opened: Number(r.opened ?? 0),
+      failed: Number(r.failed ?? 0),
+      gone: Number(r.gone ?? 0),
+    }));
+  }
 }
+
+/** The most rows the database returns per request. */
+const PAGE = 1000;
 
 const ORDER_COLS =
   'id, code, mess_slug, user_id, email, lines, total, mode, address, name, phone, note, status, owner_note, ip_hash, created_at, updated_at, student_unread, owner_unread, student_read_at, owner_read_at, student_cleared_at, owner_cleared_at, last_body, last_sender, last_at, responded_at, nudged_at, ended_by, alert_note, tiffin_plan, tiffin_starts, tiffin_ends, discount, offer_label';

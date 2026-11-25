@@ -5,6 +5,8 @@ import {
   type MessOrderStatus,
   type MessReportStatus,
   OPEN_MESS_ORDER,
+  type PushDailyDto,
+  type PushKind,
   type ReminderPrefs,
 } from '@ss/contracts';
 import {
@@ -27,6 +29,7 @@ import {
   type OrderChatState,
   type PhoneRecord,
   type PhoneRepository,
+  type PushCounter,
   type PushRepository,
   type PushSubscriptionRecord,
   type TiffinMarkRecord,
@@ -125,9 +128,27 @@ export class MemoryPush implements PushRepository {
     for (const r of rows)
       if (!this.sent.some((s) => s.subscriptionId === r.subscriptionId && s.key === r.key)) this.sent.push(r);
   }
+  async unrecordSent(rows: { subscriptionId: string; key: string }[]) {
+    const drop = new Set(rows.map((r) => `${r.subscriptionId} ${r.key}`));
+    const keep = this.sent.filter((s) => !drop.has(`${s.subscriptionId} ${s.key}`));
+    this.sent.splice(0, this.sent.length, ...keep);
+  }
   async pruneSent(beforeDay: string) {
     const keep = this.sent.filter((s) => s.day >= beforeDay);
     this.sent.splice(0, this.sent.length, ...keep);
+  }
+  readonly counts = new Map<string, PushDailyDto>();
+  async bumpDaily(day: string, kind: PushKind, add: Partial<Record<PushCounter, number>>) {
+    const id = `${day} ${kind}`;
+    const row = this.counts.get(id) ?? { day, kind, sent: 0, seen: 0, opened: 0, failed: 0, gone: 0 };
+    for (const [k, n] of Object.entries(add) as [PushCounter, number][]) row[k] += n;
+    this.counts.set(id, row);
+  }
+  async daily(sinceDay: string) {
+    return [...this.counts.values()]
+      .filter((r) => r.day >= sinceDay)
+      .sort((a, b) => b.day.localeCompare(a.day) || a.kind.localeCompare(b.kind))
+      .map((r) => ({ ...r }));
   }
 }
 

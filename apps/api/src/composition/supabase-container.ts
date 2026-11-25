@@ -1,3 +1,4 @@
+import type { PushQueue } from '../domain/campus-ports';
 import type { ConversionQueue, ObjectStore, RateLimiter, UploadStore } from '../domain/ports';
 import type { Container } from '../http/container';
 import { SupabaseJwtVerifier } from '../infrastructure/auth';
@@ -69,9 +70,11 @@ export interface RuntimeAdapters {
   store: ObjectStore & UploadStore;
   queue: ConversionQueue;
   limiter?: RateLimiter;
+  /** Sends big reminder batches in runs of their own (Cloudflare Queues). */
+  pushQueue?: PushQueue;
 }
 
-export type SupabaseEnv = Omit<WorkerEnv, 'NOTES' | 'PAGE_LIMITER' | 'ASSETS'>;
+export type SupabaseEnv = Omit<WorkerEnv, 'NOTES' | 'PAGE_LIMITER' | 'ASSETS' | 'PUSH_QUEUE'>;
 
 /** Supabase + Razorpay + Brevo wiring shared by the Worker and the local live server. */
 export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): Container {
@@ -114,6 +117,7 @@ export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): C
       chatReports: new SupabaseChatReports(db),
       live: new SupabaseLiveSignal(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY),
       push: new SupabasePush(db),
+      pushQueue: runtime.pushQueue,
       // Without keys, reminders stay off (the site says so) and nothing is sent.
       pushSender:
         env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY

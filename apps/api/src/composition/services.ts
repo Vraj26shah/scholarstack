@@ -47,6 +47,7 @@ import type {
   MessViewRepository,
   OrderChatRepository,
   PhoneRepository,
+  PushQueue,
   PushRepository,
   PushSender,
   SmsVerifier,
@@ -133,6 +134,8 @@ export interface Ports {
   live: LiveSignal;
   push: PushRepository;
   pushSender: PushSender;
+  /** Optional: without it, each run sends only what fits (pushPerRun). */
+  pushQueue?: PushQueue;
   /** Students' checked mobile numbers, and the SMS service that sends the codes. */
   phones: PhoneRepository;
   sms: SmsVerifier;
@@ -333,6 +336,8 @@ export function buildServices(p: Ports, config: AppConfig) {
       p.clock,
       config.pushPerRun,
       p.profiles,
+      p.pushQueue,
+      config.pushPerBatch,
     ),
     housekeeping: p.housekeeping,
     previews: new PreviewService(p.catalogueReader, p.catalogueWriter, p.pages, p.seeder, p.limiter),

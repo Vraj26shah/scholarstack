@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { track } from '../../lib/analytics';
 import { ApiError, api } from '../../lib/api';
+import { useSession } from '../../lib/session';
+import { askToSignIn } from '../auth/sign-in-prompt';
 import type { Course } from '../tools/timetable/domain';
 import {
   PermissionRefused,
@@ -42,9 +44,17 @@ const message = (e: unknown) =>
     ? e.message
     : "That didn't work. Check your connection and try again.";
 
-/** Everything a screen needs to offer, turn on, change and turn off reminders on this device. */
-export function useReminders() {
+/** Which kind a screen offers: class reminders open with the Timetable maker, meals with the Mess menu. */
+export type ReminderKind = 'class' | 'meal';
+
+/**
+ * Everything a screen needs to offer, turn on, change and turn off reminders on this device.
+ * `kind` hides the screen's reminders until that kind is open to students (admins: always).
+ */
+export function useReminders(kind?: ReminderKind) {
   const local = useLocalReminders();
+  const session = useSession();
+  const signedIn = session.status === 'ready' && !!session.me;
   const status = useQuery({ queryKey: ['push-status'], queryFn: api.pushStatus, staleTime: 5 * 60_000 });
   const [support, setSupport] = useState<PushSupport>(() => pushSupport());
   const [busy, setBusy] = useState<null | 'on' | 'save' | 'test' | 'off'>(null);
@@ -58,13 +68,17 @@ export function useReminders() {
     });
   }, [local.endpoint]);
 
-  const state: ReminderState = !status.data?.open
-    ? 'hidden'
-    : !status.data.configured
-      ? 'unconfigured'
-      : local.endpoint
-        ? 'on'
-        : support;
+  const s = status.data;
+  // `?? s.open`: a server from before the per-kind switches answers only `open`.
+  const open = !s
+    ? false
+    : kind === 'class'
+      ? (s.classes ?? s.open)
+      : kind === 'meal'
+        ? (s.meals ?? s.open)
+        : s.open;
+  const state: ReminderState =
+    !s || !open ? 'hidden' : !s.configured ? 'unconfigured' : local.endpoint ? 'on' : support;
 
   const run = useCallback(async <T>(kind: NonNullable<typeof busy>, fn: () => Promise<T>) => {
     setBusy(kind);
@@ -89,6 +103,15 @@ export function useReminders() {
   /** "Turn on": the browser's own prompt, then this device is saved with these choices. */
   const turnOn = (patch: (r: LocalReminders) => LocalReminders = (r) => r) =>
     run('on', async () => {
+      // Signed-in students only: sign in, come straight back here, tap again.
+      if (!signedIn) {
+        askToSignIn({
+          title: 'Sign in to turn on reminders',
+          body: 'Reminders are free for students: sign in with your college email and you come straight back here to switch them on.',
+          next: `${window.location.pathname}${window.location.search}${kind === 'meal' ? '#reminders' : '#class-reminders'}`,
+        });
+        return false;
+      }
       const key = status.data?.publicKey;
       if (!key) throw new Error('no key');
       const sub = await subscribeBrowser(key);
@@ -194,6 +217,8 @@ export function useReminders() {
     unsnooze,
     snoozed,
     loading: status.isLoading,
+    /** Turning reminders on needs an account; signed-out visitors are asked to sign in first. */
+    signedIn,
   };
 }
 

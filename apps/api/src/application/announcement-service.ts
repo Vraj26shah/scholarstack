@@ -1,4 +1,11 @@
-import type { AnnouncementDto, DeliveryDto, EmailStatusDto, FeatureDto } from '@ss/contracts';
+import {
+  type AnnouncementDto,
+  type DeliveryDto,
+  type EmailStatusDto,
+  type FeatureDto,
+  MAX_CLASS_NUDGES_PER_DAY,
+  MAX_CLASS_REMINDERS_PER_DAY,
+} from '@ss/contracts';
 import type { Announcement, Feature } from '../domain/entities';
 import type {
   AnnouncementRepository,
@@ -49,6 +56,34 @@ const toDto = (
 });
 
 export const featurePath = (key: string) => `/tools/${key}`;
+
+/**
+ * Hand-written launch emails for tools that deserve more than the generic one. Launching the tool
+ * drafts this text (and refreshes its one-line description on the home page); the admin still
+ * reads, tests and sends it from Emails.
+ */
+const LAUNCH_COPY: Record<
+  string,
+  { blurb: string; subject: string; heading: string; body: string; ctaLabel: string; ctaUrl?: string }
+> = {
+  timetable: {
+    blurb: 'Tap your slots, get a clash-free week, and a reminder before every class.',
+    subject: 'You asked for it: class reminders are live',
+    heading: 'Never walk into the wrong class (or miss one) again.',
+    body: [
+      'A lot of you told us the same thing: "I forget which class is next", "I only check the room when I\'m already late", "I missed a lab because I didn\'t look at my timetable." So we built what you asked for.',
+      'The Timetable maker on Scholars Stack is now live, and it reminds you before every class.',
+      `- Tomorrow's classes the night before, at the time you choose\n- A nudge 5, 10, 15 or 30 minutes before each class, with the course and room\n- Only for the days and subjects you pick\n- Never spammy: at most ${MAX_CLASS_REMINDERS_PER_DAY} a day (tomorrow's list + up to ${MAX_CLASS_NUDGES_PER_DAY} class nudges)\n- Works on your phone even when the site is closed\n- Free for every student, no app to install`,
+      'Set it up in 2 minutes:',
+      '- Sign in to Scholars Stack with your college email (reminders are for signed-in students)\n- Open the Timetable maker and tap your slots (A1, B2, TA1…), or type them\n- Tap "Class reminders" at the top and allow notifications\n- Tap "Send a test" to see one arrive on your phone',
+      'On an iPhone? Open the site in Safari, tap Share › Add to Home Screen, open Scholars Stack from your home screen, and turn reminders on there.',
+      'You can also download your timetable as a PDF, add it to your calendar, or share it with friends in your section.',
+      'This is built from your suggestions, so keep them coming: just reply to this email and tell us what would help next.',
+    ].join('\n\n'),
+    ctaLabel: 'Set up my class reminders',
+    ctaUrl: '/tools/timetable',
+  },
+};
 
 const toFeatureDto = (f: Feature): FeatureDto => ({
   key: f.key,
@@ -166,15 +201,27 @@ export class AnnouncementService {
   async launchFeature(key: string): Promise<AnnouncementDto> {
     const feature = await this.features.find(key);
     if (!feature) throw fail.notFound('That tool');
-    await this.features.save({ ...feature, status: 'live' });
-    const draft = await this.announcements.create({
-      subject: `New on Scholars Stack: ${feature.title}`,
-      heading: `${feature.title} is here.`,
-      body: `${feature.blurb}\n\nIt's free, and it works without signing in.`,
-      ctaLabel: `Open the ${feature.title.toLowerCase()}`,
-      ctaUrl: featurePath(feature.key),
-      featureKey: feature.key,
-    });
+    const copy = LAUNCH_COPY[key];
+    await this.features.save({ ...feature, status: 'live', blurb: copy?.blurb ?? feature.blurb });
+    const draft = await this.announcements.create(
+      copy
+        ? {
+            subject: copy.subject,
+            heading: copy.heading,
+            body: copy.body,
+            ctaLabel: copy.ctaLabel,
+            ctaUrl: copy.ctaUrl ?? featurePath(feature.key),
+            featureKey: feature.key,
+          }
+        : {
+            subject: `New on Scholars Stack: ${feature.title}`,
+            heading: `${feature.title} is here.`,
+            body: `${feature.blurb}\n\nIt's free, and it works without signing in.`,
+            ctaLabel: `Open the ${feature.title.toLowerCase()}`,
+            ctaUrl: featurePath(feature.key),
+            featureKey: feature.key,
+          },
+    );
     return toDto(draft);
   }
 

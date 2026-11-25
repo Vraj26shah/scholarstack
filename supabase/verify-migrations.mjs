@@ -1300,6 +1300,24 @@ check('RLS: students cannot run the earnings report', await denied('select * fro
       (await denied(`select public.admin_insights(now() - interval '7 days', 10)`)),
   );
 }
+await db.query(`select public.push_daily_add('2026-11-23', 'class', 3, 0, 0, 1, 0)`);
+await db.query(`select public.push_daily_add('2026-11-23', 'class', 2, 4, 1, 0, -5)`);
+const pushDay = await one(`select * from public.push_daily where day = '2026-11-23' and kind = 'class'`);
+check(
+  'notification counts add up per day and kind (never below zero), and refuse unknown kinds',
+  pushDay.sent === 5 &&
+    pushDay.seen === 4 &&
+    pushDay.opened === 1 &&
+    pushDay.failed === 1 &&
+    pushDay.gone === 0 &&
+    (await throws(`select public.push_daily_add('2026-11-23', 'spam', 1, 0, 0, 0, 0)`)),
+  JSON.stringify(pushDay),
+);
+check(
+  'RLS: students cannot read or add notification counts',
+  (await denied('select * from public.push_daily')) &&
+    (await denied(`select public.push_daily_add('2026-11-23', 'class', 1, 0, 0, 0, 0)`)),
+);
 check(
   'RLS: students cannot read who got which email',
   (await denied('select * from public.announcement_deliveries')) &&

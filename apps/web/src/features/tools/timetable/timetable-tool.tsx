@@ -2,7 +2,7 @@ import { type ReactElement, useEffect, useState } from 'react';
 import { Button } from '../../../shared/ui/button';
 import { Sheet as Dialog } from '../../../shared/ui/feedback';
 import { Calendar, DownloadIcon, PhotoIcon, Printer, ShareIcon } from '../../../shared/ui/icons';
-import { ClassReminderSwitch, ClassReminders } from '../../reminders/class-reminders';
+import { ClassReminderSwitch, ClassReminders, ClassRemindersHint } from '../../reminders/class-reminders';
 import { useSyncTimetableReminders } from '../../reminders/use-reminders';
 import { newId, useToolState } from '../core/storage';
 import { ToolHeader } from '../core/ui';
@@ -318,7 +318,7 @@ export default function TimetableTool({
         onClear={() => setCourses([])}
       />
 
-      {courses.some((c) => !c.tentative) && <ClassReminders courses={courses} />}
+      {courses.some((c) => !c.tentative) ? <ClassReminders courses={courses} /> : <ClassRemindersHint />}
 
       <Dialog
         open={draft !== null}

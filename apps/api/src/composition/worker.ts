@@ -23,6 +23,9 @@ export function workerContainer(env: WorkerEnv): Container {
     limiter: env.PAGE_LIMITER
       ? new CloudflareRateLimiter(env.PAGE_LIMITER)
       : new MemoryRateLimiter(Number(env.PAGES_PER_MINUTE ?? 40)),
+    pushQueue: env.PUSH_QUEUE
+      ? { send: async (batches) => void (await env.PUSH_QUEUE!.sendBatch(batches.map((body) => ({ body })))) }
+      : undefined,
   });
   cached = { env, container };
   return container;

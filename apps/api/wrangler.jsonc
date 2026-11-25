@@ -16,6 +16,15 @@
   "r2_buckets": [{ "binding": "NOTES", "bucket_name": "scholarstack" }],
   "ratelimits": [{ "name": "PAGE_LIMITER", "namespace_id": "1001", "simple": { "limit": 40, "period": 60 } }],
   "triggers": { "crons": ["17 * * * *", "*/5 * * * *"] },
+  // Big reminder sends: the five-minute run hands batches to this queue, and each batch is sent
+  // by a run of its own (its own request budget). One batch per run, never retried (a retry would
+  // send twice; the next five-minute run retries failures). Create once: wrangler queues create scholarstack-push
+  "queues": {
+    "producers": [{ "binding": "PUSH_QUEUE", "queue": "scholarstack-push" }],
+    "consumers": [
+      { "queue": "scholarstack-push", "max_batch_size": 1, "max_batch_timeout": 0, "max_retries": 0 }
+    ]
+  },
   "observability": { "enabled": true },
   // ADMIN_EMAILS, APP_URL and every key are Worker *secrets* (pnpm secrets:push). Never list them
   // here too: Cloudflare refuses a deploy that has the same name as a variable and a secret.
@@ -56,6 +65,15 @@
         { "name": "PAGE_LIMITER", "namespace_id": "1003", "simple": { "limit": 40, "period": 60 } }
       ],
       "triggers": { "crons": ["17 * * * *", "*/5 * * * *"] },
+      // Big reminder sends: the five-minute run hands batches to this queue, and each batch is sent
+      // by a run of its own (its own request budget). One batch per run, never retried (a retry would
+      // send twice; the next five-minute run retries failures). Create once: wrangler queues create scholarstack-push
+      "queues": {
+        "producers": [{ "binding": "PUSH_QUEUE", "queue": "scholarstack-push" }],
+        "consumers": [
+          { "queue": "scholarstack-push", "max_batch_size": 1, "max_batch_timeout": 0, "max_retries": 0 }
+        ]
+      },
       "vars": {
         "APP_ENV": "production",
         "ALLOWED_EMAIL_DOMAIN": "vitbhopal.ac.in",

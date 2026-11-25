@@ -4,6 +4,9 @@ Status as of 23 Oct 2026 (v0.7.0). **Me** = built here. **You** = an account ste
 Everything marked done is covered by an automated test (see QA_REPORT.md).
 
 ## Done
+- [x] 0.43.0 · Class reminders launch with the Timetable maker: sign-in required, 3 devices per account, max 9 a day, soonest-first sending through a Cloudflare Queue (free plan), paged reads past 1,000, delivery tracking in Admin › Reminders, launch email copy
+- [x] 0.43.0 · Queue `scholarstack-push` created on Cloudflare (26 Nov)
+- [ ] 0.43.0 · **You:** after the deploy: Admin › Emails › Tools › Timetable maker › **Launch & draft the email** → Preview → Send me a test → Send to students; then turn reminders on on your own phone and press Send a test
 - [x] 0.42.0 · Tiffin delivered/missed marks with 4-day make-ups, phone cart screen, easier owner phone box
 - [x] 0.41.0 · Owner Insights (day/week/month/year, chart + table, views/visitors, dishes, offers, hours, customers), restaurant offers (codes, deals, combos, server-priced), cancel at any step, demo history for sales demos
 - [ ] 0.41.0 · **You:** deploy so migrations `20261125000500`–`20261125000800` apply, then open My restaurant › Insights and Offers on the live site

@@ -18,6 +18,7 @@ import { Button } from '../../shared/ui/button';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { MenuCardEditor } from '../restaurant/menu-card-editor';
 import { WeekChartEditor } from '../restaurant/week-chart-editor';
+import { PushDelivery } from './push-delivery';
 import { PersonTest } from './push-test';
 import { Field, Panel, StatusPill, U, input, plural } from './ui';
 
@@ -141,14 +142,19 @@ export function MessMenusPanel() {
   );
 }
 
-function LaunchNote({ live, what, detail }: { live: boolean; what: string; detail?: string }) {
+function LaunchNote({
+  live,
+  what,
+  detail,
+  liveText = 'Students see published menus.',
+}: { live: boolean; what: string; detail?: string; liveText?: string }) {
   return (
     <p
       className={`m-0 rounded-xl px-4 py-3 text-[14px] ${live ? 'bg-mist/50 text-ink' : 'bg-marigold-soft text-marigold-text'}`}
     >
       {live ? (
         <>
-          <strong>{what} is live.</strong> Students see published menus.
+          <strong>{what}: live.</strong> {liveText}
         </>
       ) : (
         <>
@@ -674,9 +680,16 @@ export function RemindersAdminPanel() {
       }
     >
       <LaunchNote
+        live={features.data?.find((f) => f.key === 'timetable')?.status === 'live'}
+        what="Class reminders"
+        liveText="Students can turn them on in the Timetable maker."
+        detail="Class reminders are in the Timetable maker and launch with it (Admin › Emails › Tools)."
+      />
+      <LaunchNote
         live={features.data?.find((f) => f.key === 'mess-menu')?.status === 'live'}
-        what="Reminders"
-        detail="Meal reminders are in the Mess menu, class reminders in the Timetable maker. They launch with the Mess menu."
+        what="Meal reminders"
+        liveText="Students can turn them on in the Mess menu."
+        detail="Meal reminders are in the Mess menu and launch with it."
       />
       {q.isLoading ? (
         <Skeleton className="h-32" />
@@ -726,6 +739,7 @@ export function RemindersAdminPanel() {
             {run.data && (
               <p role="status" className="m-0 text-[14px] text-ink">
                 Checked {plural(run.data.checked, 'device')}: sent {run.data.sent}
+                {run.data.queued ? `, ${run.data.queued} handed to the queue (out within a minute)` : ''}
                 {run.data.deferred ? `, ${run.data.deferred} left for the next run` : ''}
                 {run.data.gone ? `, ${run.data.gone} switched off by their browser (removed)` : ''}
                 {run.data.failed ? `, ${run.data.failed} failed (retried next run)` : ''}.
@@ -733,6 +747,7 @@ export function RemindersAdminPanel() {
             )}
             {run.error && <p className="m-0 text-[14px] text-blush-text">{friendly(run.error)}</p>}
           </div>
+          <PushDelivery s={s} />
           {s.configured && <PersonTest />}
         </>
       )}

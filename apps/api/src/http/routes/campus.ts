@@ -18,6 +18,7 @@ import {
   PushAccountBody,
   PushEndpointBody,
   PushPrefsBody,
+  PushReceiptBody,
   PushRenewBody,
   PushSubscribeBody,
   PushTestBody,
@@ -406,8 +407,8 @@ campusRoutes.post('/push/unsubscribe', async (c) => {
  */
 campusRoutes.post('/push/receipt', async (c) => {
   await throttle(c, 'push-receipt', (await requestMeta(c)).ipHash);
-  const { endpoint } = PushEndpointBody.parse(await c.req.json());
-  await c.get('container').reminders.receipt(endpoint);
+  const { endpoint, tag, event } = PushReceiptBody.parse(await c.req.json());
+  await c.get('container').reminders.receipt(endpoint, tag, event);
   return c.json({ ok: true });
 });
 

@@ -897,8 +897,43 @@ export interface PushStatusDto {
   /** The server has its push keys. Without them reminders can't be sent at all. */
   configured: boolean;
   publicKey: string;
-  /** Students can turn reminders on (the "reminders" tool is live). Admins always can. */
+  /** Students can turn some reminders on (either kind below). Admins always can. */
   open: boolean;
+  /** Class reminders: open once the Timetable maker is live. */
+  classes: boolean;
+  /** Meal reminders: open once the Mess menu is live. */
+  meals: boolean;
+}
+
+/** What a device reports back about a notification: it reached the screen, or it was tapped. */
+export const PUSH_KINDS = ['class', 'nightly', 'mess', 'order', 'chat', 'test', 'other'] as const;
+export type PushKind = (typeof PUSH_KINDS)[number];
+/** Any notification tag, folded into the kinds the admin counts. */
+export const pushKind = (tag: string): PushKind => {
+  if ((PUSH_KINDS as readonly string[]).includes(tag)) return tag as PushKind;
+  if (tag.startsWith('chat')) return 'chat';
+  if (tag.startsWith('order')) return 'order';
+  return 'other';
+};
+export const PushReceiptBody = z.object({
+  endpoint,
+  tag: z.string().max(80).optional(),
+  event: z.enum(['shown', 'opened']).optional(),
+});
+
+/** One day of one kind of notification, for Admin › Reminders. */
+export interface PushDailyDto {
+  day: string;
+  kind: PushKind;
+  /** Accepted by the browser's push service. */
+  sent: number;
+  /** The device said it showed it on screen. */
+  seen: number;
+  /** Tapped. */
+  opened: number;
+  failed: number;
+  /** The device had switched notifications off (it is forgotten). */
+  gone: number;
 }
 
 export interface PushDeviceDto {
@@ -916,6 +951,14 @@ export interface AdminPushStatsDto {
   withClasses: number;
   byMess: { slug: string; name: string; devices: number }[];
   sentToday: number;
+  /** Signed-in students with at least one device getting class reminders. */
+  classStudents: number;
+  /** Devices that showed at least one notification in the last 7 days. */
+  activeDevices: number;
+  /** The last 14 days, per kind (newest first). */
+  daily: PushDailyDto[];
+  /** Big sends go through the queue: true when this server has one. */
+  queue: boolean;
 }
 
 /** One device that gets notifications, as the admin sees it when testing. */
@@ -942,6 +985,8 @@ export interface PushRunDto {
   failed: number;
   /** Due but left for the next run (each run may only send so many). */
   deferred: number;
+  /** Handed to the queue, which sends them within a minute or so. */
+  queued?: number;
 }
 
 // ── Time on campus ───────────────────────────────────────────────────────────
@@ -1010,10 +1055,19 @@ export function favouritesIn(dishes: MessDish[], favourites: string[]): string[]
   return favourites.filter((f) => f.trim().length > 1 && text.includes(f.trim().toLowerCase()));
 }
 
-const addDays = (date: string, n: number) =>
+export const addDays = (date: string, n: number) =>
   new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
 // ── Which reminders are due ──────────────────────────────────────────────────
+
+/**
+ * The most class reminders a device gets in a day: one "tomorrow's classes" list the night before,
+ * plus at most this many nudges before classes. Told to students on the page and in the email.
+ */
+export const MAX_CLASS_NUDGES_PER_DAY = 8;
+export const MAX_CLASS_REMINDERS_PER_DAY = MAX_CLASS_NUDGES_PER_DAY + 1;
+/** Devices one account can get reminders on (phone, laptop, tablet). */
+export const MAX_REMINDER_DEVICES = 3;
 
 export interface DuePush {
   /** Sent once per key (per device): "mess:2026-11-23:lunch". */
@@ -1024,6 +1078,8 @@ export interface DuePush {
   body: string;
   /** The page a tap opens. */
   url: string;
+  /** Campus minutes from midnight when the thing starts: the soonest go out first. */
+  at?: number;
 }
 
 const shortName = (c: ReminderClass) => c.code || c.name;
@@ -1067,24 +1123,33 @@ export function duePushes(
           : `${name} in ${left} min ${MEAL_EMOJI[meal.key]}`,
         body: clip(`${dishes.map((d) => d.name).join(', ')} · ${mess.name}`, 180),
         url: `/tools/mess-menu?mess=${encodeURIComponent(mess.slug)}&meal=${meal.key}`,
+        at: start,
       });
     }
   }
 
   const c = prefs.classes;
   if (c.before && c.days.includes(clock.day)) {
-    for (const course of c.courses)
-      for (const t of course.times) {
-        if (t.day !== clock.day) continue;
-        if (clock.minutes < t.start - c.lead || clock.minutes >= t.start) continue;
-        add({
-          key: `class:${clock.date}:${t.start}`,
-          tag: 'class',
-          title: `${clip(course.name, 40)} in ${t.start - clock.minutes} min`,
-          body: [course.code, course.room, formatClock(t.start)].filter(Boolean).join(' · '),
-          url: '/tools/timetable',
-        });
-      }
+    // Nudges already sent today count towards the daily cap.
+    let nudges = [...sent].filter((k) => k.startsWith(`class:${clock.date}:`)).length;
+    const times = c.courses
+      .flatMap((course) => course.times.map((t) => ({ course, t })))
+      .filter(({ t }) => t.day === clock.day)
+      .sort((a, b) => a.t.start - b.t.start);
+    for (const { course, t } of times) {
+      if (clock.minutes < t.start - c.lead || clock.minutes >= t.start) continue;
+      if (sent.has(`class:${clock.date}:${t.start}`)) continue;
+      if (nudges >= MAX_CLASS_NUDGES_PER_DAY) break;
+      nudges++;
+      add({
+        key: `class:${clock.date}:${t.start}`,
+        tag: 'class',
+        title: `${clip(course.name, 40)} in ${t.start - clock.minutes} min`,
+        body: [course.code, course.room, formatClock(t.start)].filter(Boolean).join(' · '),
+        url: '/tools/timetable',
+        at: t.start,
+      });
+    }
   }
 
   if (c.nightly) {
@@ -1104,6 +1169,8 @@ export function duePushes(
             180,
           ),
           url: '/tools/timetable?day=tomorrow',
+          // Not tied to a start time: after the nudges for classes about to begin.
+          at: at + 60,
         });
     }
   }

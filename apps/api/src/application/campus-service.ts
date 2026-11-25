@@ -2,6 +2,7 @@ import {
   type AdminPushDeviceDto,
   type AdminPushStatsDto,
   type DuePush,
+  MAX_REMINDER_DEVICES,
   MEAL_NAMES,
   type MessDto,
   type MessInput,
@@ -11,6 +12,7 @@ import {
   type MessSummaryDto,
   type PushAccountInput,
   type PushDeviceDto,
+  type PushKind,
   type PushRenewInput,
   type PushRunDto,
   type PushStatusDto,
@@ -18,6 +20,7 @@ import {
   type PushTestKind,
   type ReminderPrefs,
   ReminderPrefs as ReminderPrefsSchema,
+  addDays,
   campusClock,
   dishesOn,
   duePushes,
@@ -25,14 +28,19 @@ import {
   formatSpan,
   isTiffinItem,
   normaliseEmail,
+  pushKind,
   toMinutes,
 } from '@ss/contracts';
 import type {
   MessRecord,
   MessReportRepository,
   MessRepository,
+  PushCounter,
+  PushJob,
   PushMessage,
+  PushQueue,
   PushRepository,
+  PushResult,
   PushSender,
   PushSubscriptionRecord,
 } from '../domain/campus-ports';
@@ -40,11 +48,35 @@ import type { Clock, FeatureRepository, ProfileRepository } from '../domain/port
 import { fail } from './errors';
 
 /**
- * The toolbox key that switches these on for students. Until then only admins can use them.
- * Reminders live inside the Mess menu and the Timetable maker, so they launch with the Mess menu.
+ * The toolbox keys that switch these on for students. Until then only admins can use them.
+ * Reminders live inside their tools: meal reminders launch with the Mess menu, class reminders
+ * with the Timetable maker.
  */
 export const MESS_FEATURE = 'mess-menu';
-export const REMINDERS_FEATURE = MESS_FEATURE;
+export const CLASS_REMINDERS_FEATURE = 'timetable';
+
+/** Counts per kind of notification, added up from one batch of results. */
+const tally = (rows: { kind: PushKind; result: PushResult }[]) => {
+  const out = new Map<PushKind, Partial<Record<PushCounter, number>>>();
+  for (const { kind, result } of rows) {
+    const c = out.get(kind) ?? {};
+    const field: PushCounter = result === 'ok' ? 'sent' : result;
+    c[field] = (c[field] ?? 0) + 1;
+    out.set(kind, c);
+  }
+  return out;
+};
+
+/** Notifications sent at the same time (each is one request to a push service). */
+const AT_ONCE = 10;
+/**
+ * Queue messages per send call. The queue takes at most 100 messages and 256 KB per call; a batch
+ * of 5 is about 3.5 KB, so 60 stay well under. Each call also writes its claims to the send log,
+ * and a free Worker run may make only ~50 outside requests, so fewer, bigger calls go further.
+ */
+const MESSAGES_PER_CALL = 60;
+/** The most notifications one run hands to the queue; anything past it waits for the next run. */
+const MAX_QUEUED = 5000;
 
 const isLive = async (features: FeatureRepository, key: string) =>
   (await features.find(key))?.status === 'live';
@@ -211,23 +243,55 @@ export class ReminderService {
     private readonly perRun = 35,
     /** To find a person's account by email (admin tests). */
     private readonly profiles?: Pick<ProfileRepository, 'findByEmails'>,
+    /** Sends the rest in batches, each in a run of its own (so hundreds can go out at once). */
+    private readonly queue?: PushQueue,
+    private readonly perBatch = 5,
   ) {}
+
+  /** Which kinds students may turn on (admins: all). */
+  private async openKinds(admin: boolean) {
+    if (admin) return { classes: true, meals: true };
+    const [classes, meals] = await Promise.all([
+      isLive(this.features, CLASS_REMINDERS_FEATURE),
+      isLive(this.features, MESS_FEATURE),
+    ]);
+    return { classes, meals };
+  }
+
+  private async count(kind: PushKind, add: Partial<Record<PushCounter, number>>) {
+    // Counting never stops a notification going out.
+    await this.push.bumpDaily(campusClock(this.clock.now()).date, kind, add).catch(() => {});
+  }
 
   get configured() {
     return !!this.sender.publicKey;
   }
 
   async status(admin: boolean): Promise<PushStatusDto> {
+    const { classes, meals } = await this.openKinds(admin);
     return {
       configured: this.configured,
       publicKey: this.sender.publicKey,
-      open: admin || (await isLive(this.features, REMINDERS_FEATURE)),
+      open: classes || meals,
+      classes,
+      meals,
     };
   }
 
   async subscribe(input: PushSubscribeInput, userId: string | null, admin: boolean) {
     if (!this.configured) throw fail.badRequest("Reminders aren't set up on the server yet.");
-    if (!admin && !(await isLive(this.features, REMINDERS_FEATURE))) throw fail.notFound('Reminders');
+    const { classes, meals } = await this.openKinds(admin);
+    if (!classes && !meals) throw fail.notFound('Reminders');
+    // Reminders are for signed-in students: every device belongs to someone, and the free
+    // sending allowance goes to real students.
+    if (!userId && !admin) throw fail.unauthenticated();
+    if (userId && !admin) {
+      const mine = await this.push.listForUser(userId);
+      if (!mine.some((s) => s.endpoint === input.endpoint) && mine.length >= MAX_REMINDER_DEVICES)
+        throw fail.badRequest(
+          `Reminders are on for ${MAX_REMINDER_DEVICES} devices already. Turn one off in your account to add this one.`,
+        );
+    }
     await this.push.upsert({
       endpoint: input.endpoint,
       p256dh: input.keys.p256dh,
@@ -261,9 +325,13 @@ export class ReminderService {
     if (!(await this.push.setPrefs(endpoint, prefs))) throw fail.notFound('Reminders for this device');
   }
 
-  /** The device's service worker showed a notification: remember when (for "did it arrive?"). */
-  async receipt(endpoint: string) {
-    await this.push.markSeen(endpoint);
+  /**
+   * The device's service worker showed a notification (or it was tapped): remember when, for
+   * "did it arrive?", and count it for Admin › Reminders. Only a known device is counted.
+   */
+  async receipt(endpoint: string, tag = '', event: 'shown' | 'opened' = 'shown') {
+    const known = await this.push.markSeen(endpoint);
+    if (known && tag) await this.count(pushKind(tag), event === 'opened' ? { opened: 1 } : { seen: 1 });
   }
 
   /** Every device of these accounts (by order-alert address and by account), for admin testing. */
@@ -360,6 +428,7 @@ export class ReminderService {
     if (!sub) throw fail.notFound('Reminders for this device');
     const message = kind === 'class' ? this.classSample(sub) : await this.sample(sub);
     const result = await this.sender.send(sub, message, 300);
+    await this.count('test', { [result === 'ok' ? 'sent' : result]: 1 });
     if (result === 'gone') {
       await this.push.removeIds([sub.id]);
       throw fail.badRequest('This device stopped accepting notifications. Turn reminders on again.');
@@ -451,9 +520,18 @@ export class ReminderService {
     await this.push.removeIds([id]);
   }
 
-  /** Sends whatever is due now. Called by the five-minute cron (and Admin › Reminders › Run now). */
+  /**
+   * Sends whatever is due now. Called by the five-minute cron (and Admin › Reminders › Run now).
+   *
+   * The soonest events go first. A Worker run may make only about 50 outside requests, so this run
+   * sends the first few itself and hands the rest to the queue in batches; each batch is sent by a
+   * run of its own, within a minute or so. Every reminder is written to the send log *before* it
+   * is queued, so the next run never queues it twice; a batch takes back the ones that failed, and
+   * the next run tries those again while there is still time before the class or meal.
+   * Without a queue (local server, a missing binding), the rest waits for the next run.
+   */
   async run(): Promise<PushRunDto> {
-    const out: PushRunDto = { checked: 0, sent: 0, gone: 0, failed: 0, deferred: 0 };
+    const out: PushRunDto = { checked: 0, sent: 0, gone: 0, failed: 0, deferred: 0, queued: 0 };
     if (!this.configured) return out;
     const now = this.clock.now();
     const { date, minutes } = campusClock(now);
@@ -468,46 +546,126 @@ export class ReminderService {
       done.get(s.subscriptionId)!.add(s.key);
     }
 
-    const jobs: { sub: PushSubscriptionRecord; due: DuePush }[] = [];
+    const due: { job: PushJob; at: number }[] = [];
     for (const sub of subs) {
       const mess = sub.prefs.mess.slug ? (bySlug.get(sub.prefs.mess.slug) ?? null) : null;
-      for (const due of duePushes(sub.prefs, mess, now, done.get(sub.id))) jobs.push({ sub, due });
+      for (const d of duePushes(sub.prefs, mess, now, done.get(sub.id)))
+        due.push({
+          at: d.at ?? 24 * 60,
+          job: {
+            sub: { id: sub.id, endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+            message: { title: d.title, body: d.body, tag: d.tag, url: d.url, actions: ACTIONS[d.tag] },
+            ttl: TTL[d.tag],
+            key: d.key,
+            kind: d.tag,
+          },
+        });
     }
-    // The soonest events first; the rest wait for the next run (still before the event starts).
-    const now5 = jobs.slice(0, this.perRun);
-    out.deferred = jobs.length - now5.length;
+    // The soonest events first (a class at 9:00 before a meal at 9:30).
+    due.sort((a, b) => a.at - b.at);
+    const jobs = due.map((d) => d.job);
 
+    const inline = jobs.slice(0, this.queue ? Math.min(this.perRun, this.perBatch) : this.perRun);
+    let rest = jobs.slice(inline.length);
+
+    if (rest.length && this.queue) {
+      const take = rest.slice(0, MAX_QUEUED);
+      const batches: PushJob[][] = [];
+      for (let i = 0; i < take.length; i += this.perBatch) batches.push(take.slice(i, i + this.perBatch));
+      const claim = (b: PushJob[]) => b.map((j) => ({ subscriptionId: j.sub.id, key: j.key!, day: date }));
+      let queued = 0;
+      for (let i = 0; i < batches.length; i += MESSAGES_PER_CALL) {
+        const group = batches.slice(i, i + MESSAGES_PER_CALL);
+        const rows = group.flatMap(claim);
+        await this.push.recordSent(rows);
+        try {
+          await this.queue.send(group);
+          queued += rows.length;
+        } catch (error) {
+          // The queue said no (daily allowance used up, an outage): free them for the next run.
+          await this.push.unrecordSent(rows).catch(() => {});
+          console.error(
+            JSON.stringify({ level: 'error', event: 'reminders.queue', message: (error as Error).message }),
+          );
+          break;
+        }
+      }
+      out.queued = queued;
+      rest = rest.slice(queued);
+    }
+    out.deferred = rest.length;
+
+    const results = await this.sendAll(inline);
     const delivered: { subscriptionId: string; key: string; day: string }[] = [];
     const gone = new Set<string>();
-    for (let i = 0; i < now5.length; i += 10) {
-      const results = await Promise.all(
-        now5.slice(i, i + 10).map(async ({ sub, due }) => {
-          if (gone.has(sub.id)) return 'gone' as const;
-          const result = await this.sender
-            .send(
-              sub,
-              { title: due.title, body: due.body, tag: due.tag, url: due.url, actions: ACTIONS[due.tag] },
-              TTL[due.tag],
-            )
-            .catch(() => 'failed' as const);
-          if (result === 'ok') delivered.push({ subscriptionId: sub.id, key: due.key, day: date });
-          if (result === 'gone') gone.add(sub.id);
-          return result;
-        }),
-      );
-      for (const r of results) {
-        if (r === 'ok') out.sent++;
-        else if (r === 'failed') out.failed++;
-      }
-    }
+    results.forEach((result, i) => {
+      const job = inline[i]!;
+      if (result === 'ok') {
+        out.sent++;
+        delivered.push({ subscriptionId: job.sub.id, key: job.key!, day: date });
+      } else if (result === 'gone') gone.add(job.sub.id);
+      else out.failed++;
+    });
     out.gone = gone.size;
     await Promise.all([
       delivered.length ? this.push.recordSent(delivered) : null,
       gone.size ? this.push.removeIds([...gone]) : null,
+      ...[...tally(results.map((result, i) => ({ kind: inline[i]!.kind, result })))].map(([kind, add]) =>
+        this.count(kind, add),
+      ),
       // Once a day, just after midnight on campus: forget sends from before yesterday.
       minutes < 5
         ? this.push.pruneSent(new Date(now.getTime() - 2 * 86_400_000).toISOString().slice(0, 10))
         : null,
+    ]);
+    return out;
+  }
+
+  /** Sends each job, AT_ONCE at a time. A device found switched off is skipped after that. */
+  private async sendAll(jobs: PushJob[]): Promise<PushResult[]> {
+    const out: PushResult[] = [];
+    const gone = new Set<string>();
+    for (let i = 0; i < jobs.length; i += AT_ONCE) {
+      out.push(
+        ...(await Promise.all(
+          jobs.slice(i, i + AT_ONCE).map(async (j) => {
+            if (gone.has(j.sub.id)) return 'gone' as const;
+            const r = await this.sender.send(j.sub, j.message, j.ttl).catch(() => 'failed' as const);
+            if (r === 'gone') gone.add(j.sub.id);
+            return r;
+          }),
+        )),
+      );
+    }
+    return out;
+  }
+
+  /**
+   * One queued batch (the queue consumer). Never throws: a retried batch would send twice. Failed
+   * reminders are taken back from the send log so the next five-minute run tries them again.
+   */
+  async deliver(jobs: PushJob[]): Promise<PushRunDto> {
+    const out: PushRunDto = { checked: jobs.length, sent: 0, gone: 0, failed: 0, deferred: 0 };
+    if (!this.configured || !jobs.length) return out;
+    const results = await this.sendAll(jobs);
+    const retry: { subscriptionId: string; key: string }[] = [];
+    const gone = new Set<string>();
+    results.forEach((r, i) => {
+      const j = jobs[i]!;
+      if (r === 'ok') out.sent++;
+      else if (r === 'gone') gone.add(j.sub.id);
+      else {
+        out.failed++;
+        if (j.key) retry.push({ subscriptionId: j.sub.id, key: j.key });
+      }
+    });
+    out.gone = gone.size;
+    await Promise.all([
+      retry.length ? this.push.unrecordSent(retry).catch(() => {}) : null,
+      gone.size ? this.push.removeIds([...gone]).catch(() => {}) : null,
+      ...[...tally(results.map((result, i) => ({ kind: jobs[i]!.kind, result })))].map(([kind, add]) =>
+        this.count(kind, add),
+      ),
     ]);
     return out;
   }
@@ -519,7 +677,11 @@ export class ReminderService {
       this.messes.list(),
       this.push.sentSince(date),
     ]);
+    const daily = await this.push.daily(addDays(date, -13)).catch(() => []);
     const names = new Map(messes.map((m) => [m.slug, m.name]));
+    const hasClasses = (s: PushSubscriptionRecord) =>
+      s.prefs.classes.nightly || (s.prefs.classes.before && s.prefs.classes.courses.length > 0);
+    const weekAgo = this.clock.now().getTime() - 7 * 86_400_000;
     const counts = new Map<string, number>();
     for (const s of subs)
       if (s.prefs.mess.slug) counts.set(s.prefs.mess.slug, (counts.get(s.prefs.mess.slug) ?? 0) + 1);
@@ -529,11 +691,13 @@ export class ReminderService {
       withMeals: subs.filter(
         (s) => s.prefs.mess.slug && (s.prefs.mess.meals.length || s.prefs.mess.favourites.length),
       ).length,
-      withClasses: subs.filter(
-        (s) => s.prefs.classes.nightly || (s.prefs.classes.before && s.prefs.classes.courses.length),
-      ).length,
+      withClasses: subs.filter(hasClasses).length,
       byMess: [...counts].map(([slug, devices]) => ({ slug, name: names.get(slug) ?? slug, devices })),
       sentToday: sent.length,
+      classStudents: new Set(subs.filter((s) => s.userId && hasClasses(s)).map((s) => s.userId)).size,
+      activeDevices: subs.filter((s) => s.seenAt && s.seenAt.getTime() >= weekAgo).length,
+      daily,
+      queue: !!this.queue,
     };
   }
 }

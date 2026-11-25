@@ -39,6 +39,7 @@ export interface WorkerEnv {
   /** mailto: address the push services can contact. */
   VAPID_SUBJECT?: string;
   PUSH_PER_RUN?: string;
+  PUSH_PER_BATCH?: string;
   /** SMS codes for mobile numbers: 2Factor.in, or Twilio Verify. Optional. */
   TWOFACTOR_API_KEY?: string;
   TWOFACTOR_TEMPLATE?: string;
@@ -46,6 +47,8 @@ export interface WorkerEnv {
   TWILIO_AUTH_TOKEN?: string;
   TWILIO_VERIFY_SID?: string;
   NOTES: R2Bucket;
+  /** Big reminder sends go out in batches through this queue (see wrangler.jsonc). */
+  PUSH_QUEUE?: { sendBatch(messages: { body: unknown }[]): Promise<unknown> };
   PAGE_LIMITER?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   ASSETS?: Fetcher;
 }
@@ -93,6 +96,7 @@ export function buildConfig(env: Partial<Record<keyof WorkerEnv, unknown>>, now 
     signinEmailDailyLimit: num(s('SIGNIN_EMAIL_DAILY_LIMIT'), 250),
     signinLinkBudgets: true,
     pushPerRun: num(s('PUSH_PER_RUN'), 35),
+    pushPerBatch: num(s('PUSH_PER_BATCH'), 5),
   };
 }
 

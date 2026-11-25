@@ -633,6 +633,32 @@ describe('toolbox and announcements', () => {
     ]);
   });
 
+  it('launching the Timetable maker drafts the class-reminders email and opens class reminders', async () => {
+    const a = await admin();
+    const student = new Browser(app);
+    expect((await student.call('GET', '/push/status')).json).toMatchObject({ classes: false, meals: false });
+    const draft = (await a.call('POST', '/admin/features/timetable/launch')).json;
+    expect(draft).toMatchObject({
+      status: 'draft',
+      subject: 'You asked for it: class reminders are live',
+      ctaUrl: '/tools/timetable',
+      featureKey: 'timetable',
+    });
+    const preview = (await a.call('GET', `/admin/announcements/${draft.id}/preview`)).json.html as string;
+    expect(preview).toContain('<ul');
+    expect(preview).toContain('Send a test');
+    const tool = (await student.call('GET', '/features')).json.find((f: any) => f.key === 'timetable');
+    expect(tool).toMatchObject({
+      status: 'live',
+      blurb: expect.stringContaining('reminder before every class'),
+    });
+    expect((await student.call('GET', '/push/status')).json).toMatchObject({
+      open: true,
+      classes: true,
+      meals: false,
+    });
+  });
+
   it('launching a tool drafts an email that goes to every opted-in student, with a working unsubscribe', async () => {
     const students = await Promise.all(['a', 'b', 'c'].map((n) => student(`${n}.student@vitbhopal.ac.in`)));
     await students[2]!.call('PUT', '/me/email', { emailOptIn: false });

@@ -1,6 +1,6 @@
 import { Bell } from '../../shared/ui/icons';
 import type { LocalReminders } from './settings-store';
-import { useReminders } from './use-reminders';
+import { type ReminderKind, useReminders } from './use-reminders';
 
 /**
  * One switch at the top of a tool: meal reminders on the Mess menu, class reminders in the
@@ -13,8 +13,11 @@ export function ReminderSwitch({
   enable,
   disable,
   settings,
+  kind,
 }: {
   label: string;
+  /** Hidden until this kind is open to students. */
+  kind: ReminderKind;
   /** Is this kind of reminder on for this device? */
   isOn: (r: LocalReminders) => boolean;
   /** The settings to turn it on with (or to add to reminders already on). */
@@ -23,13 +26,18 @@ export function ReminderSwitch({
   /** The id of the full settings card on this page. */
   settings: string;
 }) {
-  const r = useReminders();
+  const r = useReminders(kind);
   if (r.state === 'hidden' || r.state === 'unconfigured' || r.state === 'unsupported') return null;
   const on = r.state === 'on' && isOn(r.local);
   const blocked = r.state === 'blocked' || r.state === 'ios-install';
   const busy = !!r.busy;
 
   const flip = () => {
+    // Signed out: the sign-in ask comes first, whatever the browser's state (turnOn asks).
+    if (!on && !r.signedIn) {
+      void r.turnOn(enable);
+      return;
+    }
     if (blocked) {
       document.getElementById(settings)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;

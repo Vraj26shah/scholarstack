@@ -137,7 +137,8 @@ self.addEventListener('push', (event) => {
               fetch('/api/push/receipt', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ endpoint }),
+                // The kind (class, nightly, mess…) is counted for the admin; nothing else is sent.
+                body: JSON.stringify({ endpoint, tag: String(data.tag || '').slice(0, 80), event: 'shown' }),
               }).catch(() => {}),
           );
           return Promise.race([receipt, new Promise((r) => setTimeout(r, 4000))]);
@@ -180,6 +181,16 @@ self.addEventListener('notificationclick', (event) => {
     );
     return;
   }
+  // "Tapped": counted per kind for the admin (never holds up opening the page).
+  void myEndpoint().then(
+    (endpoint) =>
+      endpoint &&
+      fetch('/api/push/receipt', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ endpoint, tag: String(n.tag || '').slice(0, 80), event: 'opened' }),
+      }).catch(() => {}),
+  );
   // Open exactly that page. An open tab of the site is reused: the app inside it moves to the page
   // itself (keeping anything half-typed in other tabs of the app); if it doesn't answer, the tab is
   // navigated; if that fails too (a tab this worker doesn't control), a new window opens.

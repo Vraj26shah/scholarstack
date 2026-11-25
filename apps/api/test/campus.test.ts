@@ -148,6 +148,16 @@ describe('reminders', () => {
     expect((await a.call('GET', '/push/status')).json.open).toBe(true);
     expect((await a.call('POST', '/push/subscribe', device())).status).toBe(200);
     launch('mess-menu');
+    // Launched, but reminders are for signed-in students only.
+    expect((await student.call('POST', '/push/subscribe', device(2))).status).toBe(401);
+    await student.signIn('rahul.k@vitbhopal.ac.in');
+    expect((await student.call('POST', '/push/subscribe', device(2))).status).toBe(200);
+    // At most 3 devices per account; a device already on can still be updated.
+    expect((await student.call('POST', '/push/subscribe', device(3))).status).toBe(200);
+    expect((await student.call('POST', '/push/subscribe', device(4))).status).toBe(200);
+    const fourth = await student.call('POST', '/push/subscribe', device(5));
+    expect(fourth.status).toBe(400);
+    expect(fourth.json.error.message).toContain('3 devices');
     expect((await student.call('POST', '/push/subscribe', device(2))).status).toBe(200);
   });
 

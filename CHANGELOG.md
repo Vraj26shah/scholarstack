@@ -4,6 +4,16 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Class reminders launch with the Timetable maker, built for the whole campus (26 Nov)
+- **Own launch switch**: class reminders open to students when the **Timetable maker** goes live (Admin › Emails › Tools › Launch); meal reminders still wait for the Mess menu. `/push/status` now says `classes` and `meals` separately.
+- **Signed-in students only**: turning reminders on asks signed-out visitors to sign in first ("Sign in to turn on reminders", then straight back); the server refuses signed-out devices. At most **3 devices per account**.
+- **Never spammy**: at most **9 class reminders a day** per device: tomorrow's list the night before plus up to 8 nudges before classes. Said on the page and in the launch email.
+- **Every student gets theirs on time**: the soonest classes go first; each five-minute run sends 5 itself and hands the rest to a Cloudflare Queue (`scholarstack-push`) in batches of 5, each sent by a run of its own (its own request and CPU budget on the free plan). Every reminder is claimed in the send log before it is queued, so none goes twice; a failed one is taken back and retried while there is still time. If the queue refuses (daily allowance), nothing is lost: the next run picks them up.
+- **No silent cut-off past 1,000**: devices and the day's send log are read page by page (the database returns at most 1,000 rows per request).
+- **Tracking**: Admin › Reminders shows students with class reminders on, devices active in the last 7 days, and per day: class reminders sent, reached the screen, tapped, failed; meal reminders; whether the queue is on. Phones report "shown" and "tapped" with the kind only. Migration `20261125000900_push_daily` (counts only, no devices or people).
+- **Launch email written for students**: launching the Timetable maker drafts "You asked for it: class reminders are live" (what it does, the daily cap, 4 set-up steps, iPhone steps) and refreshes its home-page line to mention reminders.
+- **Empty timetable hint**: before any course is added, the page says where class reminders will appear (and to sign in first).
+
 ### Tiffin deliveries, a cart screen on phones, an easier phone box (25 Nov)
 - **Tiffin deliveries**: the owner's Tiffin tab lists each day's lunch and dinner by address; each meal is marked **Delivered** or **Missed** in one tap (tap again to undo), with today's delivered / still to do / missed counts. A missed meal can be made up within the next 4 days (it shows under **Make-up meals** with its last date, marked Delivered when given) and lapses after that. The student's order shows meals delivered and missed, and any make-up still to come. Migration `20261125000800_tiffin_marks`.
 - **Change amounts in the cart**: each item in the cart has − and + (down to removing it), like food apps.

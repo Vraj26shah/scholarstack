@@ -27,4 +27,9 @@ export interface AppConfig {
   signinLinkBudgets: boolean;
   /** Reminder notifications sent per five-minute run (each one is a Worker request). */
   pushPerRun: number;
+  /**
+   * Notifications per queued batch: each batch is a run of its own, with its own request budget.
+   * Each one costs about 1 ms of encryption, and a free Worker run gets 10 ms of CPU: keep it small.
+   */
+  pushPerBatch: number;
 }

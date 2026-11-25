@@ -178,7 +178,7 @@ export function ReminderCard({
   /** The choices, shown once reminders are on for this device. */
   children: ReactNode;
 }) {
-  const r = useReminders();
+  const r = useReminders(testKind);
   if (r.loading || r.state === 'hidden' || r.state === 'unsupported') return null;
 
   const frame = (body: ReactNode, on = false) => (

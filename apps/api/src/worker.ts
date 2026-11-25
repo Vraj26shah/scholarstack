@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/cloudflare';
 import { reportServerError, setErrorReporter } from './application/error-reporter';
 import type { WorkerEnv } from './composition/config';
 import { workerContainer } from './composition/worker';
+import type { PushJob } from './domain/campus-ports';
 import { createApp } from './http/app';
 import { withEdgeCache } from './http/edge-cache';
 import { SECURITY_HEADERS } from './http/security-headers';
@@ -78,6 +79,26 @@ const handler = {
     const out = new Response(res.body, res);
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) out.headers.set(k, v);
     return out;
+  },
+
+  /**
+   * Reminder batches handed over by the five-minute run. Each batch is a run of its own, so it has
+   * its own request budget. deliver() never throws and every message is acked: a retried batch
+   * would send the same reminders twice (failed ones are retried by the next five-minute run).
+   */
+  async queue(batch: MessageBatch<unknown>, env: WorkerEnv): Promise<void> {
+    const container = workerContainer(env);
+    for (const m of batch.messages) {
+      const r = await container.reminders
+        .deliver(Array.isArray(m.body) ? (m.body as PushJob[]) : [])
+        .catch((error: Error) => {
+          reportServerError(error, { where: 'queue reminders' });
+          return null;
+        });
+      if (r && r.sent + r.failed + r.gone > 0)
+        console.log(JSON.stringify({ level: 'info', event: 'reminders.batch', ...r }));
+      m.ack();
+    }
   },
 
   /** Hourly: keeps the free Supabase project awake, continues announcement emails and sends

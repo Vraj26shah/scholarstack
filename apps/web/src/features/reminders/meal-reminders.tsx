@@ -55,7 +55,7 @@ function sampleFor(mess: MessDto, lead: number) {
  * (a favourite on the menu is sent even for a meal not ticked).
  */
 export function MealReminders({ mess, otherName }: { mess: MessDto; otherName?: string }) {
-  const r = useReminders();
+  const r = useReminders('meal');
   const m = r.local.mess;
   const [favourite, setFavourite] = useState('');
   const set = (patch: Partial<typeof m>) => r.update((x) => ({ ...x, mess: { ...x.mess, ...patch } }));
@@ -310,6 +310,7 @@ export function MealReminderSwitch({ mess }: { mess: MessDto }) {
     <ReminderSwitch
       label="Meal reminders"
       settings="reminders"
+      kind="meal"
       isOn={(r) => r.mess.slug === mess.slug && (r.mess.meals.length > 0 || r.mess.favourites.length > 0)}
       enable={forMess(mess)}
       disable={(r) => ({ ...r, mess: { ...r.mess, slug: null } })}
@@ -322,7 +323,7 @@ export function MealReminderSwitch({ mess }: { mess: MessDto }) {
  * adds or removes that meal. Nothing is shown before reminders are on.
  */
 export function MealBell({ mess, meal }: { mess: MessDto; meal: MealKey }) {
-  const r = useReminders();
+  const r = useReminders('meal');
   if (r.state !== 'on' || r.local.mess.slug !== mess.slug) return null;
   const on = r.local.mess.meals.includes(meal);
   return (

@@ -1,3 +1,4 @@
+import { MAX_CLASS_NUDGES_PER_DAY, MAX_CLASS_REMINDERS_PER_DAY } from '@ss/contracts';
 import { field } from '../tools/core/ui';
 import { type Course, GRID, clock, dayClasses, dayIndex } from '../tools/timetable/domain';
 import { Chip, Group, ReminderCard, Switch, toggle } from './reminder-card';
@@ -10,10 +11,28 @@ export function ClassReminderSwitch() {
     <ReminderSwitch
       label="Class reminders"
       settings="class-reminders"
+      kind="class"
       isOn={(r) => r.classes.nightly || r.classes.before}
       enable={(r) => ({ ...r, classes: { ...r.classes, nightly: true } })}
       disable={(r) => ({ ...r, classes: { ...r.classes, nightly: false, before: false } })}
     />
+  );
+}
+
+/**
+ * Before any course is added there is nothing to remind about, so the card isn't shown yet: say
+ * where it will appear (students arrive here from the launch email).
+ */
+export function ClassRemindersHint() {
+  const r = useReminders('class');
+  if (r.loading || r.state === 'hidden' || r.state === 'unconfigured' || r.state === 'unsupported')
+    return null;
+  return (
+    <p className="print:hidden m-0 max-w-[720px] border-t border-line pt-6 text-[15px] text-ink2">
+      <strong className="text-ink">Class reminders:</strong> add your courses above, and you can get
+      tomorrow's classes the night before and a nudge before each class, right here
+      {r.signedIn ? '.' : ' (sign in first; it’s free for students).'}
+    </p>
   );
 }
 
@@ -37,7 +56,7 @@ function sampleFor(courses: Course[]) {
  * each class, on the days and for the subjects the student picks.
  */
 export function ClassReminders({ courses }: { courses: Course[] }) {
-  const r = useReminders();
+  const r = useReminders('class');
   const c = r.local.classes;
   const set = (patch: Partial<typeof c>) => r.update((x) => ({ ...x, classes: { ...x.classes, ...patch } }));
   const real = courses.filter((x) => !x.tentative);
@@ -48,7 +67,7 @@ export function ClassReminders({ courses }: { courses: Course[] }) {
     <ReminderCard
       id="class-reminders"
       title="Class reminders"
-      ask="Tomorrow's classes the night before, and a nudge before each class if you want one. Only for the subjects and days you pick, even when the site is closed."
+      ask={`Tomorrow's classes the night before, and a nudge before each class if you want one. Only for the subjects and days you pick, even when the site is closed. At most ${MAX_CLASS_REMINDERS_PER_DAY} a day (tomorrow's list + up to ${MAX_CLASS_NUDGES_PER_DAY} class nudges).${r.signedIn ? '' : ' Free for students: sign in to turn them on.'}`}
       sample={sampleFor(courses)}
       preset={(x) => ({ ...x, classes: { ...x.classes, nightly: true } })}
       testKind="class"

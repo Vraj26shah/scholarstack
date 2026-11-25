@@ -320,17 +320,19 @@ test.describe('account and admin', () => {
     await signIn(page, 'librarian', '/admin?tab=tools');
     const row = page.getByRole('listitem').filter({ hasText: '/tools/timetable' });
     await row.getByRole('button', { name: 'Launch & draft the email' }).click();
-    await expect(page.getByLabel('Subject line')).toHaveValue('New on Scholars Stack: Timetable maker');
+    await expect(page.getByLabel('Subject line')).toHaveValue('You asked for it: class reminders are live');
     await page.getByRole('button', { name: 'Preview' }).click();
     await expect(
-      page.frameLocator('iframe[title="Email preview"]').getByText('Timetable maker is here.'),
+      page
+        .frameLocator('iframe[title="Email preview"]')
+        .getByText('Never walk into the wrong class (or miss one) again.'),
     ).toBeVisible();
     await page.getByRole('button', { name: /Send to \d+ student/ }).click();
     await page.getByRole('button', { name: 'Yes, send now' }).click();
     await expect(
       page
         .getByRole('listitem')
-        .filter({ hasText: 'New on Scholars Stack: Timetable maker' })
+        .filter({ hasText: 'You asked for it: class reminders are live' })
         .getByText('sent', { exact: true }),
     ).toBeVisible();
     await shot(page, 'admin-announced', info);

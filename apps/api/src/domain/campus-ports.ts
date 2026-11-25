@@ -7,6 +7,8 @@ import type {
   MessOrderStatus,
   MessReportStatus,
   OrderEndedBy,
+  PushDailyDto,
+  PushKind,
   ReminderPrefs,
   TiffinPlan,
 } from '@ss/contracts';
@@ -78,8 +80,31 @@ export interface PushRepository {
   /** Keys already sent on or after this campus date, per subscription. */
   sentSince(day: string): Promise<{ subscriptionId: string; key: string }[]>;
   recordSent(rows: { subscriptionId: string; key: string; day: string }[]): Promise<void>;
+  /** Take back sends that were claimed but didn't go through, so the next run tries again. */
+  unrecordSent(rows: { subscriptionId: string; key: string }[]): Promise<void>;
   /** Forget the send log before this campus date. */
   pruneSent(beforeDay: string): Promise<void>;
+  /** Add to the day's counts for one kind of notification (Admin › Reminders). */
+  bumpDaily(day: string, kind: PushKind, add: Partial<Record<PushCounter, number>>): Promise<void>;
+  /** Counts on or after this date, every kind. */
+  daily(sinceDay: string): Promise<PushDailyDto[]>;
+}
+
+export type PushCounter = 'sent' | 'seen' | 'opened' | 'failed' | 'gone';
+
+/** One notification for one device, as handed to the queue. */
+export interface PushJob {
+  sub: PushTarget & { id: string };
+  message: PushMessage;
+  ttl: number;
+  /** The send-log key (reminders) to take back if it fails. */
+  key?: string;
+  kind: PushKind;
+}
+
+/** Sends batches of notifications in the background, each batch in a run of its own. */
+export interface PushQueue {
+  send(batches: PushJob[][]): Promise<void>;
 }
 
 export interface PushMessage {
