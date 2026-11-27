@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ApiError, api, friendly } from '../../lib/api';
+import { isNativeApp } from '../../lib/app-mode';
 import { authGateway } from '../../lib/auth';
 import { env } from '../../lib/env';
 import { homeFor } from '../../lib/landing';
@@ -178,6 +179,11 @@ export function SessionSheets() {
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [removalNotice, setRemovalNotice] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  // Refused because the student app is already signed in on another phone (one phone at a time).
+  const appElsewhere =
+    isNativeApp() &&
+    blockingDevices.length > 0 &&
+    blockingDevices.every((d) => d.label.trim().toLowerCase().startsWith('scholars stack app'));
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -222,7 +228,11 @@ export function SessionSheets() {
         </p>
       </Sheet>
 
-      <Sheet open={status === 'device-limit'} dismissible={false} title="Two devices already.">
+      <Sheet
+        open={status === 'device-limit'}
+        dismissible={false}
+        title={appElsewhere ? 'The app is on another phone.' : 'Two devices already.'}
+      >
         {(() => {
           const when = (iso: string) =>
             new Date(iso).toLocaleString([], {
@@ -247,8 +257,9 @@ export function SessionSheets() {
             </div>
           ) : (
             <p className="m-0 text-[15px] leading-relaxed text-ink2">
-              Your account is signed in on two devices. Pick one to sign out; it keeps working for three days,
-              then this device can sign in.
+              {appElsewhere
+                ? 'The Scholars Stack app works on one phone at a time. Sign it out on that phone, or pick it below: it keeps working for three days, then this phone can sign in. The website still works on two devices.'
+                : 'Your account is signed in on two devices. Pick one to sign out; it keeps working for three days, then this device can sign in.'}
             </p>
           );
         })()}

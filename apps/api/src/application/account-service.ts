@@ -17,6 +17,11 @@ export const ADMIN_MAX_DEVICES = 10;
  * limit (the ceiling only stops a runaway script). Same in the database trigger.
  */
 export const OWNER_MAX_DEVICES = 100;
+/** The student app is signed in on one phone at a time; the website keeps `maxDevices` (two). */
+export const APP_MAX_DEVICES = 1;
+/** The student app's devices are named "Scholars Stack app · Android" (deviceLabel in contracts). */
+const isAppDevice = (label: string) => label.trim().toLowerCase().startsWith('scholars stack app');
+
 /** A device of the same kind unused this long is taken to be this one, back again. */
 const RETURNING_AFTER_MS = 24 * 60 * 60 * 1000;
 
@@ -116,6 +121,19 @@ export class AccountService {
       }
       if (active.length >= limit) {
         throw fail.deviceLimit(active.map((d) => toDeviceDto(d, null, now)));
+      }
+      // The app on a second phone: refused while it is on another one (students only; staff run
+      // the apps on several phones). The phone it's on must be signed out first, or it comes back
+      // as "returning" after a day unused (the same phone reinstalled).
+      if (isAppDevice(label) && !(await this.staff(principal)).any) {
+        let apps = active.filter((d) => isAppDevice(d.label));
+        const back = apps.length >= APP_MAX_DEVICES ? this.returningDevice(apps, label, now) : null;
+        if (back) {
+          await this.devices.revoke(back.id);
+          apps = apps.filter((d) => d !== back);
+        }
+        if (apps.length >= APP_MAX_DEVICES)
+          throw fail.deviceLimit(apps.map((d) => toDeviceDto(d, null, now)));
       }
       try {
         device = await this.devices.create(principal.userId, label);
