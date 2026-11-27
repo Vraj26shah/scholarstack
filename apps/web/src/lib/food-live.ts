@@ -3,22 +3,24 @@ import { api } from './api';
 import { useSession } from './session';
 
 /**
- * Food (mess menus and ordering) is shown only once its launch switch (Admin › mess-menu) is
- * live. Until then every way in stays hidden: the Food tab, Order food buttons, My orders links.
- * Admins still see it, to set it up. Hidden while the answer loads, so it never flashes up.
+ * What Admin has switched on. Each feature (CGPA, attendance, timetable, mess menu & ordering) has
+ * one launch switch, and the website and the Android apps (which load the website) both follow it,
+ * so whatever Admin shows or hides changes in both places at once. Until a feature is live, every
+ * way in stays hidden (tabs, buttons, sections on Today); admins still see it, to set it up.
+ * Hidden while the answer loads, so nothing flashes up and disappears.
  *
  * Plain fetch with one shared answer per minute (not React Query): the site header uses it, and
  * the header renders outside the query provider too (error screens, tests).
  */
-let known: { at: number; live: boolean } | null = null;
-let asking: Promise<boolean> | null = null;
+let known: { at: number; live: Set<string> } | null = null;
+let asking: Promise<Set<string>> | null = null;
 
-function ask(): Promise<boolean> {
+function ask(): Promise<Set<string>> {
   if (known && Date.now() - known.at < 60_000) return Promise.resolve(known.live);
   asking ??= api
     .features()
-    .then((list) => list.find((f) => f.key === 'mess-menu')?.status === 'live')
-    .catch(() => known?.live ?? false)
+    .then((list) => new Set(list.filter((f) => f.status === 'live').map((f) => f.key)))
+    .catch(() => known?.live ?? new Set<string>())
     .then((live) => {
       known = { at: Date.now(), live };
       asking = null;
@@ -27,15 +29,23 @@ function ask(): Promise<boolean> {
   return asking;
 }
 
-export function useFoodLive(): boolean {
+/** After Admin changes a switch: the next check asks the server again. */
+export function forgetFeatureSwitches() {
+  known = null;
+}
+
+export function useFeatureLive(key: string): boolean {
   const isAdmin = useSession((s) => !!s.me?.isAdmin);
-  const [live, setLive] = useState(() => known?.live ?? false);
+  const [live, setLive] = useState(() => known?.live.has(key) ?? false);
   useEffect(() => {
     let on = true;
-    void ask().then((v) => on && setLive(v));
+    void ask().then((set) => on && setLive(set.has(key)));
     return () => {
       on = false;
     };
-  }, []);
+  }, [key]);
   return isAdmin || live;
 }
+
+/** Food: mess menus and ordering (the mess-menu switch). */
+export const useFoodLive = () => useFeatureLive('mess-menu');

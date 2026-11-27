@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { useFoodLive } from '../../lib/food-live';
+import { useFeatureLive, useFoodLive } from '../../lib/food-live';
 import { useSession } from '../../lib/session';
 import { Page } from '../../shared/ui/chrome';
 import { Bowl, Calculator, Calendar, Check, ShelfIcon, Upload } from '../../shared/ui/icons';
@@ -98,7 +98,11 @@ export default function TodayPage() {
 
   const [choice] = useToolState<unknown>('mess_choice', null);
   const slug = typeof choice === 'string' ? choice : null;
+  // What Admin has switched on: anything not live stays off Today (as on the website).
   const food = useFoodLive();
+  const timetableOn = useFeatureLive('timetable');
+  const attendanceOn = useFeatureLive('attendance');
+  const cgpaOn = useFeatureLive('cgpa');
   const mess = useQuery({
     queryKey: ['mess', slug],
     queryFn: () => api.mess(slug!),
@@ -156,14 +160,16 @@ export default function TodayPage() {
   // One plain sentence under the greeting.
   const left = classes?.isToday ? classes.list.filter((c) => c.end > now.minutes).length : 0;
   const summary = [
-    classes?.isToday
-      ? left
-        ? `${left} class${left === 1 ? '' : 'es'} left today`
-        : 'No more classes today'
-      : classes
-        ? 'No classes left today'
-        : '',
-    attendance?.days != null && attendance.days > 0
+    !timetableOn
+      ? ''
+      : classes?.isToday
+        ? left
+          ? `${left} class${left === 1 ? '' : 'es'} left today`
+          : 'No more classes today'
+        : classes
+          ? 'No classes left today'
+          : '',
+    attendanceOn && attendance?.days != null && attendance.days > 0
       ? `${attendance.exam.name} in ${attendance.days} day${attendance.days === 1 ? '' : 's'}`
       : '',
   ]
@@ -182,16 +188,18 @@ export default function TodayPage() {
           <div className="mt-3" />
           <Glance
             items={[
-              nextClass
-                ? {
-                    label: nextClass.live ? 'In class now' : 'Next class',
-                    value: fmt(nextClass.c.start).replace(/ (am|pm)$/, ''),
-                    detail: `${fmt(nextClass.c.start).slice(-2)} · ${nextClass.c.course.code || nextClass.c.course.name}`,
-                    to: '/tools/timetable',
-                  }
-                : { label: 'Classes', value: '—', detail: 'Add timetable', to: '/tools/timetable' },
+              !timetableOn
+                ? null
+                : nextClass
+                  ? {
+                      label: nextClass.live ? 'In class now' : 'Next class',
+                      value: fmt(nextClass.c.start).replace(/ (am|pm)$/, ''),
+                      detail: `${fmt(nextClass.c.start).slice(-2)} · ${nextClass.c.course.code || nextClass.c.course.name}`,
+                      to: '/tools/timetable',
+                    }
+                  : { label: 'Classes', value: '—', detail: 'Add timetable', to: '/tools/timetable' },
               !food
-                ? { label: 'Notes', value: '→', detail: 'Your shelf', to: '/shelf' }
+                ? null
                 : nextMeal
                   ? {
                       label: nextMeal.now ? 'Serving now' : 'Next meal',
@@ -205,14 +213,16 @@ export default function TodayPage() {
                       detail: slug ? 'Done today' : 'Choose mess',
                       to: '/tools/mess-menu',
                     },
-              attendance?.days != null && attendance.days > 0
-                ? {
-                    label: attendance.exam.name,
-                    value: `${attendance.days}d`,
-                    detail: `${attendance.safe}/${attendance.sorted.length} on track`,
-                    to: '/tools/attendance',
-                  }
-                : { label: 'Attendance', value: '—', detail: 'Set up', to: '/tools/attendance' },
+              !attendanceOn
+                ? null
+                : attendance?.days != null && attendance.days > 0
+                  ? {
+                      label: attendance.exam.name,
+                      value: `${attendance.days}d`,
+                      detail: `${attendance.safe}/${attendance.sorted.length} on track`,
+                      to: '/tools/attendance',
+                    }
+                  : { label: 'Attendance', value: '—', detail: 'Set up', to: '/tools/attendance' },
             ]}
           />
         </TodayCard>
@@ -221,22 +231,24 @@ export default function TodayPage() {
 
         {food && active.map((o) => <OrderTracker key={o.id} order={o} />)}
 
-        <section className="flex flex-col gap-3">
-          <SectionLabel action={<MoreLink to="/tools/timetable">Timetable</MoreLink>}>
-            {classes ? `Classes · ${classes.label}` : 'Classes'}
-          </SectionLabel>
-          {classes ? (
-            <ClassList list={classes.list} minutes={classes.isToday ? now.minutes : -1} />
-          ) : (
-            <Empty
-              icon={<Calendar size={22} />}
-              title="Make your timetable"
-              text="Pick your slots once. Your classes show up here, with a reminder before each one."
-              to="/tools/timetable"
-              cta="Make timetable"
-            />
-          )}
-        </section>
+        {timetableOn && (
+          <section className="flex flex-col gap-3">
+            <SectionLabel action={<MoreLink to="/tools/timetable">Timetable</MoreLink>}>
+              {classes ? `Classes · ${classes.label}` : 'Classes'}
+            </SectionLabel>
+            {classes ? (
+              <ClassList list={classes.list} minutes={classes.isToday ? now.minutes : -1} />
+            ) : (
+              <Empty
+                icon={<Calendar size={22} />}
+                title="Make your timetable"
+                text="Pick your slots once. Your classes show up here, with a reminder before each one."
+                to="/tools/timetable"
+                cta="Make timetable"
+              />
+            )}
+          </section>
+        )}
 
         {food && (
           <section className="flex flex-col gap-3">
@@ -259,27 +271,29 @@ export default function TodayPage() {
           </section>
         )}
 
-        <section className="flex flex-col gap-3">
-          <SectionLabel action={<MoreLink to="/tools/attendance">Planner</MoreLink>}>
-            {attendance ? `Attendance · ${attendance.exam.name}` : 'Attendance'}
-          </SectionLabel>
-          {attendance ? (
-            <AttendanceCard
-              plans={attendance.sorted}
-              exam={attendance.exam}
-              safe={attendance.safe}
-              days={attendance.days}
-            />
-          ) : (
-            <Empty
-              icon={<Check size={22} />}
-              title="Can you skip a class?"
-              text="Add your CAT and Term End dates once. See how many classes you can skip, subject by subject."
-              to="/tools/attendance"
-              cta="Set up"
-            />
-          )}
-        </section>
+        {attendanceOn && (
+          <section className="flex flex-col gap-3">
+            <SectionLabel action={<MoreLink to="/tools/attendance">Planner</MoreLink>}>
+              {attendance ? `Attendance · ${attendance.exam.name}` : 'Attendance'}
+            </SectionLabel>
+            {attendance ? (
+              <AttendanceCard
+                plans={attendance.sorted}
+                exam={attendance.exam}
+                safe={attendance.safe}
+                days={attendance.days}
+              />
+            ) : (
+              <Empty
+                icon={<Check size={22} />}
+                title="Can you skip a class?"
+                text="Add your CAT and Term End dates once. See how many classes you can skip, subject by subject."
+                to="/tools/attendance"
+                cta="Set up"
+              />
+            )}
+          </section>
+        )}
 
         <section className="flex flex-col gap-3">
           <SectionLabel>Shortcuts</SectionLabel>
@@ -290,11 +304,15 @@ export default function TodayPage() {
                 label: 'My notes',
                 icon: <ShelfIcon size={22} />,
               },
-              {
-                to: '/tools/cgpa',
-                label: 'CGPA',
-                icon: <Calculator size={22} />,
-              },
+              ...(cgpaOn
+                ? [
+                    {
+                      to: '/tools/cgpa',
+                      label: 'CGPA',
+                      icon: <Calculator size={22} />,
+                    },
+                  ]
+                : []),
               ...(food
                 ? [
                     {
@@ -539,7 +557,15 @@ function AttendanceCard({
   );
 }
 
-function Glance({ items }: { items: { label: string; value: string; detail: string; to: string }[] }) {
+type GlanceItem = { label: string; value: string; detail: string; to: string };
+const FILL: GlanceItem[] = [
+  { label: 'Notes', value: '→', detail: 'Your shelf', to: '/shelf' },
+  { label: 'Tools', value: '→', detail: 'All tools', to: '/app/tools' },
+  { label: 'Earn', value: '→', detail: 'Share notes', to: '/contribute' },
+];
+function Glance({ items: given }: { items: (GlanceItem | null)[] }) {
+  const items = given.filter((x): x is GlanceItem => !!x);
+  for (const x of FILL) if (items.length < 3 && !items.some((i) => i.to === x.to)) items.push(x);
   return (
     <div className="grid grid-cols-3 gap-2">
       {items.map((x) => (

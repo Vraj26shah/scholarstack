@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api, friendly } from '../../lib/api';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { rupees } from '../restaurant/shared';
+import { AppSwitches } from './app-switches';
 import { Figure, Note, Panel } from './ui';
 
 const grid =
@@ -17,9 +18,11 @@ export function AppsOverviewPanel() {
   return (
     <Panel title="Apps & restaurants">
       <Note>
-        Phones open the website as the student app; restaurant owners use the Partner app at{' '}
-        <code>/partner</code>. Takings count accepted, ready and delivered orders (Indian time).
+        Every browser, phones included, gets the website; the student app is the Android download, and
+        restaurant owners use the Partner app at <code>/partner</code>. Takings count accepted, ready and
+        delivered orders (Indian time).
       </Note>
+      <AppSwitches />
       {q.isError ? (
         <ErrorState
           title="The overview didn't load."
