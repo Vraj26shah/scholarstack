@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { appMode } from '../../lib/app-mode';
+import { useFoodLive } from '../../lib/food-live';
 import { SwipeHint } from './swipe-hint';
 
 /** Phones only. A swipe counts past a quarter of the screen, or as a quick flick. */
@@ -337,11 +338,13 @@ export function SwipeTabs() {
   // The student app swipes between its own tabs, on each tab's main screen (a restaurant
   // opened from Food, or a chat, keeps its own gestures).
   const inApp = appMode() === 'student';
-  const tabs: readonly string[] = inApp ? APP_TABS : TABS;
+  const food = useFoodLive();
+  const appTabs = APP_TABS.filter((t) => food || t !== '/tools/mess-menu');
+  const tabs: readonly string[] = inApp ? appTabs : TABS;
   const i = inApp
     ? new URLSearchParams(search).has('chat')
       ? -1
-      : APP_TABS.indexOf(pathname as (typeof APP_TABS)[number])
+      : appTabs.indexOf(pathname as (typeof APP_TABS)[number])
     : tabIndex(pathname, hash);
   useSectionSwipe({
     enabled: i >= 0,

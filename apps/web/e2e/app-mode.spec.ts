@@ -75,7 +75,9 @@ test('student: Notes by year and branch, a plain course page, Me', async ({ page
   await expect(page).toHaveURL(/\/app\/notes/);
   await tabs(page).getByRole('link', { name: 'Me' }).click();
   await expect(page.getByText('asha.25bce10001@vitbhopal.ac.in')).toBeVisible();
-  await expect(page.getByRole('link', { name: /Food orders/ })).toBeVisible();
+  // The mess menu isn't live in the demo, so food and ordering stay hidden.
+  await expect(page.getByRole('link', { name: /Food orders/ })).toHaveCount(0);
+  await expect(tabs(page).getByRole('link', { name: 'Food' })).toHaveCount(0);
 });
 
 test('partner: only a PIN opens it, then orders, sales by year and a customer’s full record', async ({

@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { useFoodLive } from '../../lib/food-live';
 import { useSession } from '../../lib/session';
 import { Page } from '../../shared/ui/chrome';
 import { Bowl, Calculator, Calendar, Check, ShelfIcon, Upload } from '../../shared/ui/icons';
@@ -97,6 +98,7 @@ export default function TodayPage() {
 
   const [choice] = useToolState<unknown>('mess_choice', null);
   const slug = typeof choice === 'string' ? choice : null;
+  const food = useFoodLive();
   const mess = useQuery({
     queryKey: ['mess', slug],
     queryFn: () => api.mess(slug!),
@@ -188,19 +190,21 @@ export default function TodayPage() {
                     to: '/tools/timetable',
                   }
                 : { label: 'Classes', value: '—', detail: 'Add timetable', to: '/tools/timetable' },
-              nextMeal
-                ? {
-                    label: nextMeal.now ? 'Serving now' : 'Next meal',
-                    value: nextMeal.name,
-                    detail: nextMeal.when,
-                    to: '/tools/mess-menu',
-                  }
-                : {
-                    label: 'Food',
-                    value: '—',
-                    detail: slug ? 'Done today' : 'Choose mess',
-                    to: '/tools/mess-menu',
-                  },
+              !food
+                ? { label: 'Notes', value: '→', detail: 'Your shelf', to: '/shelf' }
+                : nextMeal
+                  ? {
+                      label: nextMeal.now ? 'Serving now' : 'Next meal',
+                      value: nextMeal.name,
+                      detail: nextMeal.when,
+                      to: '/tools/mess-menu',
+                    }
+                  : {
+                      label: 'Food',
+                      value: '—',
+                      detail: slug ? 'Done today' : 'Choose mess',
+                      to: '/tools/mess-menu',
+                    },
               attendance?.days != null && attendance.days > 0
                 ? {
                     label: attendance.exam.name,
@@ -215,9 +219,7 @@ export default function TodayPage() {
 
         <GetAppNudge className="-mt-3 px-1" />
 
-        {active.map((o) => (
-          <OrderTracker key={o.id} order={o} />
-        ))}
+        {food && active.map((o) => <OrderTracker key={o.id} order={o} />)}
 
         <section className="flex flex-col gap-3">
           <SectionLabel action={<MoreLink to="/tools/timetable">Timetable</MoreLink>}>
@@ -236,24 +238,26 @@ export default function TodayPage() {
           )}
         </section>
 
-        <section className="flex flex-col gap-3">
-          <SectionLabel action={<MoreLink to="/tools/mess-menu">{slug ? 'Full menu' : 'Choose'}</MoreLink>}>
-            Food
-          </SectionLabel>
-          {mess.data ? (
-            <FoodCard mess={mess.data} date={now.date} minutes={now.minutes} />
-          ) : slug && mess.isLoading ? (
-            <div className={`${card} h-[132px] animate-pulse`} />
-          ) : (
-            <Empty
-              icon={<Bowl size={22} />}
-              title="What’s cooking?"
-              text="Choose your hostel mess or a restaurant near campus to see today’s menu and order."
-              to="/tools/mess-menu"
-              cta="Choose mess"
-            />
-          )}
-        </section>
+        {food && (
+          <section className="flex flex-col gap-3">
+            <SectionLabel action={<MoreLink to="/tools/mess-menu">{slug ? 'Full menu' : 'Choose'}</MoreLink>}>
+              Food
+            </SectionLabel>
+            {mess.data ? (
+              <FoodCard mess={mess.data} date={now.date} minutes={now.minutes} />
+            ) : slug && mess.isLoading ? (
+              <div className={`${card} h-[132px] animate-pulse`} />
+            ) : (
+              <Empty
+                icon={<Bowl size={22} />}
+                title="What’s cooking?"
+                text="Choose your hostel mess or a restaurant near campus to see today’s menu and order."
+                to="/tools/mess-menu"
+                cta="Choose mess"
+              />
+            )}
+          </section>
+        )}
 
         <section className="flex flex-col gap-3">
           <SectionLabel action={<MoreLink to="/tools/attendance">Planner</MoreLink>}>
@@ -291,11 +295,15 @@ export default function TodayPage() {
                 label: 'CGPA',
                 icon: <Calculator size={22} />,
               },
-              {
-                to: '/my-orders',
-                label: 'Orders',
-                icon: <Bowl size={22} />,
-              },
+              ...(food
+                ? [
+                    {
+                      to: '/my-orders',
+                      label: 'Orders',
+                      icon: <Bowl size={22} />,
+                    },
+                  ]
+                : []),
               { to: '/contribute', label: 'Earn', icon: <Upload size={22} /> },
             ].map((x) => (
               <Link

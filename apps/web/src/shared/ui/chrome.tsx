@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { appMode } from '../../lib/app-mode';
+import { useFoodLive } from '../../lib/food-live';
 import { signInPath } from '../../lib/return-to';
 import { useSession } from '../../lib/session';
 import { LABEL } from '../copy';
@@ -167,7 +168,8 @@ function AppBar() {
   const { status, me } = useSession();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const myOrders = useMyOrderCount(status === 'ready' && !!me, me?.id ?? '');
+  const food = useFoodLive();
+  const myOrders = useMyOrderCount(status === 'ready' && !!me && food, me?.id ?? '');
   const title = appTitle(pathname) || 'Today';
   const root = APP_ROOTS.includes(pathname);
   const sub =
@@ -245,7 +247,8 @@ function SiteHeader({ onDark = false }: { onDark?: boolean }) {
   const { status, me } = useSession();
   const location = useLocation();
   const owner = useRunsRestaurant(status === 'ready' && me && !me.isAdmin ? me.id : null);
-  const myOrders = useMyOrderCount(status === 'ready' && !!me && !owner, me?.id ?? '');
+  const food = useFoodLive();
+  const myOrders = useMyOrderCount(status === 'ready' && !!me && !owner && food, me?.id ?? '');
   const link = `no-underline font-medium ${onDark ? 'text-white' : 'text-ink'} hover:opacity-80`;
   // With extra buttons (My restaurant, My orders, Admin) the full name needs a wide screen;
   // below that the logo mark stands in, so nothing ever runs into the name.
@@ -408,6 +411,7 @@ export function TabBar() {
   // Visitors get it too (Shelf asks them to sign in). The reader has its own controls at the
   // bottom; sign-in is a full-screen card.
   const mode = appMode();
+  const food = useFoodLive();
   if (
     (status !== 'ready' && status !== 'signed-out') ||
     pathname.startsWith('/read/') ||
@@ -475,7 +479,8 @@ export function TabBar() {
     },
     { to: '/#toolbox', label: 'Toolbox', icon: <Toolbox size={20} />, active: onToolbox },
   ];
-  const tabs = mode === 'student' ? appTabs : siteTabs;
+  // Food (menus and ordering) appears only once the mess menu is live.
+  const tabs = mode === 'student' ? appTabs.filter((t) => food || t.label !== 'Food') : siteTabs;
   return (
     <nav
       aria-label="App"

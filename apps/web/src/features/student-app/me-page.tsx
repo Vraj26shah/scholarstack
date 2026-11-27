@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { isNativeApp } from '../../lib/app-mode';
+import { useFoodLive } from '../../lib/food-live';
 import { signInPath } from '../../lib/return-to';
 import { useSession } from '../../lib/session';
 import { useTheme } from '../../lib/theme';
@@ -33,6 +34,7 @@ export default function MePage() {
     enabled: status === 'ready' && !!me && !me.isAdmin,
   });
   const runsRestaurant = (owned.data?.length ?? 0) > 0;
+  const food = useFoodLive();
   const first = me?.fullName || me?.email.split('@')[0]?.split(/[._\d]/)[0] || '';
   const name = first ? first.charAt(0).toUpperCase() + first.slice(1) : '';
 
@@ -67,12 +69,14 @@ export default function MePage() {
         )}
 
         <RowGroup title="Yours">
-          <Row
-            to="/my-orders"
-            icon={<Bowl size={21} />}
-            title="Food orders"
-            hint="Track, chat, order again"
-          />
+          {food && (
+            <Row
+              to="/my-orders"
+              icon={<Bowl size={21} />}
+              title="Food orders"
+              hint="Track, chat, order again"
+            />
+          )}
           <Row to="/shelf" icon={<ShelfIcon size={21} />} title="My shelf" hint="Notes you own" />
           <Row
             to="/contribute"

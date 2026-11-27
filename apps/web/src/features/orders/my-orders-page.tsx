@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
+import { useFoodLive } from '../../lib/food-live';
 import { Page } from '../../shared/ui/chrome';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { useLive, usePushWhileOpen } from '../chat/live';
@@ -45,6 +46,7 @@ export function MyOrdersPage() {
   const refresh = () => void qc.invalidateQueries({ queryKey: ['my-mess-orders'] });
   usePushWhileOpen(refresh);
   const unread = q.data?.reduce((n, o) => n + o.unread, 0) ?? 0;
+  const food = useFoodLive();
   useEffect(() => {
     document.title = unread ? `(${unread}) My orders · Scholars Stack` : 'My orders · Scholars Stack';
   }, [unread]);
@@ -63,7 +65,11 @@ export function MyOrdersPage() {
             </Link>
           </p>
         </header>
-        {q.isLoading ? (
+        {!food ? (
+          <p className="m-0 text-[16px] text-ink">
+            Food ordering isn't open yet. It will appear here as soon as restaurants are set up.
+          </p>
+        ) : q.isLoading ? (
           <Skeleton className="h-48" />
         ) : q.isError ? (
           <ErrorState

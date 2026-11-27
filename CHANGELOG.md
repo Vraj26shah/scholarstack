@@ -5,6 +5,7 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### The website stays the website on phones (27 Nov)
+- **Food stays hidden until the mess menu is live**: no Food tab, Order food buttons, order trackers, My orders links or Food section on Today while its launch switch is off (admins still see it to set it up). /my-orders says ordering isn't open yet.
 - Phone browsers get the normal website again (its header, phone tab bar and pages). The student app screens (Today · Food · Notes · Tools · Me) are only inside the Android app; the app is an extra students can download from **Get the app**. Android phone browsers see one closable "Get the Android app" line on the home page.
 - Old app links opened in a browser go to the matching website page (`/app` → home, `/app/notes` → catalogue, `/app/tools` → toolbox, `/app/me` → account). `?app=on` previews the app screens in a browser (for checking without a phone), `?app=off` ends it. The Partner app at `/partner` is unchanged.
 
