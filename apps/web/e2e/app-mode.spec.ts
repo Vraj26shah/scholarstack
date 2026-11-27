@@ -1,6 +1,7 @@
-import { type Page, expect, test } from '@playwright/test';
+import { type Page, devices, expect, test } from '@playwright/test';
 
-// On a phone the website is the student app (lib/app-mode.ts). Runs in the "phone-app" project.
+// The student app's screens (the Android app), previewed in a phone browser (lib/app-mode.ts).
+// Runs in the "phone-app" project, which turns the preview on.
 
 async function signIn(page: Page, username: string, next = '/app') {
   await page.goto(`/sign-in?next=${encodeURIComponent(next)}`);
@@ -11,7 +12,24 @@ async function signIn(page: Page, username: string, next = '/app') {
 
 const tabs = (page: Page) => page.getByRole('navigation', { name: 'App' });
 
-test('a phone opening the website lands in the app; old links land on the right screen', async ({ page }) => {
+test('a phone browser gets the website; the app preview maps website links to app screens', async ({
+  browser,
+  page,
+}) => {
+  // Without the preview (any visitor's phone): the website, and /app links open website pages.
+  // A context of its own without the project's preview setting.
+  const site = await browser.newContext({
+    ...devices['Pixel 7'],
+    storageState: { cookies: [], origins: [] },
+  });
+  const sp = await site.newPage();
+  await sp.goto('/');
+  await expect(sp).toHaveURL(/\/$/);
+  await expect(sp.getByRole('link', { name: /Find your notes/ })).toBeVisible();
+  await sp.goto('/app/tools');
+  await expect(sp).toHaveURL(/\/#toolbox$/);
+  await site.close();
+
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
@@ -31,7 +49,7 @@ test('a phone opening the website lands in the app; old links land on the right 
       await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
     ).toBeLessThanOrEqual(0);
   }
-  // "?app=off" brings back the classic site on this phone, "?app=on" the app.
+  // "?app=off" ends the preview (the website), "?app=on" starts it again.
   await page.goto('/?app=off');
   await expect(page).toHaveURL(/\/\?app=off$/);
   await expect(page.getByRole('link', { name: /Find your notes/ })).toBeVisible();

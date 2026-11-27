@@ -10,6 +10,7 @@ import { Footer, Header } from '../../shared/ui/chrome';
 import { ArrowDown } from '../../shared/ui/icons';
 import { Reveal } from '../../shared/ui/motion';
 import { ContributeBand } from '../contribute/contribute-band';
+import { GetAppNudge } from '../get-app/get-app-nudge';
 import { Toolbox } from '../tools/toolbox';
 import { CatalogueSection } from './catalogue-section';
 
@@ -306,6 +307,7 @@ export function HomePage() {
                   Try the free tools
                 </LinkButton>
               </div>
+              <GetAppNudge onDark className="max-w-[460px]" />
             </div>
             <ShufflingStack />
           </div>

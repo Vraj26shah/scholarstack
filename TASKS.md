@@ -4,6 +4,7 @@ Status as of 23 Oct 2026 (v0.7.0). **Me** = built here. **You** = an account ste
 Everything marked done is covered by an automated test (see QA_REPORT.md).
 
 ## Done
+- [x] 0.46.1 · Phone browsers get the website; the student app only inside the Android app (download from /get-app)
 - [x] 0.46.0 · Pay-first orders by UPI, "Didn't collect" with strikes (2 → pay first, 3 → paused), tab swipes in both apps (APKs 1.0.2)
 - [ ] 0.46.0 · **You:** deploy for migration `20261127000400_order_pay_first_and_no_shows`; ask each owner for their UPI ID (or they add it under Details) and a pay-first amount
 - [x] 0.45.0 · Free WhatsApp number check for orders, per-student tiffin records, /get-app downloads (APKs 1.0.1), quicker notification switches

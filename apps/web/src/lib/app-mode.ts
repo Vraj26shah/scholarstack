@@ -5,15 +5,13 @@
  *  - The Android apps add "ScholarsStackApp/student" or "ScholarsStackApp/partner" to their
  *    user agent.
  *  - /partner (or /partner/…) is the Partner app, in any browser.
- *  - On a phone the website *is* the student app: same bar, tabs and screens. "?app=off" switches
- *    a phone back to the classic site (remembered on that phone), "?app=on" undoes it.
- *  - In a laptop browser, opening /app tries the student app for that tab.
+ *  - Every browser, phones included, gets the website. The student app is an extra people
+ *    download (/get-app). "?app=on" previews the app screens in this browser (remembered here,
+ *    for checking them without a phone); "?app=off" ends the preview.
  */
 export type AppMode = 'student' | 'partner' | null;
 
-const TAB_KEY = 'ss_app_mode';
-const SITE_KEY = 'ss_site_mode';
-const PHONE = '(max-width: 767px)';
+const PREVIEW_KEY = 'ss_app_preview';
 
 function fromAgent(): AppMode {
   if (typeof navigator === 'undefined') return null;
@@ -43,23 +41,31 @@ export function appMode(): AppMode {
   if (typeof window === 'undefined') return null;
   const path = window.location.pathname;
   const flag = new URLSearchParams(window.location.search).get('app');
-  if (flag === 'off') {
-    // The classic site on this phone, from now on: forget any app mode this tab had.
-    write(localStorage, SITE_KEY, 'web');
-    write(sessionStorage, TAB_KEY, null);
-  }
-  if (flag === 'on') write(localStorage, SITE_KEY, null);
+  if (flag === 'off') write(localStorage, PREVIEW_KEY, null);
+  if (flag === 'on') write(localStorage, PREVIEW_KEY, '1');
   // The Partner app is its own address: leaving it never leaves the rest of the site behind it.
   if (path === '/partner' || path.startsWith('/partner/')) return 'partner';
-  if (path === '/app' || path.startsWith('/app/')) write(sessionStorage, TAB_KEY, 'student');
-  if (read(sessionStorage, TAB_KEY) === 'student') return 'student';
-  const phone = window.matchMedia?.(PHONE).matches ?? false;
-  if (phone && read(localStorage, SITE_KEY) !== 'web') return 'student';
+  if (read(localStorage, PREVIEW_KEY) === '1') return 'student';
   return null;
 }
 
 /** Inside one of the Android apps (not a browser). */
 export const isNativeApp = () => fromAgent() !== null;
+
+/**
+ * Where an app screen's address goes on the website (a browser opening /app, an old bookmark or a
+ * shared link): Today → home, Notes → the catalogue (keeping batch, branch and search), Tools →
+ * the toolbox, Me → the account page.
+ */
+export function sitePathFor(pathname: string, search: string): string {
+  const q = new URLSearchParams(search);
+  q.delete('app');
+  const keep = q.toString();
+  if (pathname.startsWith('/app/notes')) return `/${keep ? `?${keep}` : ''}#catalogue`;
+  if (pathname.startsWith('/app/tools')) return '/#toolbox';
+  if (pathname.startsWith('/app/me')) return '/account';
+  return '/';
+}
 
 /**
  * Where a website address goes in the student app: the home page is Today, its catalogue is

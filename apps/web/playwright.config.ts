@@ -25,20 +25,20 @@ export default defineConfig({
       testIgnore: /app-mode\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1366, height: 860 } },
     },
-    // Phones: the classic site ("?app=off"), as the suites were written for it. The student app
-    // that phones get by default has its own suite (app-mode.spec.ts, project "phone-app").
+    // Phones get the website. The student app's screens (the Android app) have their own suite,
+    // previewed in the browser with ss_app_preview (what "?app=on" sets).
+    { name: 'phone', testIgnore: /app-mode\.spec\.ts/, use: { ...devices['Pixel 7'] } },
     {
-      name: 'phone',
-      testIgnore: /app-mode\.spec\.ts/,
+      name: 'phone-app',
+      testMatch: /app-mode\.spec\.ts/,
       use: {
         ...devices['Pixel 7'],
         storageState: {
           cookies: [],
-          origins: [{ origin: baseURL, localStorage: [{ name: 'ss_site_mode', value: 'web' }] }],
+          origins: [{ origin: baseURL, localStorage: [{ name: 'ss_app_preview', value: '1' }] }],
         },
       },
     },
-    { name: 'phone-app', testMatch: /app-mode\.spec\.ts/, use: { ...devices['Pixel 7'] } },
   ],
   webServer: process.env.E2E_BASE_URL
     ? undefined

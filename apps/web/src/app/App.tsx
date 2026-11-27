@@ -1,5 +1,5 @@
 import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Suspense, lazy, useEffect, useRef } from 'react';
+import { type ReactNode, Suspense, lazy, useEffect, useRef } from 'react';
 import {
   BrowserRouter,
   Navigate,
@@ -19,7 +19,7 @@ import { ShelfPage } from '../features/shelf/shelf-page';
 import { MessShortLink } from '../features/tools/mess/components/share-link';
 import { setMonitoringUser, track, trackPageView } from '../lib/analytics';
 import { ApiError } from '../lib/api';
-import { appMode, appPathFor } from '../lib/app-mode';
+import { appMode, appPathFor, sitePathFor } from '../lib/app-mode';
 import { authGateway } from '../lib/auth';
 import { env } from '../lib/env';
 import { decidesLanding, homeFor, isPhone, jumpTo, landing } from '../lib/landing';
@@ -342,11 +342,17 @@ function PageViews() {
   return null;
 }
 
-/** On a phone the website is the student app: its home is Today, its catalogue Notes. */
+/** In the student app the home page is Today and its catalogue Notes; the website keeps its home. */
 function HomeOrApp() {
   const { pathname, search, hash } = useLocation();
   const to = appMode() === 'student' ? appPathFor(pathname, search, hash) : null;
   return to ? <Navigate to={to} replace /> : <HomePage />;
+}
+
+/** The app's own screens: in a browser (the website) they open the matching website page. */
+function AppOnly({ children }: { children: ReactNode }) {
+  const { pathname, search } = useLocation();
+  return appMode() === 'student' ? <>{children}</> : <Navigate to={sitePathFor(pathname, search)} replace />;
 }
 
 function NotFound() {
@@ -445,10 +451,38 @@ function Shell() {
             <Route path="/orders" element={guard(<OrdersPage />)} />
             <Route path="/my-orders" element={guard(<MyOrdersPage />)} />
             {/* The two Android apps open these (they work in a browser too). */}
-            <Route path="/app" element={<TodayPage />} />
-            <Route path="/app/notes" element={<AppNotesPage />} />
-            <Route path="/app/tools" element={<AppToolsPage />} />
-            <Route path="/app/me" element={<AppMePage />} />
+            <Route
+              path="/app"
+              element={
+                <AppOnly>
+                  <TodayPage />
+                </AppOnly>
+              }
+            />
+            <Route
+              path="/app/notes"
+              element={
+                <AppOnly>
+                  <AppNotesPage />
+                </AppOnly>
+              }
+            />
+            <Route
+              path="/app/tools"
+              element={
+                <AppOnly>
+                  <AppToolsPage />
+                </AppOnly>
+              }
+            />
+            <Route
+              path="/app/me"
+              element={
+                <AppOnly>
+                  <AppMePage />
+                </AppOnly>
+              }
+            />
             <Route path="/partner" element={<PartnerApp />} />
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/privacy" element={<PrivacyPage />} />

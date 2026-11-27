@@ -4,6 +4,10 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### The website stays the website on phones (27 Nov)
+- Phone browsers get the normal website again (its header, phone tab bar and pages). The student app screens (Today · Food · Notes · Tools · Me) are only inside the Android app; the app is an extra students can download from **Get the app**. Android phone browsers see one closable "Get the Android app" line on the home page.
+- Old app links opened in a browser go to the matching website page (`/app` → home, `/app/notes` → catalogue, `/app/tools` → toolbox, `/app/me` → account). `?app=on` previews the app screens in a browser (for checking without a phone), `?app=off` ends it. The Partner app at `/partner` is unchanged.
+
 ### Pay-first orders, no-shows, swipes in the apps (27 Nov)
 - **"Didn't collect"** on accepted orders (website dashboard and Partner app, with a confirm): the order ends as *Not collected* and counts against the student at every restaurant for 60 days. 1 is a warning, 2 means every order is paid first, 3 pauses ordering until the oldest is 60 days old. Owners see each new order's record ("New customer", "12 orders · 1 not collected"), and the customer record shows not-collected counts here and everywhere. New `GET /me/order-standing`.
 - **Pay first by UPI**, straight to the owner (no fees, no money through the site): owners add their **UPI ID** and a **pay-first amount** (Details; Admin › Campus too). Orders above it, every tiffin plan and students with 2 no-shows pay first. The student gets a "Pay ₹X by UPI" button (opens GPay / PhonePe / Paytm), the UPI ID to copy, and **I've paid**; the owner is alerted, checks their own UPI app ("never a screenshot") and taps **Payment received**, and only then can accept. Unpaid orders cancel after 20 minutes; once a student says they paid, they can't cancel in the app (call the restaurant). Cancelling a paid order reminds the owner to return the money. Migration `20261127000400_order_pay_first_and_no_shows`.
