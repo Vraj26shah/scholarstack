@@ -1,4 +1,6 @@
 import { MAX_CLASS_NUDGES_PER_DAY, MAX_CLASS_REMINDERS_PER_DAY } from '@ss/contracts';
+import { Button } from '../../shared/ui/button';
+import { askToSignIn } from '../auth/sign-in-prompt';
 import { field } from '../tools/core/ui';
 import { type Course, GRID, clock, dayClasses, dayIndex } from '../tools/timetable/domain';
 import { Chip, Group, ReminderCard, Switch, toggle } from './reminder-card';
@@ -20,19 +22,40 @@ export function ClassReminderSwitch() {
 }
 
 /**
- * Before any course is added there is nothing to remind about, so the card isn't shown yet: say
- * where it will appear (students arrive here from the launch email).
+ * Before any course is added there is nothing to remind about, so the card isn't shown yet. Most
+ * students arrive from a shared "class reminders" link, so this sits at the top of the page and
+ * says how to get them, with the sign-in one tap away.
  */
 export function ClassRemindersHint() {
   const r = useReminders('class');
   if (r.loading || r.state === 'hidden' || r.state === 'unconfigured' || r.state === 'unsupported')
     return null;
   return (
-    <p className="print:hidden m-0 max-w-[720px] border-t border-line pt-6 text-[15px] text-ink2">
-      <strong className="text-ink">Class reminders:</strong> add your courses above, and you can get
-      tomorrow's classes the night before and a nudge before each class, right here
-      {r.signedIn ? '.' : ' (sign in first; it’s free for students).'}
-    </p>
+    <section
+      aria-label="Class reminders"
+      className="print:hidden flex flex-wrap items-center gap-x-4 gap-y-3 rounded-[18px] bg-mist/40 px-4 py-3.5"
+    >
+      <p className="m-0 flex-1 min-w-[240px] text-[15px] text-ink2">
+        <strong className="text-ink">Get class reminders.</strong> Add your courses below, then get tomorrow's
+        classes the night before and a nudge before each class, with the room. At most{' '}
+        {MAX_CLASS_REMINDERS_PER_DAY} a day.
+        {r.signedIn ? '' : ' Free for students; reminders need you to sign in.'}
+      </p>
+      {!r.signedIn && (
+        <Button
+          variant="brand"
+          onClick={() =>
+            askToSignIn({
+              title: 'Sign in for class reminders',
+              body: 'Your timetable stays as it is. Reminders are free for students.',
+              next: '/tools/timetable#class-reminders',
+            })
+          }
+        >
+          Sign in for reminders
+        </Button>
+      )}
+    </section>
   );
 }
 

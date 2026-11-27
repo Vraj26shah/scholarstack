@@ -1613,6 +1613,7 @@ export class MemoryProblems implements ProblemLog {
 
 export class MemoryHousekeeping implements DatabaseHousekeeping {
   constructor(private readonly db: MemoryDb) {}
+  async ping() {}
   async tables() {
     return Object.entries(this.db)
       .filter(([, v]) => v instanceof Map)

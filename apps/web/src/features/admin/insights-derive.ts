@@ -198,3 +198,82 @@ export function signIn(a: AdminActivityDto | undefined) {
 }
 
 export const actionTotal = (a: AdminActivityDto | undefined, name: string) => sumWhere(a, (n) => n === name);
+
+const SOURCE_NAMES: Record<string, string> = {
+  whatsapp: 'WhatsApp',
+  instagram: 'Instagram',
+  insta: 'Instagram',
+  poster: 'Poster (QR)',
+  telegram: 'Telegram',
+  linkedin: 'LinkedIn',
+  youtube: 'YouTube',
+  email: 'Email',
+};
+/** "whatsapp" → "WhatsApp", "class-rep" → "Class rep". */
+export const sourceName = (s: string) =>
+  SOURCE_NAMES[s] ?? s.replace(/-/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+
+export interface SourceRow {
+  source: string;
+  /** The group, post or poster ("ece-25"), or null when the link had none. */
+  campaign: string | null;
+  /** Visits that landed from this link. */
+  arrived: number;
+  /** Of those, how many signed in afterwards (on the same device, within 30 days). */
+  signedIn: number;
+  /** The page those visits landed on most. */
+  topPage: string | null;
+}
+
+/**
+ * Each tagged link (a WhatsApp group, an Instagram post, a poster): how many people it brought and
+ * how many of them signed in. Built from the "from:…" and "signin_from:…" actions. Best first:
+ * sign-ins, then visits.
+ */
+export function sourceRows(a: AdminActivityDto | undefined): SourceRow[] {
+  const rows = new Map<string, SourceRow & { pages: Map<string, number> }>();
+  const row = (tag: string) => {
+    let r = rows.get(tag);
+    if (!r) {
+      const [source = '', campaign = '-'] = tag.split('/');
+      r = {
+        source,
+        campaign: campaign === '-' ? null : campaign,
+        arrived: 0,
+        signedIn: 0,
+        topPage: null,
+        pages: new Map(),
+      };
+      rows.set(tag, r);
+    }
+    return r;
+  };
+  for (const x of a?.actions ?? []) {
+    const [kind, tag, page] = x.target.split(':');
+    if (!tag || !tag.includes('/')) continue;
+    if (kind === 'from') {
+      const r = row(tag);
+      r.arrived += x.hits;
+      if (page) r.pages.set(page, (r.pages.get(page) ?? 0) + x.hits);
+    } else if (kind === 'signin_from') row(tag).signedIn += x.hits;
+  }
+  return [...rows.values()]
+    .map(({ pages, ...r }) => ({
+      ...r,
+      topPage: [...pages.entries()].sort((p, q) => q[1] - p[1])[0]?.[0] ?? null,
+    }))
+    .sort((p, q) => q.signedIn - p.signedIn || q.arrived - p.arrived);
+}
+
+/** Totals by source ("WhatsApp: 120 visits, 14 sign-ins"), best first. */
+export function sourceTotals(rows: SourceRow[]) {
+  const by = new Map<string, { source: string; arrived: number; signedIn: number; links: number }>();
+  for (const r of rows) {
+    const t = by.get(r.source) ?? { source: r.source, arrived: 0, signedIn: 0, links: 0 };
+    t.arrived += r.arrived;
+    t.signedIn += r.signedIn;
+    t.links += 1;
+    by.set(r.source, t);
+  }
+  return [...by.values()].sort((p, q) => q.signedIn - p.signedIn || q.arrived - p.arrived);
+}

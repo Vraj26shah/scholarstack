@@ -4,6 +4,16 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Marketing: link previews, tagged links, reminders up front (28 Nov)
+- **Every tool link has its own preview card**: links to the Timetable maker, Attendance and CGPA calculators, Mess menu, /get-app and /contribute shared on WhatsApp, Instagram, Telegram and the like now show that page's own title and description (e.g. "Timetable maker + class reminders") instead of the home page's "semester notes" card. Crawlers only; people get the page as before.
+- **Class reminders at the top of the Timetable maker**: before any course is added, a "Get class reminders" line sits right under the header with a **Sign in for reminders** button (it was near the bottom of the page). Signing in returns to the reminders card.
+- **Where people come from** (Admin › Insights, new tab): links tagged `?utm_source=…&utm_campaign=…` (or `?ref=whatsapp-ece-25`) are counted when someone lands and again if they sign in within 30 days on the same device, per source (WhatsApp, Instagram, poster…) and per group or post, with the page they landed on. A **Make a link to share** box builds the tagged link for a page, source and group and copies it. Each student's Activity shows "Came from a link (whatsapp · ece-25)". Uses the existing activity table (`from:…`, `signin_from:…` actions); no migration.
+- `.env.example` documents `WHATSAPP_NUMBER`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`.
+
+### Header draws once; steadier database jobs (27 Nov)
+- **The header no longer shifts under your finger**: My orders and My restaurant used to appear a moment after the page, pushing Admin and the account button sideways so a click landed on the wrong one. The account answer (`GET /me`, new `nav: { owner, orders }`) now says which buttons to show, and the launch switches load alongside it, so My shelf, My orders, Admin and the account button appear together. `/me` also does its database reads in parallel.
+- **Cron jobs spread out**: each job in a run starts after its own short random wait (about 4 s apart) instead of all hitting Supabase in the same second, which is what timed out on the free plan. The hourly keep-alive is now a real tiny query (no cached read) that retries twice after random 3–15 s pauses before it counts as a failure.
+
 ### Restaurant fees and settlements (27 Nov)
 - **A fee per restaurant, set by the admin** (Admin › Campus › Restaurant fees › Change fee): none, **per order** (a fixed ₹ and/or a % of what the student pays, with its own ₹ for tiffin plans), or a **monthly plan** (charged by the day when each month ends), with an optional **free period**. A new fee starts today or later and is kept as history: orders already accepted keep the fee they were accepted at.
 - **An append-only ledger** (`mess_ledger`, paise): each order's fee is written once, the moment the restaurant accepts it (the five-minute cron writes any a failed request missed; one fee per order is enforced by the database). Waivers, undoing a waiver, monthly charges, adjustments (+/−) and payments received (UPI, cash, bank transfer, with a note) are all new entries: the database refuses any change or delete, so the balance always adds up from its entries.

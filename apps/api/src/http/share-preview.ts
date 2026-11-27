@@ -46,6 +46,49 @@ export function messMeta(
   };
 }
 
+/**
+ * The site's own pages that get shared in groups and posts: each with its own preview card, so a
+ * "class reminders" link doesn't show up as "semester notes". Keyed by path (no trailing slash).
+ */
+const PAGE_PREVIEWS: Record<string, { title: string; description: string }> = {
+  '/tools/timetable': {
+    title: 'Timetable maker + class reminders · Scholars Stack',
+    description:
+      "Make your clash-free VIT Bhopal timetable in 2 minutes. Get tomorrow's classes the night before and a nudge before each class, with the room. Free for students.",
+  },
+  '/tools/attendance': {
+    title: 'Attendance calculator · Scholars Stack',
+    description:
+      'How many classes can you skip and still stay above 75%? CAT1, CAT2 and Term End windows, lab weight included. Free, no sign-in needed.',
+  },
+  '/tools/cgpa': {
+    title: 'CGPA calculator · Scholars Stack',
+    description:
+      'Work out your SGPA and CGPA in seconds, and what you need next semester to hit your target. Free, no sign-in needed.',
+  },
+  '/tools/mess-menu': {
+    title: 'Mess menu · Scholars Stack',
+    description: "Today's food and the whole week's menu, with reminders before meals. Free for students.",
+  },
+  '/get-app': {
+    title: 'Get the Scholars Stack app',
+    description:
+      'Class reminders, notes and your timetable on your phone. Free Android app for VIT Bhopal students.',
+  },
+  '/contribute': {
+    title: 'Contribute & earn · Scholars Stack',
+    description:
+      'Your notes got you through. Share them with juniors on Scholars Stack and earn from every sale.',
+  },
+};
+
+/** A shared link to one of the site's own pages (a tool, the app page…): its own card, or null. */
+export function pagePreview(pathname: string, origin: string): ShareMeta | null {
+  const path = pathname.toLowerCase().replace(/\/+$/, '') || '/';
+  const p = PAGE_PREVIEWS[path];
+  return p ? { ...p, url: `${origin}${path}` } : null;
+}
+
 export interface ShareMeta {
   title: string;
   description: string;

@@ -228,6 +228,11 @@ export default function TimetableTool({
         </p>
       )}
 
+      {/* Before any course is added, say how to get class reminders right away: most visitors
+          arrive from a shared "class reminders" link. Once courses exist, the card below the
+          course list takes over and the header has the on/off switch. */}
+      {!courses.some((c) => !c.tentative) && <ClassRemindersHint />}
+
       <NowCard courses={courses} />
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3 text-[14px] text-ink2 print:hidden">
@@ -318,7 +323,7 @@ export default function TimetableTool({
         onClear={() => setCourses([])}
       />
 
-      {courses.some((c) => !c.tentative) ? <ClassReminders courses={courses} /> : <ClassRemindersHint />}
+      {courses.some((c) => !c.tentative) && <ClassReminders courses={courses} />}
 
       <Dialog
         open={draft !== null}

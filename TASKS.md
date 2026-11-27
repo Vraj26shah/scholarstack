@@ -4,6 +4,9 @@ Status as of 23 Oct 2026 (v0.7.0). **Me** = built here. **You** = an account ste
 Everything marked done is covered by an automated test (see QA_REPORT.md).
 
 ## Done
+- [x] 0.50.0 · Marketing: own link-preview card for each tool page, class reminders at the top of the Timetable maker, tagged share links counted in Admin › Insights › Where people come from (visits + sign-ins per group/post), link maker
+- [ ] 0.50.0 · **You:** deploy; then make every shared link in Admin › Insights › Where people come from › Make a link to share (one per group, post or poster)
+- [x] 0.49.0 · Header buttons arrive with the account (no shifting clicks); cron jobs jittered, keep-alive pings the database directly with retries
 - [x] 0.48.0 · Restaurant fees: fee rule per restaurant (per order ₹ + %, tiffin plans, monthly, free period), append-only ledger written when an order is accepted, waivers, payments, adjustments, closing months; Admin › Campus › Restaurant fees, owner Fees tab (website + Partner › More); student numbers hidden from restaurants until they accept
 - [ ] 0.48.0 · **You:** after the deploy, set each restaurant's fee in Admin › Campus › Restaurant fees (start with a free period), and agree it with the owner in writing; record their payments there and close each month once checked
 - [x] 0.47.0 · Handover codes: a secret 4-digit code per order and per tiffin meal on the student's phone, typed by the restaurant when handing food over; "I got it" / "It never came" for students, contested "didn't collect", Admin › Orders & chats › Disputes; no notification for a screen already open

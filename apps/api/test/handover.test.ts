@@ -83,6 +83,9 @@ describe('handing an order over with the student’s code', () => {
     expect(good.json).toMatchObject({ status: 'done', handoverHow: 'code' });
     const mine = (await student.call('GET', '/me/mess-orders')).json[0];
     expect(mine).toMatchObject({ status: 'done', handoverCode: '', canConfirm: false, canDispute: '' });
+    // The header learns about My orders and My restaurant from the account answer itself.
+    expect((await student.call('GET', '/me')).json.nav).toEqual({ owner: false, orders: true });
+    expect((await owner.call('GET', '/me')).json.nav).toMatchObject({ owner: true });
   });
 
   it('five wrong codes a day, then only "without code" is left', async () => {

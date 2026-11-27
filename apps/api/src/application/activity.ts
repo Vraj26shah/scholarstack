@@ -52,6 +52,15 @@ const ANY_PAGE = new Set([
 export function activityTarget(body: TrackHitBody): { kind: 'page' | 'action'; target: string } | null {
   const page = pageTarget(body.path);
   if (body.kind === 'page') return page ? { kind: 'page', target: page } : null;
+  // "from:whatsapp/ece-25:/tools/timetable" (landed on that page from that link) and
+  // "signin_from:whatsapp/ece-25" (signed in after arriving that way). Tags are already checked
+  // against CAMPAIGN_TAG, so they fit the activity table's target rule.
+  if (body.kind === 'source') {
+    const tag = `${body.source}/${body.campaign ?? '-'}`;
+    return body.step === 'arrived'
+      ? { kind: 'action', target: `from:${tag}${page ? `:${page}` : ''}` }
+      : { kind: 'action', target: `signin_from:${tag}` };
+  }
   if (body.name === 'tool_used')
     return page?.startsWith('/tools/') ? { kind: 'action', target: `tool_used:${page}` } : null;
   // Only actions that belong to the course or bundle on screen name it (signing in doesn't).

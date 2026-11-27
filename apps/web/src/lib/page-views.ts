@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { resetPageSignals, setActionSink, signal } from './analytics';
 import { api } from './api';
+import { noteArrival, noteSignIn } from './campaign';
 import { env } from './env';
 import { useSession } from './session';
 
@@ -133,7 +134,25 @@ export function usePageActivity() {
     // doesn't count it again).
     if (status === 'loading' || me?.isAdmin || pathname.startsWith('/admin')) return;
     if (last.current === pathname) return;
+    const first = last.current === null;
     last.current = pathname;
     void api.beacon('/insights/hit', { kind: 'page', path: pathname });
+    // Landed from a tagged link (a WhatsApp group, an Instagram post, a poster): which one.
+    const from = first ? noteArrival(location.search) : null;
+    if (from) void api.beacon('/insights/hit', { kind: 'source', step: 'arrived', ...from, path: pathname });
   }, [pathname, status, me?.isAdmin]);
+
+  useEffect(() => {
+    // Signed in (now, or already when the page opened) after arriving from a tagged link: credit
+    // that link with a sign-in, once.
+    if (status !== 'ready' || !me || me.isAdmin) return;
+    const from = noteSignIn();
+    if (from)
+      void api.beacon('/insights/hit', {
+        kind: 'source',
+        step: 'signed_in',
+        ...from,
+        path: location.pathname,
+      });
+  }, [status, me?.isAdmin, me]);
 }

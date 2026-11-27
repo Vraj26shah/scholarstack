@@ -49,6 +49,12 @@ const pageLabel = (path: string): string => {
 export function activityLabel(target: string): string {
   if (target.startsWith('/')) return pageLabel(target);
   const [name = '', on] = target.split(':');
+  // "from:whatsapp/ece-25:/tools/timetable", "signin_from:whatsapp/ece-25"
+  if (name === 'from' || name === 'signin_from') {
+    const [source = '', campaign = '-'] = (on ?? '').split('/');
+    const link = `${source}${campaign === '-' ? '' : ` · ${campaign}`}`;
+    return name === 'from' ? `Came from a link (${link})` : `Signed in after a link (${link})`;
+  }
   const action = ACTIONS[name] ?? name;
   return on ? `${action} · ${on.replace(/^\/(?:[cb]|tools)\//, '')}` : action;
 }

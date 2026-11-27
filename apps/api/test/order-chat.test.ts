@@ -299,7 +299,7 @@ describe('owners, devices and limits', () => {
       expect((await b.signIn(OWNER, `Kitchen phone ${i}`)).status).toBe(200);
     }
     const me = (await (await signedIn(OWNER)).call('GET', '/me')).json;
-    expect(me).toMatchObject({ maxDevices: 100, instantDeviceRemoval: true });
+    expect(me).toMatchObject({ maxDevices: 100, instantDeviceRemoval: true, nav: { owner: true } });
     // A student is still held to two.
     const s = 'student5@vitbhopal.ac.in';
     for (let i = 0; i < 2; i++) expect((await new Browser(app).signIn(s, `Phone ${i}`)).status).toBe(200);

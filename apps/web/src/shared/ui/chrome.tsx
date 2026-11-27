@@ -86,7 +86,7 @@ function useRunsRestaurant(accountId: string | null) {
  * Shown at once from the last answer; refreshed when a notification arrives, when the tab comes
  * back into view, and every 10 seconds while an order is still going.
  */
-function useMyOrderCount(enabled: boolean, accountId = '') {
+function useMyOrderCount(enabled: boolean, accountId = '', known?: boolean) {
   const [state, setState] = useState(
     () => (enabled && accountId ? readFacts(accountId).orders : undefined) ?? { has: false, unread: 0 },
   );
@@ -124,7 +124,9 @@ function useMyOrderCount(enabled: boolean, accountId = '') {
       document.removeEventListener('visibilitychange', onShow);
     };
   }, [enabled, accountId]);
-  return state;
+  // The account answer already says whether there are orders, so the button is there from the
+  // first draw; only the unread count arrives a moment later (it doesn't move anything).
+  return enabled ? { has: state.has || known === true, unread: state.unread } : state;
 }
 
 /** The site's header; inside the student app, a compact app bar instead. */
@@ -169,7 +171,7 @@ function AppBar() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const food = useFoodLive();
-  const myOrders = useMyOrderCount(status === 'ready' && !!me && food, me?.id ?? '');
+  const myOrders = useMyOrderCount(status === 'ready' && !!me && food, me?.id ?? '', me?.nav?.orders);
   const title = appTitle(pathname) || 'Today';
   const root = APP_ROOTS.includes(pathname);
   const sub =
@@ -249,9 +251,15 @@ function AppBar() {
 function SiteHeader({ onDark = false }: { onDark?: boolean }) {
   const { status, me } = useSession();
   const location = useLocation();
-  const owner = useRunsRestaurant(status === 'ready' && me && !me.isAdmin ? me.id : null);
+  // The account answer carries it (older servers didn't: then ask, as before).
+  const asked = useRunsRestaurant(status === 'ready' && me && !me.isAdmin && !me.nav ? me.id : null);
+  const owner = me?.nav ? me.nav.owner && !me.isAdmin : asked;
   const food = useFoodLive();
-  const myOrders = useMyOrderCount(status === 'ready' && !!me && !owner && food, me?.id ?? '');
+  const myOrders = useMyOrderCount(
+    status === 'ready' && !!me && !owner && food,
+    me?.id ?? '',
+    me?.nav?.orders,
+  );
   const link = `no-underline font-medium ${onDark ? 'text-white' : 'text-ink'} hover:opacity-80`;
   // With extra buttons (My restaurant, My orders, Admin) the full name needs a wide screen;
   // below that the logo mark stands in, so nothing ever runs into the name.

@@ -289,6 +289,11 @@ export class OrderService {
     return (await this.ownedSlugs(email)).length > 0;
   }
 
+  /** Has this student ordered food on the site? (The header's My orders button.) */
+  async hasOrders(userId: string): Promise<boolean> {
+    return (await this.orders.listForUser(userId, 1)).length > 0;
+  }
+
   /** The restaurants this person runs (admins: every restaurant). */
   async owned(p: Principal, admin: boolean): Promise<OwnedMessDto[]> {
     const slugs = new Set(await this.ownedSlugs(p.email));

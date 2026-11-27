@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/cloudflare';
 import { reportServerError, setErrorReporter } from './application/error-reporter';
 import type { WorkerEnv } from './composition/config';
 import { workerContainer } from './composition/worker';
+import { jitter, keepAlive } from './cron-pace';
 import type { PushJob } from './domain/campus-ports';
 import { createApp } from './http/app';
 import { withEdgeCache } from './http/edge-cache';
@@ -12,6 +13,7 @@ import {
   courseMeta,
   isShareBot,
   messMeta,
+  pagePreview,
   sharedApiPath,
   sharedItem,
   sharedPagePath,
@@ -68,9 +70,23 @@ const handler = {
     // A course or bundle link opened by a link-preview crawler (LinkedIn, WhatsApp, X…): the page
     // with that course's own title and description. Any trouble: the plain page, as for people.
     const item = sharedItem(url.pathname);
-    if (item && isShareBot(request.headers.get('user-agent'))) {
+    const bot = isShareBot(request.headers.get('user-agent'));
+    if (item && bot) {
       const shared = await sharePage(request, url, item, env, ctx).catch(() => null);
       if (shared) return shared;
+    }
+    // A tool or the app page opened by a link-preview crawler: that page's own card.
+    const preview = bot ? pagePreview(url.pathname, url.origin) : null;
+    if (preview) {
+      const shell = await env.ASSETS!.fetch(new Request(new URL('/', url), request)).catch(() => null);
+      if (shell?.ok) {
+        const out = new Response(withShareMeta(await shell.text(), preview), {
+          status: 200,
+          headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' },
+        });
+        for (const [k, v] of Object.entries(SECURITY_HEADERS)) out.headers.set(k, v);
+        return out;
+      }
     }
     // Everything else is the static website (single-page app). Course and bundle paths reach
     // here first (for the crawlers above), so a miss falls back to the app shell itself.
@@ -107,13 +123,20 @@ const handler = {
     const container = workerContainer(env);
     // Each job runs on its own: one failing never stops the others, and failures land in the
     // admin's Problems log instead of disappearing.
+    //
+    // Jobs don't all hit the database in the same second: each starts after its own short random
+    // wait, spread over the first ~25 s of the run (sleeping costs no CPU). On the free Supabase
+    // plan a burst of parallel calls is what times out; spread out, each one answers quickly.
+    let slot = 0;
     const job = (name: string, run: () => Promise<unknown>) =>
       ctx.waitUntil(
-        run().catch((error: Error) => {
-          console.error(JSON.stringify({ level: 'error', event: `cron.${name}`, message: error.message }));
-          reportServerError(error, { where: `cron ${name}` });
-          return container.problems.fromServer(error, 'CRON', `/${name}`).catch(() => {});
-        }),
+        jitter(slot++)
+          .then(run)
+          .catch((error: Error) => {
+            console.error(JSON.stringify({ level: 'error', event: `cron.${name}`, message: error.message }));
+            reportServerError(error, { where: `cron ${name}` });
+            return container.problems.fromServer(error, 'CRON', `/${name}`).catch(() => {});
+          }),
       );
     if (_event.cron === '*/5 * * * *') {
       job('conversion-wake', async () => {
@@ -145,8 +168,10 @@ const handler = {
       );
       return;
     }
-    // A real database read every hour keeps the free Supabase project from pausing.
-    job('keep-alive', () => container.catalogue.index());
+    // A real database query every hour keeps the free Supabase project from pausing. It goes
+    // straight to the database (no cached read), at a random second, and tries again after a
+    // random pause if the database was slow to answer, so one blip never counts as a miss.
+    job('keep-alive', () => keepAlive(() => container.housekeeping.ping()));
     job('announcements', () =>
       container.announcements.processPending().then((sent) => {
         if (sent > 0) console.log(JSON.stringify({ level: 'info', event: 'announcements.cron', sent }));

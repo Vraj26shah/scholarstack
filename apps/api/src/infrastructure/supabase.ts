@@ -2115,6 +2115,10 @@ export class SupabaseHousekeeping implements DatabaseHousekeeping {
     if (error) throw new Error(error.message);
     return count ?? 0;
   }
+  async ping() {
+    const { error } = await this.db.from('profiles').select('id', { head: true }).limit(1);
+    if (error) throw new Error(error.message);
+  }
   async pruneHistory() {
     return (must(await this.db.rpc('prune_history')) as Record<string, number>) ?? {};
   }

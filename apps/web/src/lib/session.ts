@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { ApiError, api } from './api';
 import { authGateway } from './auth';
 import { deviceLabel } from './device-label';
+import { featureSwitches } from './feature-switches';
 import { phoneKey } from './native-push';
 
 export type SessionStatus = 'loading' | 'unavailable' | 'signed-out' | 'ready' | 'replaced' | 'device-limit';
@@ -84,13 +85,17 @@ export const useSession = create<SessionState>((set, get) => ({
     if (bootstrapInFlight) return bootstrapInFlight;
     // Show account checking while a fresh bootstrap is in progress.
     set({ status: 'loading' });
+    // The launch switches load alongside the account (never longer than 2 s), so the header
+    // draws My orders, Admin and the account button together instead of one after another.
+    const switches = Promise.race([featureSwitches(), new Promise((r) => setTimeout(r, 2000))]);
     bootstrapInFlight = (async () => {
       try {
         const token = await authGateway.token();
         if (!token) return set({ status: 'signed-out', me: null, replacedReason: null });
         // First load with this sign-in in this browser: register the device right away.
         if (!claimedFor(token)) return await get().claim();
-        set({ status: 'ready', me: await api.me(), replacedReason: null });
+        const [me] = await Promise.all([api.me(), switches]);
+        set({ status: 'ready', me, replacedReason: null });
       } catch (e) {
         if (e instanceof ApiError && e.code === 'SESSION_REPLACED') return; // handled by the listener
         if (e instanceof ApiError && e.status === 401) {

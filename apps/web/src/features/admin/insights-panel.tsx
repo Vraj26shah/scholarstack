@@ -15,6 +15,7 @@ import {
   stuckRows,
   toolRows,
 } from './insights-derive';
+import { SourcesView } from './sources-view';
 import { StudentActivity, activityHref, activityLabel, ago } from './student-activity';
 import { Figure, Note, Panel, plural } from './ui';
 
@@ -181,9 +182,10 @@ function DailyChart({ daily }: { daily: DayRow[] }) {
   );
 }
 
-type View = 'overview' | 'tools' | 'stuck' | 'buying' | 'students' | 'pages' | 'health';
+type View = 'overview' | 'sources' | 'tools' | 'stuck' | 'buying' | 'students' | 'pages' | 'health';
 const VIEWS: [View, string][] = [
   ['overview', 'Summary'],
+  ['sources', 'Where people come from'],
   ['tools', 'Tools'],
   ['stuck', 'Where people get stuck'],
   ['buying', 'Buying'],
@@ -619,6 +621,7 @@ function Report({ data, activity }: { data: AdminInsightsDto; activity: Activity
         </>
       )}
 
+      {view === 'sources' && <SourcesView activity={activity} />}
       {view === 'tools' && <ToolsView activity={activity} />}
       {view === 'stuck' && <StuckView activity={activity} />}
       {view === 'pages' && <ActivityTables activity={activity} part="pages" />}

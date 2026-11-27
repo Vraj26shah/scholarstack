@@ -421,6 +421,8 @@ export interface MeDto {
   maxDevices: number;
   /** Admins: removing a device signs it out at once, with no three-day wait. */
   instantDeviceRemoval: boolean;
+  /** Header buttons, sent with the account so the header draws once and nothing shifts. */
+  nav?: { owner: boolean; orders: boolean };
 }
 
 export const EmailPrefsBody = z.object({ emailOptIn: z.boolean() });
@@ -2697,10 +2699,38 @@ export const STUCK_SIGNALS = {
 } as const;
 export type StuckSignal = keyof typeof STUCK_SIGNALS;
 
+/**
+ * A campaign tag from a shared link ("whatsapp", "ece-25", "insta-story"): lowercase letters,
+ * digits and dashes, so it is safe to keep and to show. `campaignTag()` turns anything typed or
+ * pasted into one (or null when nothing is left).
+ */
+export const CAMPAIGN_TAG = /^[a-z0-9][a-z0-9-]{0,39}$/;
+export function campaignTag(raw: string | null | undefined): string | null {
+  const t = (raw ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/, '');
+  return CAMPAIGN_TAG.test(t) ? t : null;
+}
+const CampaignTag = z.string().regex(CAMPAIGN_TAG);
+
 /** A page opened, or an action on the page at `path`. The server decides what it is recorded as. */
 export const TrackHitBody = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('page'), path: z.string().max(300) }).strict(),
   z.object({ kind: z.literal('action'), name: z.enum(ACTIVITY_ACTIONS), path: z.string().max(300) }).strict(),
+  // Where someone came from (a tagged link: ?utm_source=whatsapp&utm_campaign=ece-25): once when
+  // they land, and once when they sign in afterwards. Admin › Insights › Where people come from.
+  z
+    .object({
+      kind: z.literal('source'),
+      step: z.enum(['arrived', 'signed_in']),
+      source: CampaignTag,
+      campaign: CampaignTag.optional(),
+      path: z.string().max(300),
+    })
+    .strict(),
 ]);
 export type TrackHitBody = z.infer<typeof TrackHitBody>;
 

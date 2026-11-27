@@ -51,7 +51,11 @@ export class AccountService {
     private readonly admins: Pick<AdminAccess, 'isAdmin'>,
     private readonly clock: Clock,
     /** Restaurant owners (their addresses are on a restaurant): many devices, removed at once. */
-    private readonly owners?: { isOwner(email: string): Promise<boolean> },
+    private readonly owners?: {
+      isOwner(email: string): Promise<boolean>;
+      /** Has this student ever ordered food on the site (the header's My orders button)? */
+      hasOrders?(userId: string): Promise<boolean>;
+    },
   ) {}
 
   private isOwner(principal: Principal): Promise<boolean> {
@@ -231,12 +235,18 @@ export class AccountService {
   }
 
   async me(principal: Principal, currentDeviceId: string | null): Promise<MeDto> {
-    const profile = await this.profiles.ensure(principal);
     const now = this.clock.now();
-    const devices = await this.devices.listActive(principal.userId, now);
-    const cooldownUntil = await this.deviceCooldownUntil(principal.userId, now);
-    const isAdmin = await this.isAdmin(principal);
-    const staff = isAdmin || (await this.isOwner(principal));
+    // Everything at once: the account answer is on the path of every page's header.
+    const [profile, devices, cooldownUntil, isAdmin, owner, orders, maxDevices] = await Promise.all([
+      this.profiles.ensure(principal),
+      this.devices.listActive(principal.userId, now),
+      this.deviceCooldownUntil(principal.userId, now),
+      this.isAdmin(principal),
+      this.isOwner(principal),
+      this.owners?.hasOrders ? this.owners.hasOrders(principal.userId).catch(() => false) : false,
+      this.deviceLimit(principal),
+    ]);
+    const staff = isAdmin || owner;
     return {
       id: profile.id,
       email: profile.email,
@@ -246,8 +256,9 @@ export class AccountService {
       devices: devices.map((d) => toDeviceDto(d, currentDeviceId, now)),
       // Admins never wait on a removal, so there is no cooldown to show them.
       deviceCooldownUntil: staff ? null : (cooldownUntil?.toISOString() ?? null),
-      maxDevices: await this.deviceLimit(principal),
+      maxDevices,
       instantDeviceRemoval: staff,
+      nav: { owner, orders },
     };
   }
 

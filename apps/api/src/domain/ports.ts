@@ -341,6 +341,8 @@ export interface DatabaseHousekeeping {
   cleanAbandonedOrders(days: number): Promise<number>;
   /** Daily: trims history past its keep period (see the housekeeping migration). Counts removed. */
   pruneHistory(): Promise<Record<string, number>>;
+  /** One tiny real query (the keep-alive): fails if the database doesn't answer. */
+  ping(): Promise<void>;
 }
 
 /** Writes and reads uploaded files (kept apart from ObjectStore: only uploads need writing). */
