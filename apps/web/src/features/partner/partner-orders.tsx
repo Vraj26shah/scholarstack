@@ -3,8 +3,10 @@ import { formatMobile } from '@ss/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
+import { nativePush } from '../../lib/native-push';
 import { Skeleton } from '../../shared/ui/feedback';
 import { Bowl, ChatBubble, Phone } from '../../shared/ui/icons';
+import { useAccountAlerts } from '../chat/alerts';
 import { useLive, usePushWhileOpen } from '../chat/live';
 import { OrderChat } from '../chat/order-chat';
 import { trustText } from '../orders/pay-first';
@@ -39,6 +41,8 @@ function bell() {
 }
 
 const REASONS: TextKey[] = ['reasonSoldOut', 'reasonBusy', 'reasonClosed', 'reasonFar'];
+/** Armed once per app start (tab switches and the PIN lock keep it). */
+let bellArmed = false;
 
 export function PartnerOrders({ mess }: { mess: OwnedMessDto }) {
   const { t } = useT();
@@ -52,7 +56,20 @@ export function PartnerOrders({ mess }: { mess: OwnedMessDto }) {
     refetchInterval: live ? 30_000 : 5_000,
   });
   const [chat, setChat] = useState<string | null>(null);
-  const [armed, setArmed] = useState(false);
+  // Phones only let a page make sound after a tap: the first tap anywhere arms the bell, once
+  // per app start. In the app with notifications on, Android rings by itself, so no banner.
+  const [armed, setArmed] = useState(bellArmed);
+  const alerts = useAccountAlerts();
+  useEffect(() => {
+    if (armed) return;
+    const arm = () => {
+      bellArmed = true;
+      setArmed(true);
+    };
+    document.addEventListener('pointerdown', arm, { once: true });
+    return () => document.removeEventListener('pointerdown', arm);
+  }, [armed]);
+  const appRings = nativePush() && alerts.checked && alerts.on;
 
   // Ring for every order that wasn't there a moment ago.
   const seen = useRef<Set<string> | null>(null);
@@ -87,10 +104,11 @@ export function PartnerOrders({ mess }: { mess: OwnedMessDto }) {
 
   return (
     <div className="flex flex-col gap-6">
-      {!armed && (
+      {!armed && !appRings && (
         <button
           type="button"
           onClick={() => {
+            bellArmed = true;
             setArmed(true);
             bell();
           }}

@@ -65,6 +65,23 @@ function usePartnerUnlocked() {
   return open;
 }
 
+/** The app turns order alerts on by itself only once per phone; after that, More › Order alerts. */
+const ASKED_KEY = 'ss_partner_alerts_asked';
+const askedOnThisPhone = () => {
+  try {
+    return localStorage.getItem(ASKED_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+const rememberAsked = () => {
+  try {
+    localStorage.setItem(ASKED_KEY, '1');
+  } catch {
+    // storage blocked: asked again next time
+  }
+};
+
 export default function PartnerApp() {
   const status = useSession((s) => s.status);
   const me = useSession((s) => s.me);
@@ -146,12 +163,15 @@ function Signed() {
       !nativePush() ||
       !messes.length ||
       !alerts.configured ||
+      !alerts.checked ||
       alerts.on ||
       alerts.busy ||
-      alerts.support !== 'ok'
+      alerts.support !== 'ok' ||
+      askedOnThisPhone()
     )
       return;
     asked.current = true;
+    rememberAsked();
     void alerts.enable();
   }, [messes.length, alerts]);
   const mess = messes.find((m) => m.slug === picked) ?? messes[0];

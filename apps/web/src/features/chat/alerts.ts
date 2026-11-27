@@ -22,6 +22,8 @@ export function useAccountAlerts() {
   const status = useQuery({ queryKey: ['push-status'], queryFn: api.pushStatus, staleTime: 300_000 });
   const [support, setSupport] = useState<PushSupport>('unsupported');
   const [on, setOn] = useState(false);
+  // False until this phone's subscription has been looked at: "off" before that means "not known yet".
+  const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -29,7 +31,8 @@ export function useAccountAlerts() {
     setSupport(pushSupport());
     void browserSubscription()
       .then((sub) => setOn(!!sub && localStorage.getItem(KEY) === sub.endpoint))
-      .catch(() => setOn(false));
+      .catch(() => setOn(false))
+      .finally(() => setChecked(true));
   }, []);
 
   const enable = useCallback(async () => {
@@ -64,5 +67,5 @@ export function useAccountAlerts() {
     }
   }, [status.data]);
 
-  return { support, on, busy, error, enable, configured: !!status.data?.configured };
+  return { support, on, checked, busy, error, enable, configured: !!status.data?.configured };
 }
