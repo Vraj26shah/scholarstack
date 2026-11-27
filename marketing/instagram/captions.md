@@ -101,3 +101,37 @@ DM us or check contribute on the site (link in bio)
 - Once a week, a quick phone-shot story of an actual feature (a reminder arriving, the attendance screen).
   Real screenshots beat designed posters for trust.
 - Same name, logo and link everywhere: WhatsApp Business, Instagram, the site.
+
+## Post this first: p0-new-name.png (the rename)
+
+Your only post so far is the old VITB Smashers one, so this connects the two names for anyone who
+followed you before. Post it before everything else.
+```
+vitb smashers is now scholars stack ✦
+
+same people, new name. we were offline till now, now it's a proper website: seniors' notes, class reminders and free tools for every vitian.
+
+if you knew us as smashers, hi again 👋 link in bio
+```
+
+## Reel: scholarstack-reel.mp4 (18 s, saved on your Desktop)
+
+POV hook ("8:27, class at 8:30") → reminder notification → real timetable screen → "74.9%, can i bunk?"
+→ attendance calculator → seniors' notes with free page one → end card. Screens are the live site.
+
+The file has an original beat, timed to the cuts, so it plays fine as is. For reach, swap in a trending
+sound when you post (Instagram app › Reel › music note › Trending; pick one with a ↗ arrow, it's rising):
+- Pick an upbeat track with a drop around 3 s: that's when the notification lands.
+- Keep the sound's volume low under the text, or turn the original beat off.
+- Recently trending (check they still are in the app): "Dilruba Dilnasheen" and Bollywood/Punjabi
+  tracks that VIT pages are using this week. Look at what @vitbhopal-type pages used in their last reels.
+
+Caption:
+```
+pov: 8:27 and class is at 8:30 💀
+
+timetable reminders, bunk calc and seniors' notes, all in one place. free for vitians
+
+link in bio · send this to the friend who's always late
+```
+Cover: pick the "74.9%" frame (about 10 s in) as the reel cover.
