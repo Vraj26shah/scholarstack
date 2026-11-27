@@ -1,3 +1,5 @@
+import { appMode } from './app-mode';
+
 /**
  * Where the site opens. Visitors who aren't signed in always start at the top of the home page
  * (the hero: what this is, why it's worth it), even when the address ends in #catalogue from an
@@ -14,11 +16,14 @@ export const STUDENT_HOME = '/#catalogue';
  * other people allowed in with an address outside the college) on their orders; students home.
  */
 export const homeFor = (me: { isAdmin: boolean; email: string } | null | undefined, collegeDomain: string) =>
-  me?.isAdmin
-    ? '/admin'
-    : me && !me.email.toLowerCase().endsWith(`@${collegeDomain}`)
-      ? '/orders'
-      : STUDENT_HOME;
+  // Inside the Partner app everyone stays in the Partner app.
+  appMode() === 'partner'
+    ? '/partner'
+    : me?.isAdmin
+      ? '/admin'
+      : me && !me.email.toLowerCase().endsWith(`@${collegeDomain}`)
+        ? '/orders'
+        : STUDENT_HOME;
 
 /** True until the page the browser opened (a fresh visit or a refresh) has been placed. */
 export const landing = { pending: typeof window !== 'undefined' };

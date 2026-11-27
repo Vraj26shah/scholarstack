@@ -35,6 +35,18 @@ public class PartnerSetupPlugin extends Plugin {
         call.resolve(r);
     }
 
+    /**
+     * The phone's own ID for this app (Android's ANDROID_ID): the same after clearing the app's
+     * data or reinstalling it, different on every phone. The server keeps only a hash of it.
+     */
+    @PluginMethod
+    public void phoneKey(PluginCall call) {
+        String id = Settings.Secure.getString(getContext().getContentResolver(), Settings.Secure.ANDROID_ID);
+        JSObject r = new JSObject();
+        r.put("key", id == null ? "" : id);
+        call.resolve(r);
+    }
+
     @PluginMethod
     public void askIgnoreBattery(PluginCall call) {
         Context c = getContext();

@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { ApiError, api } from './api';
 import { authGateway } from './auth';
 import { deviceLabel } from './device-label';
+import { phoneKey } from './native-push';
 
 export type SessionStatus = 'loading' | 'unavailable' | 'signed-out' | 'ready' | 'replaced' | 'device-limit';
 
@@ -60,7 +61,7 @@ type Set = (s: Partial<SessionState>) => void;
 
 async function claimDevice(set: Set): Promise<void> {
   try {
-    await api.claim(deviceLabel());
+    await api.claim(deviceLabel(), await phoneKey());
     await rememberClaim();
     // Verify the browser accepted the HttpOnly device cookie before treating sign-in as complete.
     const me = await api.me();

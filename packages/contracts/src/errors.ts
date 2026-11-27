@@ -12,6 +12,7 @@ export const ErrorCode = {
   DeviceUnclaimed: 'DEVICE_UNCLAIMED',
   DeviceLimit: 'DEVICE_LIMIT',
   DeviceCooldown: 'DEVICE_COOLDOWN',
+  PhoneInUse: 'PHONE_IN_USE',
   NotPurchased: 'NOT_PURCHASED',
   AlreadyOwned: 'ALREADY_OWNED',
   LeaseTaken: 'LEASE_TAKEN',

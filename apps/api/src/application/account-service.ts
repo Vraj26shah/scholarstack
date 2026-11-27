@@ -20,7 +20,8 @@ export const OWNER_MAX_DEVICES = 100;
 /** The student app is signed in on one phone at a time; the website keeps `maxDevices` (two). */
 export const APP_MAX_DEVICES = 1;
 /** The student app's devices are named "Scholars Stack app · Android" (deviceLabel in contracts). */
-const isAppDevice = (label: string) => label.trim().toLowerCase().startsWith('scholars stack app');
+const APP_LABEL = 'Scholars Stack app';
+const isAppDevice = (label: string) => label.trim().toLowerCase().startsWith(APP_LABEL.toLowerCase());
 
 /** A device of the same kind unused this long is taken to be this one, back again. */
 const RETURNING_AFTER_MS = 24 * 60 * 60 * 1000;
@@ -82,7 +83,13 @@ export class AccountService {
   }
 
   /** Called after sign-in. Refreshes this device's session without displacing other devices. */
-  async claimDevice(principal: Principal, label: string, cookieDeviceId: string | null): Promise<Device> {
+  async claimDevice(
+    principal: Principal,
+    label: string,
+    cookieDeviceId: string | null,
+    /** The Android app: a hash of the phone's own ID (it survives clearing the app's data). */
+    phoneHash: string | null = null,
+  ): Promise<Device> {
     await this.profiles.ensure(principal);
     const now = this.clock.now();
     const active = await this.devices.listActive(principal.userId, now);
@@ -99,6 +106,15 @@ export class AccountService {
       )
         device = known;
     }
+    // The student app knows its phone even after its data was cleared: the same phone is the same
+    // device again (no new slot, no wait), and a phone can't hop between students' accounts.
+    const studentApp = !!phoneHash && isAppDevice(label);
+    if (studentApp && phoneHash) {
+      const onPhone = await this.devices.activeByPhone(phoneHash, now);
+      if (!device) device = onPhone.find((d) => d.userId === principal.userId) ?? null;
+      const others = onPhone.filter((d) => d.userId !== principal.userId);
+      if (others.length && !(await this.staff(principal)).any) throw fail.phoneInUse();
+    }
     // A previously registered auth session without its matching HttpOnly device cookie
     // is a copied token. Do not silently register it as another device.
     const sessionOwner = sessions.find((session) => session.sessionId === principal.sessionId);
@@ -108,12 +124,26 @@ export class AccountService {
 
     if (device) {
       await this.devices.touch(device.id);
+      if (studentApp && phoneHash && !device.phoneHash) await this.devices.setPhone(device.id, phoneHash);
     } else {
       // The same phone or laptop can lose its device cookie (cleared site data, a new browser
       // profile, the site's address changing). When the account is full and one of its devices is
       // the same kind as this one ("Chrome on Android") and hasn't been used for a day, this is
       // almost certainly that device back again: retire the old record and register this one,
       // instead of locking the student out for three days.
+      // The app's first sign-in on this account takes priority: when the two devices are already
+      // in use, the browser used least recently is signed out at once to make room. After that
+      // (a new phone, the app signed in before), the usual three-day rule applies.
+      if (isAppDevice(label) && active.length >= limit && !(await this.staff(principal)).any) {
+        const firstApp = !(await this.devices.everHad(principal.userId, APP_LABEL));
+        const browser = active
+          .filter((d) => !isAppDevice(d.label))
+          .sort((a, b) => a.lastSeenAt.getTime() - b.lastSeenAt.getTime())[0];
+        if (firstApp && browser) {
+          await this.devices.revoke(browser.id);
+          active.splice(active.indexOf(browser), 1);
+        }
+      }
       const returning = this.returningDevice(active, label, now);
       if (active.length >= limit && returning) {
         await this.devices.revoke(returning.id);
@@ -136,7 +166,7 @@ export class AccountService {
           throw fail.deviceLimit(apps.map((d) => toDeviceDto(d, null, now)));
       }
       try {
-        device = await this.devices.create(principal.userId, label);
+        device = await this.devices.create(principal.userId, label, studentApp ? phoneHash : null);
       } catch (error) {
         if (!(error instanceof DeviceLimitReached)) throw error;
         throw fail.deviceLimit(

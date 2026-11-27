@@ -80,6 +80,19 @@ describe('restaurant owners sign in with mobile number + PIN', () => {
     expect(JSON.stringify(list)).not.toMatch(/pinHash|setupHash|4821/);
   });
 
+  it('the number alone says what comes next: the setup code first, then just the PIN', async () => {
+    const lookup = async (phone: string) =>
+      (await new Browser(app).call('POST', '/partner/lookup', { phone })).json;
+    expect(await lookup('9123456789')).toEqual({ next: 'unknown' });
+    const a = await admin();
+    const { code } = (await a.call('POST', '/admin/owner-logins', { phone: PHONE, messSlug: SLUG })).json;
+    expect(await lookup(PHONE)).toEqual({ next: 'setup' });
+    await partner('/partner/set-pin', { phone: PHONE, code, pin: '4821' });
+    expect(await lookup('+91 98765 43210')).toEqual({ next: 'pin' });
+    // A bad number is refused, not looked up.
+    expect((await new Browser(app).call('POST', '/partner/lookup', { phone: '12' })).status).toBe(400);
+  });
+
   it('locks the number after 5 wrong PINs, then opens again after 15 minutes', async () => {
     const a = await admin();
     const { code } = (await a.call('POST', '/admin/owner-logins', { phone: PHONE, messSlug: SLUG })).json;

@@ -1,5 +1,6 @@
 import { ClaimDeviceBody, EmailPrefsBody, UpdateProfileBody, deviceLabel } from '@ss/contracts';
 import { Hono } from 'hono';
+import { sha256Hex } from '../../infrastructure/crypto';
 import {
   type AppEnv,
   authenticate,
@@ -20,7 +21,9 @@ meRoutes.post('/session/claim', async (c) => {
   const ua = c.req.header('user-agent');
   const label = ua ? deviceLabel(ua) : body.label;
   const container = c.get('container');
-  const device = await container.account.claimDevice(principal, label, await cookieDeviceId(c));
+  // The app's phone ID is kept only as a hash.
+  const phoneHash = body.phoneKey ? await sha256Hex(`phone:${body.phoneKey.toLowerCase()}`) : null;
+  const device = await container.account.claimDevice(principal, label, await cookieDeviceId(c), phoneHash);
   await setDeviceCookie(c, device.id);
   return c.json(await container.account.me(principal, device.id));
 });

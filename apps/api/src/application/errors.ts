@@ -9,6 +9,7 @@ const STATUS: Record<ErrorCode, number> = {
   SESSION_REPLACED: 401,
   DEVICE_UNCLAIMED: 409,
   DEVICE_LIMIT: 409,
+  PHONE_IN_USE: 409,
   DEVICE_COOLDOWN: 409,
   NOT_PURCHASED: 403,
   ALREADY_OWNED: 409,
@@ -45,6 +46,11 @@ export const fail = {
   sessionReplaced: (reason: 'newer-sign-in' | 'device-check') =>
     new AppError(ErrorCode.SessionReplaced, 'This sign-in is no longer the active session.', { reason }),
   deviceUnclaimed: () => new AppError(ErrorCode.DeviceUnclaimed, 'Finish signing in on this device.'),
+  phoneInUse: () =>
+    new AppError(
+      ErrorCode.PhoneInUse,
+      "This phone's app is signed in to another student's account. Sign out there first, or remove this phone from that account's devices.",
+    ),
   deviceLimit: (devices: unknown) =>
     new AppError(ErrorCode.DeviceLimit, 'This account already has the maximum number of devices.', devices),
   deviceCooldown: (until: Date) =>

@@ -22,6 +22,22 @@ const T = {
   },
   newPin: { hi: 'नया PIN चुनें', en: 'Choose a new PIN' },
   savePin: { hi: 'PIN सेव करें और लॉग इन करें', en: 'Save PIN and sign in' },
+  continue: { hi: 'आगे बढ़ें', en: 'Continue' },
+  welcomeBack: { hi: 'अपना PIN डालें', en: 'Enter your PIN' },
+  changeNumber: { hi: 'नंबर बदलें', en: 'Change number' },
+  enterSetupCode: { hi: 'सेटअप कोड डालें', en: 'Enter your setup code' },
+  newPinHelp: {
+    hi: 'अब 4 अंकों का PIN चुनें। अगली बार सिर्फ़ यही PIN डालना होगा।',
+    en: 'Now choose a 4-digit PIN. Next time you only type this PIN.',
+  },
+  confirmPin: { hi: 'PIN दोबारा डालें', en: 'Enter the PIN again' },
+  confirmPinHelp: { hi: 'पक्का करने के लिए वही PIN फिर से डालें।', en: 'Type the same PIN again to confirm.' },
+  pinsDiffer: { hi: 'दोनों PIN अलग हैं। फिर से चुनें।', en: 'The two PINs were different. Choose again.' },
+  notRegistered: {
+    hi: 'यह नंबर जुड़ा नहीं है। Scholars Stack से बात करें।',
+    en: 'This number isn’t registered. Talk to Scholars Stack.',
+  },
+  forgotPinCode: { hi: 'PIN भूल गए? सेटअप कोड डालें', en: 'Forgot your PIN? Use a setup code' },
   forgot: { hi: 'PIN भूल गए? Scholars Stack को कॉल करें', en: 'Forgot your PIN? Call Scholars Stack' },
   pleaseWait: { hi: 'रुकिए…', en: 'Please wait…' },
   otherAccount: {

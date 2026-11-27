@@ -19,7 +19,7 @@ import { ShelfPage } from '../features/shelf/shelf-page';
 import { MessShortLink } from '../features/tools/mess/components/share-link';
 import { setMonitoringUser, track, trackPageView } from '../lib/analytics';
 import { ApiError } from '../lib/api';
-import { appMode, appPathFor, sitePathFor } from '../lib/app-mode';
+import { appMode, appPathFor, isNativeApp, sitePathFor } from '../lib/app-mode';
 import { authGateway } from '../lib/auth';
 import { env } from '../lib/env';
 import { decidesLanding, homeFor, isPhone, jumpTo, landing } from '../lib/landing';
@@ -367,6 +367,19 @@ function SplashDone() {
   return null;
 }
 
+/**
+ * The Partner app (the Android app for restaurant owners) never shows the website: any other page
+ * it is sent to opens the Partner app's own screen instead (sign-in finishing, help pages, terms
+ * and contact still open).
+ */
+const PARTNER_APP_PAGES = ['/partner', '/auth/', '/contact', '/terms', '/privacy'];
+function PartnerAppOnly() {
+  const { pathname } = useLocation();
+  const inPartnerApp = isNativeApp() && appMode() === 'partner';
+  if (!inPartnerApp || PARTNER_APP_PAGES.some((p) => pathname.startsWith(p))) return null;
+  return <Navigate to="/partner" replace />;
+}
+
 function NotFound() {
   return (
     <Page>
@@ -507,6 +520,7 @@ function Shell() {
       <SwipeTabs />
       <SessionSheets />
       <SplashDone />
+      <PartnerAppOnly />
       <SignInPrompt />
     </>
   );

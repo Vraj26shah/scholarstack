@@ -622,6 +622,12 @@ export class MemoryProfiles implements ProfileRepository {
 
 export class MemoryDevices implements DeviceRepository {
   constructor(private readonly db: MemoryDb) {}
+  async everHad(userId: string, labelPrefix: string) {
+    const p = labelPrefix.toLowerCase();
+    return [...this.db.devices.values()].some(
+      (d) => d.userId === userId && d.label.trim().toLowerCase().startsWith(p),
+    );
+  }
   async latestRevokedAt(userId: string, now: Date) {
     const latest = [...this.db.devices.values()]
       .filter((device) => device.userId === userId && device.revokedAt && device.revokedAt > now)
@@ -640,7 +646,16 @@ export class MemoryDevices implements DeviceRepository {
   async find(deviceId: string) {
     return this.db.devices.get(deviceId) ?? null;
   }
-  async create(userId: string, label: string) {
+  async activeByPhone(phoneHash: string, now: Date) {
+    return [...this.db.devices.values()].filter(
+      (d) => d.phoneHash === phoneHash && (!d.revokedAt || d.revokedAt > now),
+    );
+  }
+  async setPhone(deviceId: string, phoneHash: string) {
+    const d = this.db.devices.get(deviceId);
+    if (d) this.db.devices.set(deviceId, { ...d, phoneHash });
+  }
+  async create(userId: string, label: string, phoneHash: string | null = null) {
     const now = this.db.clock.now();
     const device: Device = {
       id: this.db.ids.next(),
@@ -649,6 +664,7 @@ export class MemoryDevices implements DeviceRepository {
       createdAt: now,
       lastSeenAt: now,
       revokedAt: null,
+      phoneHash,
     };
     this.db.devices.set(device.id, device);
     return device;

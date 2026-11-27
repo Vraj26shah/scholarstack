@@ -295,6 +295,8 @@ export class ApiClient {
   ownedMesses = () => this.request<OwnedMessDto[]>('GET', '/owner/messes');
   /** Partner app: owners sign in with mobile number + PIN (first time: the admin's setup code). */
   partnerStatus = () => this.request<{ available: boolean }>('GET', '/partner/status');
+  partnerLookup = (phone: string) =>
+    this.request<{ next: 'pin' | 'setup' | 'unknown' }>('POST', '/partner/lookup', { phone });
   partnerLogin = (phone: string, pin: string) =>
     this.request<PartnerSessionDto>('POST', '/partner/login', { phone, pin });
   partnerSetPin = (phone: string, code: string, pin: string) =>
@@ -505,7 +507,8 @@ export class ApiClient {
 
   // Account
   checkSignInEmail = (email: string) => this.request<{ ok: true }>('POST', '/auth/check-email', { email });
-  claim = (label: string) => this.request<MeDto>('POST', '/session/claim', { label });
+  claim = (label: string, phoneKey?: string) =>
+    this.request<MeDto>('POST', '/session/claim', phoneKey ? { label, phoneKey } : { label });
   me = () => this.request<MeDto>('GET', '/me');
   updateName = (fullName: string) => this.request<MeDto>('PATCH', '/me', { fullName });
   removeDevice = (id: string) => this.request<MeDto>('DELETE', `/me/devices/${id}`);

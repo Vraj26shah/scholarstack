@@ -56,6 +56,19 @@ export class PartnerLoginService {
 
   // ── Owner (the Partner app) ──
 
+  /**
+   * The first step of signing in (like Groww): the number alone says what comes next. A PIN
+   * already chosen: the PIN. Not yet: the setup code from Scholars Stack, then a new PIN.
+   * Throttled per network like the other steps; restaurant numbers are public anyway.
+   */
+  async lookup(phone: string): Promise<{ next: 'pin' | 'setup' | 'unknown' }> {
+    this.need();
+    const r = await this.repo.find(phone);
+    if (!r) return { next: 'unknown' };
+    if (r.lockedUntil && r.lockedUntil > this.clock.now()) throw this.locked(r.lockedUntil);
+    return { next: r.pinHash ? 'pin' : 'setup' };
+  }
+
   async login(input: PartnerLoginInput): Promise<PartnerSessionDto> {
     this.need();
     const r = await this.unlocked(input.phone);

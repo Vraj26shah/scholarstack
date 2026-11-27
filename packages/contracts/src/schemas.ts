@@ -427,6 +427,12 @@ export const EmailPrefsBody = z.object({ emailOptIn: z.boolean() });
 
 export const ClaimDeviceBody = z.object({
   label: z.string().min(1).max(80),
+  /** The Android app: the phone's own ID (survives clearing the app's data), so the same phone is
+   *  known again and can't hop between students' accounts. Stored only as a hash. */
+  phoneKey: z
+    .string()
+    .regex(/^[0-9a-fA-F]{8,64}$/)
+    .optional(),
 });
 
 export const UpdateProfileBody = z.object({

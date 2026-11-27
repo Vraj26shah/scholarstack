@@ -310,35 +310,120 @@ export function bigButton(kind: 'brand' | 'outline' | 'accept' | 'reject' | 'gho
   }`;
 }
 
-// ── Sign-in: mobile number + PIN (first time: the setup code) ──
+// ── Sign-in, like Groww: the number once, then just the 4-digit PIN ──
+
+/** The owner's number, kept on this phone after the first sign-in (only the number, never the PIN). */
+const PHONE_KEY = 'ss_partner_phone';
+const savedPhone = () => {
+  try {
+    const v = localStorage.getItem(PHONE_KEY) ?? '';
+    return /^[6-9]\d{9}$/.test(v) ? v : '';
+  } catch {
+    return '';
+  }
+};
+const keepPhone = (p: string | null) => {
+  try {
+    if (p) localStorage.setItem(PHONE_KEY, p);
+    else localStorage.removeItem(PHONE_KEY);
+  } catch {
+    // storage blocked: the number is asked for next time
+  }
+};
+const shown = (d: string) => `+91 ${d.slice(0, 5)} ${d.slice(5)}`;
+
+type Step = 'phone' | 'pin' | 'code' | 'newPin' | 'confirmPin';
 
 function PartnerSignIn({ otherAccount = '' }: { otherAccount?: string }) {
   const { t } = useT();
-  const [mode, setMode] = useState<'pin' | 'setup'>('pin');
-  const [phone, setPhone] = useState('');
-  const [pin, setPin] = useState('');
+  const remembered = savedPhone();
+  const [step, setStep] = useState<Step>(remembered ? 'pin' : 'phone');
+  const [phone, setPhone] = useState(remembered);
   const [code, setCode] = useState('');
+  const [pin, setPin] = useState('');
+  const [first, setFirst] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const digits = phone.replace(/\D/g, '').slice(-10);
-  const ready = digits.length === 10 && pin.length === 4 && (mode === 'pin' || code.length === 6);
-
-  const submit = async () => {
-    if (!ready || busy) return;
+  const go = (s: Step) => {
     setError('');
+    setPin('');
+    setStep(s);
+  };
+  const fail = (e: unknown) => setError(e instanceof ApiError || e instanceof Error ? e.message : String(e));
+
+  // 1. The number: what does it need next?
+  const lookup = async () => {
+    if (digits.length !== 10 || busy) return;
     setBusy(true);
+    setError('');
     try {
-      const s =
-        mode === 'pin' ? await api.partnerLogin(digits, pin) : await api.partnerSetPin(digits, code, pin);
-      await authGateway.adoptSession(s);
-      await useSession.getState().claim();
+      const { next } = await api.partnerLookup(digits);
+      if (next === 'unknown') setError(t('notRegistered'));
+      else go(next === 'pin' ? 'pin' : 'code');
     } catch (e) {
-      setError(e instanceof ApiError || e instanceof Error ? e.message : String(e));
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 2. Signed in (with the PIN, or after choosing one): straight into the app.
+  const finish = async (s: Awaited<ReturnType<typeof api.partnerLogin>>) => {
+    keepPhone(digits);
+    await authGateway.adoptSession(s);
+    await useSession.getState().claim();
+  };
+
+  const loginWith = async (p: string) => {
+    if (p.length !== 4 || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await finish(await api.partnerLogin(digits, p));
+    } catch (e) {
+      fail(e);
       setPin('');
     } finally {
       setBusy(false);
     }
   };
+
+  const savePin = async (p: string) => {
+    if (busy) return;
+    if (p !== first) {
+      setError(t('pinsDiffer'));
+      setFirst('');
+      setPin('');
+      setStep('newPin');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await finish(await api.partnerSetPin(digits, code, p));
+    } catch (e) {
+      fail(e);
+      // A wrong or old setup code: ask for it again.
+      setCode('');
+      setFirst('');
+      setPin('');
+      setStep('code');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const title =
+    step === 'phone'
+      ? t('signInTitle')
+      : step === 'pin'
+        ? t('welcomeBack')
+        : step === 'code'
+          ? t('enterSetupCode')
+          : step === 'newPin'
+            ? t('newPin')
+            : t('confirmPin');
 
   return (
     <Frame>
@@ -350,101 +435,182 @@ function PartnerSignIn({ otherAccount = '' }: { otherAccount?: string }) {
         <div className="flex flex-col gap-2 pt-4">
           <p className="m-0 font-mono text-[13px] text-teal-text">{t('appName')}</p>
           <h1 className="m-0 font-display font-extrabold text-[34px] leading-[1.05] tracking-[-0.03em]">
-            {t('signInTitle')}
+            {title}
           </h1>
+          {step !== 'phone' && (
+            <p className="m-0 flex flex-wrap items-center gap-x-3 text-[17px] font-semibold text-ink2">
+              <span className="font-mono tracking-[0.04em] text-ink">{shown(digits)}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  keepPhone(null);
+                  setPhone('');
+                  setCode('');
+                  setFirst('');
+                  go('phone');
+                }}
+                className="text-[15px] font-bold text-teal-text underline underline-offset-4"
+              >
+                {t('changeNumber')}
+              </button>
+            </p>
+          )}
         </div>
         {otherAccount && (
           <p className="m-0 rounded-2xl bg-marigold-soft px-4 py-3 text-[15px] leading-snug text-marigold-text">
             {t('otherAccount')} <span className="font-bold break-all">{otherAccount}</span>
           </p>
         )}
-        <form
-          className="flex flex-col gap-5"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submit();
-          }}
-        >
-          <label className="flex flex-col gap-2">
-            <span className="text-[16px] font-bold text-ink2">{t('mobile')}</span>
-            <span
-              className={`flex items-center h-16 rounded-2xl bg-card px-2 gap-3 transition-shadow ring-[1.5px] focus-within:ring-2 focus-within:ring-teal ${digits.length === 10 ? 'ring-ink/40' : 'ring-line'}`}
-            >
-              <span className="flex-none flex items-center h-12 px-3 rounded-xl bg-sunk font-mono text-[18px] font-bold text-ink">
-                +91
-              </span>
-              <input
-                value={digits.length > 5 ? `${digits.slice(0, 5)} ${digits.slice(5)}` : digits}
-                onChange={(e) => {
-                  let d = e.target.value.replace(/\D/g, '');
-                  if (d.length > 10 && d.startsWith('91')) d = d.slice(2);
-                  if (d.length > 10 && d.startsWith('0')) d = d.slice(1);
-                  setPhone(d.slice(0, 10));
-                }}
-                inputMode="tel"
-                autoComplete="tel-national"
-                aria-label={t('mobile')}
-                className="flex-1 min-w-0 bg-transparent font-mono text-[23px] tracking-[0.06em] text-ink outline-none placeholder:text-ink2/40"
-                placeholder="98765 43210"
-              />
-              {digits.length === 10 && (
-                <span
-                  className="flex-none grid place-items-center size-8 mr-1 rounded-full bg-[#1f8a4c] text-white text-[15px] font-bold"
-                  aria-hidden="true"
-                >
-                  ✓
-                </span>
-              )}
-            </span>
-          </label>
-          {mode === 'setup' && (
-            <>
-              <p className="m-0 text-[15px] leading-relaxed text-ink2">{t('setupHelp')}</p>
-              <CodeBoxes
-                label={t('setupCode')}
-                value={code}
-                onChange={setCode}
-                length={6}
-                invalid={!!error}
-              />
-            </>
-          )}
-          <CodeBoxes
-            label={mode === 'setup' ? t('newPin') : t('pin')}
-            value={pin}
-            onChange={setPin}
-            length={4}
-            masked
-            invalid={!!error}
-          />
-          {error && (
-            <p
-              role="alert"
-              className="m-0 rounded-2xl bg-blush px-4 py-3 text-[16px] font-semibold text-blush-text"
-            >
-              {error}
-            </p>
-          )}
-          <button type="submit" disabled={!ready || busy} className={`${bigButton('brand')} w-full`}>
-            {busy ? t('pleaseWait') : mode === 'pin' ? t('signIn') : t('savePin')}
-          </button>
-        </form>
-        <div className="flex flex-col items-start gap-3">
-          <button
-            type="button"
-            onClick={() => {
-              setError('');
-              setMode(mode === 'pin' ? 'setup' : 'pin');
+
+        {step === 'phone' && (
+          <form
+            className="flex flex-col gap-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void lookup();
             }}
-            className="text-[16px] font-bold text-teal-text underline underline-offset-4"
           >
-            {mode === 'pin' ? t('firstTime') : t('haveCode')}
-          </button>
+            <label className="flex flex-col gap-2">
+              <span className="text-[16px] font-bold text-ink2">{t('mobile')}</span>
+              <span
+                className={`flex items-center h-16 rounded-2xl bg-card px-2 gap-3 transition-shadow ring-[1.5px] focus-within:ring-2 focus-within:ring-teal ${digits.length === 10 ? 'ring-ink/40' : 'ring-line'}`}
+              >
+                <span className="flex-none flex items-center h-12 px-3 rounded-xl bg-sunk font-mono text-[18px] font-bold text-ink">
+                  +91
+                </span>
+                <input
+                  value={digits.length > 5 ? `${digits.slice(0, 5)} ${digits.slice(5)}` : digits}
+                  onChange={(e) => {
+                    let d = e.target.value.replace(/\D/g, '');
+                    if (d.length > 10 && d.startsWith('91')) d = d.slice(2);
+                    if (d.length > 10 && d.startsWith('0')) d = d.slice(1);
+                    setPhone(d.slice(0, 10));
+                    setError('');
+                  }}
+                  inputMode="tel"
+                  autoComplete="tel-national"
+                  aria-label={t('mobile')}
+                  className="flex-1 min-w-0 bg-transparent font-mono text-[23px] tracking-[0.06em] text-ink outline-none placeholder:text-ink2/40"
+                  placeholder="98765 43210"
+                />
+                {digits.length === 10 && (
+                  <span
+                    className="flex-none grid place-items-center size-8 mr-1 rounded-full bg-[#1f8a4c] text-white text-[15px] font-bold"
+                    aria-hidden="true"
+                  >
+                    ✓
+                  </span>
+                )}
+              </span>
+            </label>
+            {error && <ErrorLine text={error} />}
+            <button
+              type="submit"
+              disabled={digits.length !== 10 || busy}
+              className={`${bigButton('brand')} w-full`}
+            >
+              {busy ? t('pleaseWait') : t('continue')}
+            </button>
+          </form>
+        )}
+
+        {step === 'pin' && (
+          <div className="flex flex-col gap-5">
+            <CodeBoxes
+              key="pin"
+              label={t('pin')}
+              value={pin}
+              onChange={(v) => {
+                setPin(v);
+                setError('');
+              }}
+              onComplete={(v) => void loginWith(v)}
+              length={4}
+              masked
+              autoFocus
+              invalid={!!error}
+            />
+            {error && <ErrorLine text={error} />}
+            {busy && <p className="m-0 text-[16px] font-semibold text-ink2">{t('pleaseWait')}</p>}
+          </div>
+        )}
+
+        {step === 'code' && (
+          <div className="flex flex-col gap-5">
+            <p className="m-0 text-[16px] leading-relaxed text-ink2">{t('setupHelp')}</p>
+            <CodeBoxes
+              key="code"
+              label={t('setupCode')}
+              value={code}
+              onChange={(v) => {
+                setCode(v);
+                setError('');
+              }}
+              onComplete={() => go('newPin')}
+              length={6}
+              autoFocus
+              invalid={!!error}
+            />
+            {error && <ErrorLine text={error} />}
+          </div>
+        )}
+
+        {(step === 'newPin' || step === 'confirmPin') && (
+          <div className="flex flex-col gap-5">
+            <p className="m-0 text-[16px] leading-relaxed text-ink2">
+              {step === 'newPin' ? t('newPinHelp') : t('confirmPinHelp')}
+            </p>
+            <CodeBoxes
+              key={step}
+              label={step === 'newPin' ? t('newPin') : t('confirmPin')}
+              value={pin}
+              onChange={(v) => {
+                setPin(v);
+                if (step === 'newPin') setError('');
+              }}
+              onComplete={(v) => {
+                if (step === 'newPin') {
+                  setFirst(v);
+                  setPin('');
+                  setStep('confirmPin');
+                } else void savePin(v);
+              }}
+              length={4}
+              masked
+              autoFocus
+              invalid={!!error}
+            />
+            {error && <ErrorLine text={error} />}
+            {busy && <p className="m-0 text-[16px] font-semibold text-ink2">{t('pleaseWait')}</p>}
+          </div>
+        )}
+
+        <div className="flex flex-col items-start gap-3">
+          {step === 'pin' && (
+            <button
+              type="button"
+              onClick={() => {
+                setCode('');
+                go('code');
+              }}
+              className="text-[16px] font-bold text-teal-text underline underline-offset-4"
+            >
+              {t('forgotPinCode')}
+            </button>
+          )}
           <a href="/contact" className="text-[15px] font-semibold text-ink2 underline underline-offset-4">
             {t('forgot')}
           </a>
         </div>
       </div>
     </Frame>
+  );
+}
+
+function ErrorLine({ text }: { text: string }) {
+  return (
+    <p role="alert" className="m-0 rounded-2xl bg-blush px-4 py-3 text-[16px] font-semibold text-blush-text">
+      {text}
+    </p>
   );
 }

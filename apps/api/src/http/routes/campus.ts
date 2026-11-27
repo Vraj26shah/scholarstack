@@ -624,6 +624,13 @@ campusRoutes.post('/admin/push/run', async (c) => {
 
 campusRoutes.get('/partner/status', (c) => c.json({ available: c.get('container').partnerLogin.available }));
 
+/** Step one: what this number needs next (its PIN, or the setup code and a new PIN). */
+campusRoutes.post('/partner/lookup', async (c) => {
+  await throttle(c, 'partner-login', (await requestMeta(c)).ipHash);
+  const { phone } = partnerLoginSchema.pick({ phone: true }).parse(await c.req.json());
+  return c.json(await c.get('container').partnerLogin.lookup(phone));
+});
+
 campusRoutes.post('/partner/login', async (c) => {
   await throttle(c, 'partner-login', (await requestMeta(c)).ipHash);
   const body = partnerLoginSchema.parse(await c.req.json());

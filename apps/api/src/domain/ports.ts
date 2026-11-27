@@ -491,11 +491,16 @@ export interface DeviceRepository {
   listActive(userId: string, now: Date): Promise<Device[]>;
   latestRevokedAt(userId: string, now: Date): Promise<Date | null>;
   find(deviceId: string): Promise<Device | null>;
-  create(userId: string, label: string): Promise<Device>;
+  create(userId: string, label: string, phoneHash?: string | null): Promise<Device>;
+  /** Devices still signed in (any account) on the phone with this hash. */
+  activeByPhone(phoneHash: string, now: Date): Promise<Device[]>;
+  setPhone(deviceId: string, phoneHash: string): Promise<void>;
   touch(deviceId: string): Promise<void>;
   scheduleRemoval(deviceId: string, removalAt: Date): Promise<void>;
   cancelRemoval(deviceId: string): Promise<void>;
   revoke(deviceId: string): Promise<void>;
+  /** Whether this account ever registered a device whose name starts so (signed out ones too). */
+  everHad(userId: string, labelPrefix: string): Promise<boolean>;
 }
 
 export interface SessionRegistry {

@@ -86,12 +86,14 @@ test('partner: only a PIN opens it, then orders, sales by year and a customer’
   // A student's session doesn't open the restaurant: the PIN screen shows instead.
   await signIn(page, 'asha.25bce10001');
   await page.goto('/partner');
-  await expect(page.getByLabel(/PIN/)).toBeVisible();
+  // Like Groww: the number first, then just the PIN (it signs in on the 4th digit).
+  await expect(page.getByLabel(/मोबाइल नंबर|Mobile number/)).toBeVisible();
   await expect(page.getByText(/restaurant owners only|सिर्फ़ रेस्टोरेंट मालिकों/)).toBeVisible();
 
   await page.locator('input[inputmode="tel"]').fill('98765 43210');
-  await page.getByLabel(/PIN/).fill('1234');
   await page.locator('form button[type="submit"]').click();
+  await expect(page.getByLabel(/PIN/)).toBeVisible();
+  await page.getByLabel(/PIN/).fill('1234');
   await expect(page.getByRole('navigation', { name: 'Partner' })).toBeVisible({ timeout: 15_000 });
   await page.getByRole('button', { name: 'English' }).first().click();
 
@@ -153,7 +155,7 @@ test('attendance: subjects from the timetable, a plan for the next exam', async 
 test('every screen stays inside the app, even after visiting the Partner app', async ({ page }) => {
   await signIn(page, 'planner');
   await page.goto('/partner');
-  await expect(page.getByLabel(/PIN/)).toBeVisible();
+  await expect(page.getByLabel(/मोबाइल नंबर|Mobile number/)).toBeVisible();
   for (const path of [
     '/app',
     '/app/notes',

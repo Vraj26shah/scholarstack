@@ -23,12 +23,24 @@ interface SetupPlugin {
   openAutostart(): Promise<{ opened: boolean }>;
   openNotificationSettings(): Promise<void>;
   setSecure(o: { on: boolean }): Promise<void>;
+  phoneKey?(): Promise<{ key: string }>;
 }
 
 const plugins = () =>
   (window as unknown as { Capacitor?: { Plugins?: Record<string, unknown> } }).Capacitor?.Plugins ?? {};
 const push = () => plugins().PushNotifications as PushPlugin | undefined;
 export const phoneSetup = () => plugins().PartnerSetup as SetupPlugin | undefined;
+
+/** The phone's own ID in the student app (older versions: none). Never in the Partner app: owners share phones freely. */
+export async function phoneKey(): Promise<string | undefined> {
+  if (typeof window === 'undefined' || !isNativeApp() || appMode() !== 'student') return undefined;
+  try {
+    const key = (await phoneSetup()?.phoneKey?.())?.key ?? '';
+    return /^[0-9a-fA-F]{8,64}$/.test(key) ? key : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Running inside one of the apps, with its notification plugin. */
 export const nativePush = () => typeof window !== 'undefined' && isNativeApp() && !!push();

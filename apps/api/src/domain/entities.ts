@@ -325,6 +325,8 @@ export interface Device {
   createdAt: Date;
   lastSeenAt: Date;
   revokedAt: Date | null;
+  /** The Android app: a hash of the phone's own ID (null for browsers and older app versions). */
+  phoneHash?: string | null;
 }
 
 export interface ActiveSession {

@@ -158,6 +158,7 @@ const toDevice = (r: Row): Device => ({
   createdAt: new Date(r.created_at as string),
   lastSeenAt: new Date(r.last_seen_at as string),
   revokedAt: r.revoked_at ? new Date(r.revoked_at as string) : null,
+  phoneHash: (r.phone_hash as string | null) ?? null,
 });
 
 const toOrder = (r: Row): Order => ({
@@ -867,6 +868,17 @@ export class SupabaseProfiles implements ProfileRepository {
 
 export class SupabaseDevices implements DeviceRepository {
   constructor(private readonly db: SupabaseClient) {}
+  async everHad(userId: string, labelPrefix: string) {
+    const rows = must(
+      await this.db
+        .from('devices')
+        .select('id')
+        .eq('user_id', userId)
+        .ilike('label', `${labelPrefix.replace(/[%_\\]/g, '')}%`)
+        .limit(1),
+    ) as Row[];
+    return rows.length > 0;
+  }
   async latestRevokedAt(userId: string, now: Date) {
     const row = must(
       await this.db
@@ -899,10 +911,30 @@ export class SupabaseDevices implements DeviceRepository {
     ) as Row | null;
     return row ? toDevice(row) : null;
   }
-  async create(userId: string, label: string) {
+  async activeByPhone(phoneHash: string, now: Date) {
+    const rows = must(
+      await this.db
+        .from('devices')
+        .select('*')
+        .eq('phone_hash', phoneHash)
+        .or(`revoked_at.is.null,revoked_at.gt.${now.toISOString()}`),
+    ) as Row[];
+    return rows.map(toDevice);
+  }
+  async setPhone(deviceId: string, phoneHash: string) {
+    if (!isUuid(deviceId)) return;
+    must(await this.db.from('devices').update({ phone_hash: phoneHash }).eq('id', deviceId));
+  }
+  async create(userId: string, label: string, phoneHash: string | null = null) {
     try {
       return toDevice(
-        must(await this.db.from('devices').insert({ user_id: userId, label }).select('*').single()) as Row,
+        must(
+          await this.db
+            .from('devices')
+            .insert({ user_id: userId, label, ...(phoneHash ? { phone_hash: phoneHash } : {}) })
+            .select('*')
+            .single(),
+        ) as Row,
       );
     } catch (error) {
       if (error instanceof Error && error.message.includes('SS_DEVICE_LIMIT')) throw new DeviceLimitReached();
