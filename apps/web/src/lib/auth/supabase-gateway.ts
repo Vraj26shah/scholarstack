@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { appMode, isNativeApp } from '../app-mode';
 import { env } from '../env';
 import type { AuthGateway } from './gateway';
 
@@ -8,6 +9,18 @@ function isAdminContext(): boolean {
     typeof window !== 'undefined' &&
     (window.location?.pathname.startsWith('/admin') || window.location?.search.includes('admin=1'))
   );
+}
+
+/**
+ * Where Google and the email link send the student back. In a browser: this site's
+ * /auth/callback. In the Android apps, Google sign-in (and the emailed link) runs in the phone's
+ * browser, so it comes back to the app's own address instead; the app opens /auth/callback
+ * inside itself (MainActivity.finishSignIn), where the sign-in's one-time key is kept.
+ */
+export function authCallbackUrl(): string {
+  if (isNativeApp())
+    return `${appMode() === 'partner' ? 'com.scholarstack.partner' : 'com.scholarstack.app'}://auth/callback`;
+  return `${window.location.origin}/auth/callback`;
 }
 
 /**
@@ -63,7 +76,7 @@ export class SupabaseAuthGateway implements AuthGateway {
       options: {
         shouldCreateUser: true,
         captchaToken,
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: authCallbackUrl(),
       },
     });
     if (error) {
@@ -132,7 +145,7 @@ export class SupabaseAuthGateway implements AuthGateway {
     const { error } = await (await this.client).auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: authCallbackUrl(),
         queryParams,
       },
     });

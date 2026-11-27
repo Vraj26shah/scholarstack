@@ -3,6 +3,7 @@ import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { signal, track } from '../../lib/analytics';
 import { ApiError, api, friendly } from '../../lib/api';
+import { appMode, isNativeApp } from '../../lib/app-mode';
 import { authGateway } from '../../lib/auth';
 import { env, isDemo } from '../../lib/env';
 import { STUDENT_HOME, homeFor } from '../../lib/landing';
@@ -34,6 +35,9 @@ function safeNext(raw: string | null): string {
 }
 
 export function SignInPage() {
+  // Inside the Android app: no theme switch (it's under Me), room for the status bar, and words
+  // that say Google and the email link come back to the app.
+  const inApp = isNativeApp() || appMode() === 'student';
   const [params] = useSearchParams();
   const next = safeNext(params.get('next'));
   const navigate = useNavigate();
@@ -177,11 +181,13 @@ export function SignInPage() {
 
   return (
     <div className="min-h-dvh flex flex-col md:flex-row">
-      <section className="relative overflow-hidden bg-brand text-white md:w-[46%] px-6 pt-6 pb-28 md:pb-10 md:min-h-dvh flex flex-col rounded-b-[36px] md:rounded-none md:rounded-r-[36px]">
+      <section
+        className={`relative overflow-hidden bg-brand text-white md:w-[46%] px-6 ${inApp ? 'pt-[calc(env(safe-area-inset-top)+20px)]' : 'pt-6'} pb-28 md:pb-10 md:min-h-dvh flex flex-col rounded-b-[36px] md:rounded-none md:rounded-r-[36px]`}
+      >
         <Ambient tone="navy" />
         <div className="flex items-center justify-between">
           <Wordmark onDark size="sm" />
-          <ThemeToggle onDark />
+          {!inApp && <ThemeToggle onDark />}
         </div>
         <button
           type="button"
@@ -191,7 +197,7 @@ export function SignInPage() {
           className="mt-4 -ml-1 inline-flex items-center gap-0.5 border-0 bg-transparent p-0 text-sm font-semibold text-white/80 hover:text-white cursor-pointer"
         >
           <ChevronLeft size={16} />
-          {back.label}
+          {inApp ? 'Back' : back.label}
         </button>
         <h1 className="mt-10 md:mt-auto mb-0 font-display font-extrabold text-[clamp(48px,8.5vw,96px)] leading-[0.92] tracking-[-0.055em]">
           {isAdmin ? (
@@ -273,6 +279,12 @@ export function SignInPage() {
                           ? 'Continue with Admin Google'
                           : 'Continue with Google'}
                     </Button>
+                    {inApp && (
+                      <p className="m-0 -mt-1 text-[13px] text-ink2">
+                        Google opens in your phone's browser for a moment, then brings you back here, signed
+                        in.
+                      </p>
+                    )}
                     <div className="flex items-center gap-3 font-mono text-[11px] tracking-[0.12em] text-ink2">
                       <span className="flex-1 h-px bg-line" />
                       or use email
@@ -355,8 +367,11 @@ export function SignInPage() {
                   {isAdmin ? 'Check your inbox' : 'Check your college inbox'}
                 </p>
                 <p className="m-0 text-[15px] text-ink2">
-                  We sent a sign-in link to <strong className="text-ink">{email}</strong>. Open it in this
-                  browser to sign in automatically. It can take a minute; check Spam too.
+                  We sent a sign-in link to <strong className="text-ink">{email}</strong>.{' '}
+                  {inApp
+                    ? 'Open the email on this phone and tap the link: it brings you back to the app, signed in.'
+                    : 'Open it in this browser to sign in automatically.'}{' '}
+                  It can take a minute; check Spam too.
                 </p>
                 <button
                   type="button"

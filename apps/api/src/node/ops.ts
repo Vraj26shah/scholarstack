@@ -306,7 +306,12 @@ async function configureAuth(mgmt: SupabaseManagement) {
           : [];
       const callback = `${env.APP_URL!.replace(/\/+$/, '')}/auth/callback`;
       allowed.push(callback);
-      steps.push(['application auth callback URL', { uri_allow_list: [...new Set(allowed)].join(',') }]);
+      // The Android apps: Google and the emailed link come back to the app itself (MainActivity).
+      allowed.push('com.scholarstack.app://auth/callback', 'com.scholarstack.partner://auth/callback');
+      steps.push([
+        'application auth callback URLs (website and apps)',
+        { uri_allow_list: [...new Set(allowed)].join(',') },
+      ]);
     } catch (e) {
       warn(
         `application auth callback URL: ${(e as Error).message.slice(0, 160)} — set it in the dashboard (SETUP.md step 3)`,
