@@ -33,7 +33,10 @@ test('restaurant fee, handover code and settling up, end to end', async ({ page 
   await page.getByRole('button', { name: 'Order now' }).click();
   await page.getByRole('button', { name: /^Add .*thali/ }).click();
   const bill = page.getByRole('complementary', { name: 'Order slip' });
-  await bill.getByRole('radio', { name: /Pickup/ }).check().catch(() => {});
+  await bill
+    .getByRole('radio', { name: /Pickup/ })
+    .check()
+    .catch(() => {});
   const deliver = bill.getByLabel('Deliver to');
   if (await deliver.isVisible().catch(() => false)) await deliver.fill('Block C, room 9');
   await bill.getByLabel('Name').fill('Kiran');
@@ -82,7 +85,10 @@ test('restaurant fee, handover code and settling up, end to end', async ({ page 
   await page.goto('/admin?section=fees');
   await page.getByRole('button', { name: /Radha Rani Ka/ }).click();
   await expect(page.getByText(code).first()).toBeVisible();
-  const owed = (await page.getByText('Owed now').locator('xpath=following-sibling::p[1]').textContent())!.trim();
+  const owed = (await page
+    .getByText('Owed now')
+    .locator('xpath=following-sibling::p[1]')
+    .textContent())!.trim();
   await page.getByRole('button', { name: 'Payment / adjustment' }).click();
   await page.getByLabel('Amount ₹').fill(owed.replace(/[₹,]/g, ''));
   await page.getByPlaceholder(/Note \(required\)/).fill('UPI ref 1234');
