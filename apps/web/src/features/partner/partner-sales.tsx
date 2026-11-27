@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../../lib/api';
 import { Skeleton } from '../../shared/ui/feedback';
+import { SalesList } from '../restaurant/sales-list';
 import { rupees } from '../restaurant/shared';
 import { type TextKey, useT } from './i18n';
 
@@ -207,6 +208,25 @@ export function PartnerSales({ mess }: { mess: OwnedMessDto }) {
             </>
           ) : (
             <p className="m-0 text-[18px] text-ink2 font-semibold">{t('noSales')}</p>
+          )}
+          {(d.sales?.length ?? 0) > 0 && (
+            <SalesList
+              big
+              sales={d.sales}
+              count={d.totals.confirmed}
+              revenue={d.totals.revenue}
+              words={{
+                latest: t('latestSales'),
+                title: t('everySale'),
+                none: t('noSales'),
+                more: t('showAll'),
+                upi: t('paidUpiTag'),
+                tiffin: t('tiffinTag'),
+                notCollected: t('notCollectedPaid'),
+                delivery: t('delivery'),
+                pickup: t('pickup'),
+              }}
+            />
           )}
         </>
       )}

@@ -1,4 +1,6 @@
+import { formatMobile, isOwnerAddress } from '@ss/contracts';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { rupees } from '../restaurant/shared';
@@ -15,6 +17,9 @@ export function AppsOverviewPanel() {
     queryFn: api.adminAppsSummary,
     refetchInterval: 60_000,
   });
+  // Who runs each restaurant, and how their Partner app sign-in stands: nothing hidden from the admin.
+  const messes = useQuery({ queryKey: ['admin-messes'], queryFn: api.adminMesses });
+  const logins = useQuery({ queryKey: ['admin-owner-logins'], queryFn: api.adminOwnerLogins });
   return (
     <Panel title="Apps & restaurants">
       <Note>
@@ -86,20 +91,12 @@ export function AppsOverviewPanel() {
             ) : (
               <ul className="m-0 p-0 list-none">
                 {q.data.byRestaurant.map((r) => (
-                  <li
+                  <RestaurantRow
                     key={r.slug}
-                    className="flex items-center justify-between gap-3 border-b border-line py-3"
-                  >
-                    <span className="min-w-0">
-                      <span className="block font-semibold truncate">{r.name}</span>
-                      <span className="block text-[13px] text-ink2">
-                        {r.open ? 'Taking orders' : 'Closed'} · {r.orders} orders
-                      </span>
-                    </span>
-                    <span className="flex-none font-display text-[20px] font-bold tabular-nums">
-                      {rupees(r.revenue)}
-                    </span>
-                  </li>
+                    row={r}
+                    owners={messes.data?.find((m) => m.slug === r.slug)?.ownerEmails ?? null}
+                    logins={logins.data?.owners ?? []}
+                  />
                 ))}
               </ul>
             )}
@@ -107,5 +104,88 @@ export function AppsOverviewPanel() {
         </>
       )}
     </Panel>
+  );
+}
+
+type Row = { slug: string; name: string; open: boolean; orders: number; revenue: number };
+type Login = {
+  phone: string;
+  name: string;
+  email: string;
+  hasPin: boolean;
+  setupUntil: string | null;
+  lockedUntil: string | null;
+  lastLoginAt: string | null;
+};
+
+/** One restaurant for the admin: takings, who can open it and how their sign-in stands, and links in. */
+function RestaurantRow({ row: r, owners, logins }: { row: Row; owners: string[] | null; logins: Login[] }) {
+  const now = Date.now();
+  const state = (l: Login | undefined) =>
+    !l
+      ? 'email sign-in'
+      : l.lockedUntil && Date.parse(l.lockedUntil) > now
+        ? 'locked (wrong PINs)'
+        : l.hasPin
+          ? `PIN set · last sign-in ${l.lastLoginAt ? new Date(l.lastLoginAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'never'}`
+          : l.setupUntil && Date.parse(l.setupUntil) > now
+            ? 'setup code waiting'
+            : 'no PIN yet: give a setup code';
+  return (
+    <li className="flex flex-col gap-2 border-b border-line py-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block font-semibold truncate">{r.name}</span>
+          <span className="block text-[13px] text-ink2">
+            {r.open ? 'Taking orders' : 'Closed'} · {r.orders} orders
+          </span>
+        </span>
+        <span className="flex-none font-display text-[20px] font-bold tabular-nums">{rupees(r.revenue)}</span>
+      </div>
+      {owners && owners.length === 0 && (
+        <p className="m-0 rounded-lg bg-marigold-soft px-3 py-2 text-[13px] font-semibold text-marigold-text">
+          Nobody can open this restaurant yet. Add the owner in Owner logins.
+        </p>
+      )}
+      {owners && owners.length > 0 && (
+        <ul className="m-0 p-0 list-none flex flex-col gap-1 text-[13px]">
+          {owners.map((e) => {
+            const login = logins.find((l) => l.email === e);
+            return (
+              <li key={e} className="flex flex-wrap gap-x-2">
+                <span className="font-semibold text-ink">
+                  {login
+                    ? `${login.name ? `${login.name} · ` : ''}${formatMobile(login.phone)}`
+                    : isOwnerAddress(e)
+                      ? formatMobile(e.slice(1, 11))
+                      : e}
+                </span>
+                <span className="text-ink2">{state(login)}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Link
+          to={`/orders?mess=${r.slug}`}
+          className="inline-flex items-center h-8 px-3 rounded-full border border-line text-[13px] font-semibold text-ink no-underline hover:border-ink2"
+        >
+          Orders
+        </Link>
+        <Link
+          to={`/orders?mess=${r.slug}&tab=insights`}
+          className="inline-flex items-center h-8 px-3 rounded-full border border-line text-[13px] font-semibold text-ink no-underline hover:border-ink2"
+        >
+          Sales
+        </Link>
+        <Link
+          to="/admin?section=owner-logins"
+          className="inline-flex items-center h-8 px-3 rounded-full border border-line text-[13px] font-semibold text-ink no-underline hover:border-ink2"
+        >
+          Owners
+        </Link>
+      </div>
+    </li>
   );
 }

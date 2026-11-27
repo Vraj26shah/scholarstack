@@ -1344,6 +1344,8 @@ export interface OwnerInsightsDto {
   topCustomers: { name: string; orders: number; spent: number }[];
   /** Offers used on confirmed orders: how often, and how much they gave away. */
   offers: { label: string; orders: number; discount: number; revenue: number }[];
+  /** Every sale in the period (newest first, up to 300): what was sold, to whom, for how much. */
+  sales: OwnerSaleDto[];
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1461,4 +1463,23 @@ export interface OrderStandingDto {
   payFirst: boolean;
   /** Ordering is paused until this moment (null = not paused). */
   pausedUntil: string | null;
+}
+
+/** One sale in an owner's Sales / Insights list. */
+export interface OwnerSaleDto {
+  id: string;
+  code: string;
+  at: string;
+  name: string;
+  items: string;
+  /** Rupees the restaurant gets (after any offer). */
+  total: number;
+  discount: number;
+  offer: string;
+  mode: 'delivery' | 'pickup';
+  /** Paid first by UPI and confirmed by the restaurant. */
+  paidUpi: boolean;
+  tiffin: boolean;
+  /** Paid but never collected (still a sale: the restaurant has the money). */
+  notCollected: boolean;
 }

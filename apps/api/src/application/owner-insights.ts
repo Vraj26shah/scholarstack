@@ -22,6 +22,10 @@ const MONTHS_LONG = [
 ];
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const SOLD: MessOrderRecord['status'][] = ['accepted', 'ready', 'done'];
+/** A sale: accepted, ready or delivered, or paid first by UPI and then never collected (the
+ *  restaurant has the money). Cancelled, declined and unanswered orders are not. */
+export const isSold = (o: MessOrderRecord) =>
+  SOLD.includes(o.status) || (!!o.chat.noShowAt && o.chat.payment === 'paid');
 
 /** "2026-11-25" + n days. */
 export const addDays = (date: string, n: number) =>
@@ -107,7 +111,7 @@ function totals(
   earlierCustomers: Set<string>,
   everCustomers: Set<string>,
 ): InsightTotalsDto {
-  const sold = orders.filter((o) => SOLD.includes(o.status));
+  const sold = orders.filter((o) => isSold(o));
   const revenue = sold.reduce((n, o) => n + o.total, 0);
   const customers = new Set(orders.map((o) => o.userId));
   const visitors = new Set(views.map((v) => v.visitor));
@@ -195,7 +199,7 @@ export function computeInsights(input: {
     const b = byKey.get(keyOf(o));
     if (!b) continue;
     b.orders += 1;
-    if (SOLD.includes(o.status)) b.revenue += o.total;
+    if (isSold(o)) b.revenue += o.total;
   }
   // Views are counted per day, so a day's chart has no hourly views (the totals still have them).
   if (period !== 'day') {
@@ -213,7 +217,7 @@ export function computeInsights(input: {
   }
 
   const dishes = new Map<string, { name: string; qty: number; revenue: number; orders: number }>();
-  for (const o of cur.filter((x) => SOLD.includes(x.status)))
+  for (const o of cur.filter((x) => isSold(x)))
     for (const l of o.lines) {
       const d = dishes.get(l.name.toLowerCase()) ?? { name: l.name, qty: 0, revenue: 0, orders: 0 };
       d.qty += l.qty;
@@ -233,7 +237,7 @@ export function computeInsights(input: {
     const p0 = people.get(o.userId) ?? { name: o.name, orders: 0, spent: 0 };
     p0.name = o.name || p0.name;
     p0.orders += 1;
-    if (SOLD.includes(o.status)) p0.spent += o.total;
+    if (isSold(o)) p0.spent += o.total;
     people.set(o.userId, p0);
   }
 
@@ -256,6 +260,28 @@ export function computeInsights(input: {
       pickup: cur.filter((o) => o.mode === 'pickup').length,
     },
     topCustomers: [...people.values()].sort((a, b) => b.spent - a.spent || b.orders - a.orders).slice(0, 5),
-    offers: offerUse(cur.filter((o) => SOLD.includes(o.status))),
+    offers: offerUse(cur.filter((o) => isSold(o))),
+    // Every sale in the period, newest first, so each rupee can be matched to an order.
+    sales: cur
+      .filter((o) => isSold(o))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 300)
+      .map((o) => ({
+        id: o.id,
+        code: o.code,
+        at: o.createdAt.toISOString(),
+        name: o.name,
+        items: o.lines
+          .map((l) => `${l.qty} × ${l.name}`)
+          .join(', ')
+          .slice(0, 160),
+        total: o.total,
+        discount: o.discount ?? 0,
+        offer: o.offer ?? '',
+        mode: o.mode,
+        paidUpi: o.chat.payment === 'paid',
+        tiffin: !!o.tiffin,
+        notCollected: !!o.chat.noShowAt,
+      })),
   };
 }

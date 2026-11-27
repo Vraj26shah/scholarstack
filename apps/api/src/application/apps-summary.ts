@@ -6,9 +6,9 @@ import type {
   PushRepository,
 } from '../domain/campus-ports';
 import type { Clock } from '../domain/ports';
+import { isSold } from './owner-insights';
 
 const DAY = 86_400_000;
-const SOLD = new Set(['accepted', 'ready', 'done']);
 
 /** Admin's one look at the apps and restaurants: owner sign-ins, devices, orders and takings. */
 export async function appsSummary(p: {
@@ -31,7 +31,8 @@ export async function appsSummary(p: {
   ]);
   const restaurants = messes.filter((m) => m.kind === 'restaurant');
   const ownerEmails = new Set(restaurants.flatMap((m) => m.ownerEmails));
-  const sold = orders.filter((o) => SOLD.has(o.status));
+  // The same rule as the owners' Sales: accepted, ready, delivered, or paid by UPI and never collected.
+  const sold = orders.filter((o) => isSold(o));
   const dayOf = (d: Date) => campusClock(d).date;
   const sum = (list: typeof orders) => list.reduce((n, o) => n + o.total, 0);
   const todays = sold.filter((o) => dayOf(o.createdAt) === today);

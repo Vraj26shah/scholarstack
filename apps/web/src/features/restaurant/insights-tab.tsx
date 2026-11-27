@@ -9,6 +9,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { type ReactNode, useMemo, useState } from 'react';
 import { api, friendly } from '../../lib/api';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
+import { SalesList } from './sales-list';
 import { rupees } from './shared';
 
 const PERIODS: [InsightPeriod, string][] = [
@@ -545,10 +546,12 @@ export function InsightsTab({ mess }: { mess: OwnedMessDto }) {
           </ol>
         </Section>
       </div>
+      <SalesList sales={d.sales ?? []} count={d.totals.confirmed} revenue={d.totals.revenue} />
       <p className="m-0 text-[12.5px] text-ink2">
-        Times are Indian time. Takings count accepted, ready and delivered orders. Visitors are people who
-        opened your page (signed-out visitors are counted by network, once a day; your own visits are not
-        counted). Names of people who only looked are never shown.
+        Times are Indian time. Takings count accepted, ready and delivered orders, and orders paid first by
+        UPI that were never collected. Visitors are people who opened your page (signed-out visitors are
+        counted by network, once a day; your own visits are not counted). Names of people who only looked are
+        never shown.
       </p>
     </div>
   );

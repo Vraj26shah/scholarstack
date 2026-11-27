@@ -579,17 +579,11 @@ function PartnerSignIn({
               onComplete={(v) => void loginWith(v)}
               length={4}
               masked
+              autoFocus
               invalid={!!error}
             />
             {error && <ErrorLine text={error} />}
             {busy && <p className="m-0 text-[16px] font-semibold text-ink2">{t('pleaseWait')}</p>}
-            <PinPad
-              disabled={busy}
-              onKey={(k) => {
-                setError('');
-                typeKey(pin, k, 4, setPin, (v) => void loginWith(v));
-              }}
-            />
           </div>
         )}
 
@@ -606,15 +600,10 @@ function PartnerSignIn({
               }}
               onComplete={() => go('newPin')}
               length={6}
+              autoFocus
               invalid={!!error}
             />
             {error && <ErrorLine text={error} />}
-            <PinPad
-              onKey={(k) => {
-                setError('');
-                typeKey(code, k, 6, setCode, () => go('newPin'));
-              }}
-            />
           </div>
         )}
 
@@ -640,23 +629,11 @@ function PartnerSignIn({
               }}
               length={4}
               masked
+              autoFocus
               invalid={!!error}
             />
             {error && <ErrorLine text={error} />}
             {busy && <p className="m-0 text-[16px] font-semibold text-ink2">{t('pleaseWait')}</p>}
-            <PinPad
-              disabled={busy}
-              onKey={(k) => {
-                if (step === 'newPin') setError('');
-                typeKey(pin, k, 4, setPin, (v) => {
-                  if (step === 'newPin') {
-                    setFirst(v);
-                    setPin('');
-                    setStep('confirmPin');
-                  } else void savePin(v);
-                });
-              }}
-            />
           </div>
         )}
 
@@ -681,48 +658,6 @@ function PartnerSignIn({
     </Frame>
   );
 }
-
-/**
- * A big number pad, like banking apps: always on screen (the phone's keyboard doesn't always open
- * by itself in an app) and easy to hit. The phone's keyboard still works too.
- */
-function PinPad({ onKey, disabled }: { onKey: (k: string) => void; disabled?: boolean }) {
-  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'back'];
-  return (
-    <div className="grid grid-cols-3 gap-3 select-none" aria-label="Number pad">
-      {keys.map((k, i) =>
-        k === '' ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed layout
-          <span key={i} />
-        ) : (
-          <button
-            key={k}
-            type="button"
-            disabled={disabled}
-            onClick={() => onKey(k)}
-            aria-label={k === 'back' ? 'Delete' : k}
-            className="h-16 rounded-2xl bg-card text-ink text-[28px] font-bold tabular-nums shadow-[0_0_0_1.5px_var(--line)] active:scale-95 active:bg-sunk transition-transform disabled:opacity-50"
-          >
-            {k === 'back' ? '⌫' : k}
-          </button>
-        ),
-      )}
-    </div>
-  );
-}
-
-/** Types one key into a code; when it reaches `length`, calls `full`. */
-const typeKey = (
-  value: string,
-  key: string,
-  length: number,
-  set: (v: string) => void,
-  full: (v: string) => void,
-) => {
-  const next = key === 'back' ? value.slice(0, -1) : (value + key).slice(0, length);
-  set(next);
-  if (key !== 'back' && next.length === length && value.length < length) full(next);
-};
 
 function ErrorLine({ text }: { text: string }) {
   return (

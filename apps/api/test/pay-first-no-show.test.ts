@@ -162,3 +162,28 @@ describe('pay-first orders', () => {
     });
   });
 });
+
+describe('every sale is shown to the restaurant', () => {
+  it('lists each sale, and a paid order that was never collected still counts', async () => {
+    const s = await setup({ upiId: 'radharani@okaxis', prepayAbove: 1 });
+    // A paid order the student never collected.
+    const paid = (await s.order()).json;
+    await s.student.call('POST', `/me/mess-orders/${paid.id}/paid`);
+    await s.admin.call('POST', `/owner/orders/${paid.id}/paid`);
+    await s.admin.call('PUT', `/owner/orders/${paid.id}`, { status: 'accepted', note: '' });
+    await s.admin.call('POST', `/owner/orders/${paid.id}/no-show`);
+    // A declined order: not a sale.
+    s.clock.advance(2 * 60_000);
+    const declined = (await s.order()).json;
+    await s.admin.call('PUT', `/owner/orders/${declined.id}`, { status: 'rejected', note: 'Closed now' });
+    const d = (await s.admin.call('GET', '/owner/messes/radha-rani-ka-dhaba/insights?period=day')).json;
+    expect(d.sales).toHaveLength(1);
+    expect(d.sales[0]).toMatchObject({
+      code: paid.code,
+      total: paid.total,
+      paidUpi: true,
+      notCollected: true,
+    });
+    expect(d.totals.revenue).toBe(paid.total);
+  });
+});
