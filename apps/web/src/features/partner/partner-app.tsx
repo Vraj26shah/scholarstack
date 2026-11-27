@@ -10,6 +10,7 @@ import { LogoMark, Wordmark } from '../../shared/ui/brand';
 import { CodeBoxes } from '../../shared/ui/code-boxes';
 import { Spinner } from '../../shared/ui/feedback';
 import { Bowl, Calculator, Check, Toolbox } from '../../shared/ui/icons';
+import { useSectionSwipe } from '../../shared/ui/swipe';
 import { useAccountAlerts } from '../chat/alerts';
 import { type TextKey, setLang, useT } from './i18n';
 import { PartnerMenu } from './partner-menu';
@@ -84,6 +85,15 @@ function Signed() {
   const go = (k: Tab) => setParams(k === 'orders' ? {} : { tab: k }, { replace: true });
   const [picked, setPicked] = useState<string | null>(null);
   const messes = q.data ?? [];
+  // Swipe sideways between the four tabs, like the student app. Not inside a More page (its
+  // forms), and the Menu tab turns it off while prices are being changed (data-no-swipe).
+  const keys = TABS.map((x) => x.key);
+  const at = keys.indexOf(tab);
+  useSectionSwipe({
+    enabled: messes.length > 0 && !(tab === 'more' && params.get('page')),
+    ...(at < keys.length - 1 ? { onNext: () => go(keys[at + 1]!) } : {}),
+    ...(at > 0 ? { onPrev: () => go(keys[at - 1]!) } : {}),
+  });
   // In the Partner app, an owner who is signed in gets order alerts straight away (once per
   // phone): a missed order is the one thing that must never happen.
   const alerts = useAccountAlerts();

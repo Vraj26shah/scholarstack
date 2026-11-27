@@ -4,6 +4,8 @@ Status as of 23 Oct 2026 (v0.7.0). **Me** = built here. **You** = an account ste
 Everything marked done is covered by an automated test (see QA_REPORT.md).
 
 ## Done
+- [x] 0.46.0 · Pay-first orders by UPI, "Didn't collect" with strikes (2 → pay first, 3 → paused), tab swipes in both apps (APKs 1.0.2)
+- [ ] 0.46.0 · **You:** deploy for migration `20261127000400_order_pay_first_and_no_shows`; ask each owner for their UPI ID (or they add it under Details) and a pay-first amount
 - [x] 0.45.0 · Free WhatsApp number check for orders, per-student tiffin records, /get-app downloads (APKs 1.0.1), quicker notification switches
 - [ ] 0.45.0 · **You:** WhatsApp Cloud API on 7984182948 (Meta app, webhook `https://scholarstack.campusnotes.workers.dev/api/whatsapp/webhook`), then GitHub secrets `WHATSAPP_VERIFY_TOKEN` + `WHATSAPP_APP_SECRET`; deploy for migration `20261127000300_phone_whatsapp_codes`
 - [x] 0.44.0 · Student app on phones (Today, Notes with year buttons + searchable branch picker, Tools, Me), Partner app for restaurant owners (Hindi/English, orders, sales by day/week/month/year with per-dish trends, sold-out switches, every dashboard section inside the app, customer records), owner mobile + PIN sign-in, app notifications through Firebase, Attendance calculator 2.0 (CAT 1, CAT 2, Term End)

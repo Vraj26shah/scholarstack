@@ -6,6 +6,8 @@ import {
   type MessDto,
   type MessOrderDto,
   type MessOrderStatus,
+  NO_SHOW,
+  type OrderStandingDto,
   type OwnedMessDto,
   type OwnerCustomerDetailDto,
   type OwnerCustomerDto,
@@ -91,11 +93,13 @@ export type OrderViewer = 'student' | 'owner' | 'admin';
 
 export const toDto = (
   o: MessOrderRecord,
-  messName: string,
+  /** The restaurant (its UPI ID is shown on pay-first orders), or just its name. */
+  mess: string | { name: string; upiId?: string },
   viewer: OrderViewer = 'admin',
   topic = '',
 ): MessOrderDto => {
   const c = o.chat;
+  const messName = typeof mess === 'string' ? mess : mess.name;
   const cleared = viewer === 'student' ? c.studentClearedAt : viewer === 'owner' ? c.ownerClearedAt : null;
   const showLast = !!c.lastAt && !!c.lastSender && (!cleared || c.lastAt > cleared);
   return {
@@ -108,8 +112,30 @@ export const toDto = (
       : null,
     topic,
     tiffin: o.tiffin ?? null,
+    payment: c.payment ?? '',
+    upiId: c.payment && typeof mess !== 'string' ? (mess.upiId ?? '') : '',
+    noShow: !!c.noShowAt,
+    trust: null,
   };
 };
+
+const DAY = 24 * 3600 * 1000;
+/** No-shows in the window, from a student's recent orders. */
+export function standingOf(orders: MessOrderRecord[], now: Date): OrderStandingDto {
+  const since = now.getTime() - NO_SHOW.windowDays * DAY;
+  const misses = orders
+    .map((o) => o.chat.noShowAt?.getTime() ?? 0)
+    .filter((t) => t > since)
+    .sort((a, b) => b - a);
+  const paused = misses.length >= NO_SHOW.pauseAt;
+  // Paused until enough of them are older than the window to fall below the line.
+  const until = paused ? misses[NO_SHOW.pauseAt - 1]! + NO_SHOW.windowDays * DAY : 0;
+  return {
+    noShows: misses.length,
+    payFirst: misses.length >= NO_SHOW.payFirstAt,
+    pausedUntil: paused ? new Date(until).toISOString() : null,
+  };
+}
 
 const baseDto = (o: MessOrderRecord, messName: string) => ({
   id: o.id,
@@ -309,7 +335,73 @@ export class OrderService {
     const mess = await this.ownedMess(p, admin, slug);
     const since = new Date(this.clock.now().getTime() - DAY_MS);
     const list = await this.swept(await this.orders.listForMess(slug, since, 200));
-    return Promise.all(list.map(async (o) => toDto(o, mess.name, 'owner', await this.topic(o))));
+    const trust = await this.trustFor(list.filter((o) => ['placed', 'accepted', 'ready'].includes(o.status)));
+    return Promise.all(
+      list.map(async (o) => ({
+        ...toDto(o, mess, 'owner', await this.topic(o)),
+        trust: trust.get(o.userId) ?? null,
+      })),
+    );
+  }
+
+  /** Each student's record across all restaurants: orders that went through, and no-shows. */
+  private async trustFor(list: MessOrderRecord[]) {
+    const out = new Map<string, { orders: number; noShows: number }>();
+    const now = this.clock.now();
+    const users = [...new Set(list.map((o) => o.userId))].slice(0, 30);
+    const lists = await Promise.all(users.map((u) => this.orders.listForUser(u, 100)));
+    users.forEach((userId, i) => {
+      const theirs = lists[i]!;
+      out.set(userId, {
+        orders: theirs.filter((o) => ['accepted', 'ready', 'done'].includes(o.status)).length,
+        noShows: standingOf(theirs, now).noShows,
+      });
+    });
+    return out;
+  }
+
+  /** A student's standing: how many orders they didn't collect, and what that means now. */
+  async standing(p: Principal): Promise<OrderStandingDto> {
+    return standingOf(await this.orders.listForUser(p.userId, 100), this.clock.now());
+  }
+
+  /** The restaurant saw the student's UPI payment arrive: the order can now be accepted. */
+  async confirmPaid(p: Principal, admin: boolean, id: string) {
+    const order = await this.orders.find(id);
+    if (!order) throw fail.notFound('That order');
+    const mess = await this.ownedMess(p, admin, order.messSlug);
+    if (order.status !== 'placed' || !order.chat.payment)
+      throw fail.badRequest('This order has no payment waiting.');
+    let saved = order;
+    if (order.chat.payment !== 'paid') {
+      saved =
+        (await this.orders.patch(
+          id,
+          { payment: 'paid', paidAt: order.chat.paidAt ?? this.clock.now() },
+          'placed',
+        )) ?? order;
+      await this.events?.system(saved, 'The restaurant received the payment.').catch(() => {});
+      await this.events?.ping(saved);
+    }
+    return toDto(saved, mess, 'owner', await this.topic(saved));
+  }
+
+  /** The student never came for it (or never took the delivery): it ends, and counts against them. */
+  async noShow(p: Principal, admin: boolean, id: string) {
+    const order = await this.orders.find(id);
+    if (!order) throw fail.notFound('That order');
+    const mess = await this.ownedMess(p, admin, order.messSlug);
+    if (order.tiffin || !['accepted', 'ready'].includes(order.status))
+      throw fail.badRequest('Only an accepted order that was never collected can be marked.');
+    const saved = await this.orders.patch(
+      id,
+      { status: 'cancelled', endedBy: 'owner', ownerNote: 'Not collected', noShowAt: this.clock.now() },
+      order.status,
+    );
+    if (!saved) throw fail.badRequest('This order just changed. Look again.');
+    await this.events?.statusChanged(saved, mess, 'owner', order.status);
+    const now = (await this.orders.find(id)) ?? saved;
+    return toDto(now, mess, 'owner', await this.topic(now));
   }
 
   async setOpen(p: Principal, admin: boolean, slug: string, open: boolean): Promise<OwnedMessDto> {
@@ -335,6 +427,10 @@ export class OrderService {
     if (!MESS_ORDER_NEXT[order.status].includes(status) && !(runningTiffin && status === 'rejected'))
       throw fail.badRequest(`This order is already ${order.status}; it can't be moved to ${status}.`);
     if (status === 'rejected' && note.length < 3) throw fail.badRequest('Say why, so the student knows.');
+    if (status === 'accepted' && (order.chat.payment === 'due' || order.chat.payment === 'claimed'))
+      throw fail.badRequest(
+        'This order is paid first. Check your UPI app, tap "Payment received", then accept it.',
+      );
     // A tiffin plan has no kitchen steps: accepting it switches it on for its 30 days.
     const to = order.tiffin && status === 'accepted' ? 'done' : status;
     const why =
@@ -349,7 +445,7 @@ export class OrderService {
     await this.events?.statusChanged(saved, mess, 'owner', order.status);
     saved = (await this.orders.find(id)) ?? saved;
     this.replyCache.delete(mess.slug);
-    return toDto(saved, mess.name, 'owner', await this.topic(saved));
+    return toDto(saved, mess, 'owner', await this.topic(saved));
   }
 
   /**
@@ -480,9 +576,13 @@ export class OrderService {
       completed: done.length,
       cancelledByThem: mine.filter((o) => o.status === 'cancelled' && o.chat.endedBy === 'student').length,
       declinedByYou: mine.filter(
-        (o) => o.status === 'rejected' || (o.status === 'cancelled' && o.chat.endedBy === 'owner'),
+        (o) =>
+          o.status === 'rejected' ||
+          (o.status === 'cancelled' && o.chat.endedBy === 'owner' && !o.chat.noShowAt),
       ).length,
       unanswered: mine.filter((o) => o.status === 'cancelled' && o.chat.endedBy === 'auto').length,
+      noShows: mine.filter((o) => o.chat.noShowAt).length,
+      noShowsEverywhere: standingOf(await this.orders.listForUser(userId, 100), now).noShows,
       avgOrder: done.length ? Math.round(spent / done.length) : 0,
       modes: {
         delivery: mine.filter((o) => o.mode === 'delivery').length,
@@ -732,6 +832,12 @@ export class OrderService {
     if (!phone) throw fail.badRequest('Use a 10-digit Indian mobile number.');
     if (await this.extras.blocks?.find(slug, p.userId, phone))
       throw fail.badRequest(`${mess.name} isn't taking orders from this account.`);
+    const past = await this.orders.listForUser(p.userId, 100);
+    const standing = standingOf(past, this.clock.now());
+    if (standing.pausedUntil)
+      throw fail.badRequest(
+        `You didn't collect ${standing.noShows} orders in the last ${NO_SHOW.windowDays} days, so ordering is paused until ${campusClock(new Date(standing.pausedUntil)).date}.`,
+      );
 
     // Prices come from the restaurant's own list, never from the browser.
     const items = new Map(mess.order.flatMap((s) => s.items).map((i) => [i.name.toLowerCase(), i]));
@@ -783,7 +889,7 @@ export class OrderService {
     const subtotal = tiffin
       ? 0
       : priced.filter((x) => !x.combo).reduce((n, { line: l }) => n + l.qty * l.price, 0);
-    const firstOrder = !(await this.orders.listForUser(p.userId, 50)).some(
+    const firstOrder = !past.some(
       (o) => o.messSlug === slug && ['accepted', 'ready', 'done', 'placed'].includes(o.status),
     );
     const deal = bestDiscount(offers, subtotal, { date: today, code: input.promoCode, firstOrder });
@@ -801,13 +907,20 @@ export class OrderService {
       if (today >= mess.dailyOrderCap)
         throw fail.badRequest(`${mess.name} has taken all the orders it can today. Call them instead.`);
     }
-    const order = await this.orders.add({
+    const total = Math.max(0, lines.reduce((n, l) => n + l.qty * l.price, 0) - discount);
+    // Pay first by UPI: big orders (the owner's limit), tiffin plans, and students with no-shows.
+    const payFirst = standing.payFirst || !!tiffin || (mess.prepayAbove > 0 && total > mess.prepayAbove);
+    if (standing.payFirst && !mess.upiId)
+      throw fail.badRequest(
+        `After ${standing.noShows} orders you didn't collect, orders are paid first, and ${mess.name} doesn't take UPI on the site. Call them instead.`,
+      );
+    let order = await this.orders.add({
       code: newCode(),
       messSlug: slug,
       userId: p.userId,
       email: p.email,
       lines,
-      total: Math.max(0, lines.reduce((n, l) => n + l.qty * l.price, 0) - discount),
+      total,
       discount,
       offer: offerLabel,
       mode: input.mode,
@@ -818,8 +931,9 @@ export class OrderService {
       ipHash,
       tiffin,
     });
+    if (payFirst && mess.upiId) order = (await this.orders.patch(order.id, { payment: 'due' })) ?? order;
     await this.events?.placed(order, mess);
-    return toDto(order, mess.name, 'student', await this.topic(order));
+    return toDto(order, mess, 'student', await this.topic(order));
   }
 
   private async checkLimits(userId: string, ipHash: string, slug: string) {
@@ -842,10 +956,10 @@ export class OrderService {
   }
 
   async mine(p: Principal): Promise<MessOrderDto[]> {
-    const names = new Map((await this.messes.list()).map((m) => [m.slug, m.name]));
+    const messes = new Map((await this.messes.list()).map((m) => [m.slug, m]));
     const list = await this.swept(await this.orders.listForUser(p.userId, 20));
     const dtos = await Promise.all(
-      list.map(async (o) => toDto(o, names.get(o.messSlug) ?? '', 'student', await this.topic(o))),
+      list.map(async (o) => toDto(o, messes.get(o.messSlug) ?? '', 'student', await this.topic(o))),
     );
     // A running tiffin plan: meals delivered and missed, and missed meals still to come.
     const plans = list.filter((o) => o.tiffin && o.status === 'done');
@@ -884,10 +998,30 @@ export class OrderService {
     if (!order || order.userId !== p.userId) throw fail.notFound('That order');
     if (order.status !== 'placed')
       throw fail.badRequest('The restaurant has already started it. Call them to change it.');
+    if (order.chat.payment === 'claimed' || order.chat.payment === 'paid')
+      throw fail.badRequest(
+        "You've paid for this one. Call the restaurant to cancel it and get your money back.",
+      );
     await this.orders.setStatus(id, 'cancelled', '');
     const saved = (await this.orders.patch(id, { endedBy: 'student' }))!;
     const mess = await this.messes.find(order.messSlug);
     if (mess) await this.events?.statusChanged(saved, mess, 'student');
-    return toDto(saved, mess?.name ?? '', 'student', await this.topic(saved));
+    return toDto(saved, mess ?? '', 'student', await this.topic(saved));
+  }
+
+  /** The student says they paid by UPI: the restaurant is told to check and accept. */
+  async claimPaid(p: Principal, id: string): Promise<MessOrderDto> {
+    const order = await this.orders.find(id);
+    if (!order || order.userId !== p.userId) throw fail.notFound('That order');
+    const mess = await this.messes.find(order.messSlug);
+    if (!mess || order.status !== 'placed' || !order.chat.payment)
+      throw fail.badRequest('This order has no payment waiting.');
+    let saved = order;
+    if (order.chat.payment === 'due') {
+      saved =
+        (await this.orders.patch(id, { payment: 'claimed', paidAt: this.clock.now() }, 'placed')) ?? order;
+      await this.events?.paymentClaimed(saved, mess);
+    }
+    return toDto(saved, mess, 'student', await this.topic(saved));
   }
 }

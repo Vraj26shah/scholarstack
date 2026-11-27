@@ -32,6 +32,7 @@ import { OffersEditor } from '../restaurant/offers-editor';
 import { rupees } from '../restaurant/shared';
 import { WeekChartEditor } from '../restaurant/week-chart-editor';
 import { RestaurantLink } from '../tools/mess/components/share-link';
+import { trustText } from './pay-first';
 
 const clock = (iso: string) =>
   new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
@@ -84,7 +85,18 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
       api.ownerSetOrder(order.id, status, note),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['owner-orders', order.messSlug] }),
   });
-  const late = order.status === 'placed' && minsAgo(order.createdAt) >= 3;
+  const paid = useMutation({
+    mutationFn: () => api.ownerConfirmPaid(order.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['owner-orders', order.messSlug] }),
+  });
+  const missed = useMutation({
+    mutationFn: () => api.ownerNoShow(order.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['owner-orders', order.messSlug] }),
+  });
+  const [askMissed, setAskMissed] = useState(false);
+  const waitingPay = order.status === 'placed' && (order.payment === 'due' || order.payment === 'claimed');
+  const trust = trustText(order.trust);
+  const late = order.status === 'placed' && !waitingPay && minsAgo(order.createdAt) >= 3;
   const cancelsIn = Math.max(
     0,
     Math.ceil((Date.parse(order.createdAt) + ORDER_TIMERS.autoCancelAfterMs - Date.now()) / 60_000),
@@ -111,12 +123,33 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
       )}
       <p className="m-0 flex flex-wrap gap-x-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-ink">
         {order.mode === 'delivery' ? 'Delivery' : 'Pickup'}
-        {order.status === 'placed' && (
+        {order.status === 'placed' && !waitingPay && order.payment !== 'paid' && (
           <span className={late ? 'text-marigold-text' : 'text-ink2'}>
             Answer within {cancelsIn} min or it cancels
           </span>
         )}
       </p>
+      {order.payment === 'due' && order.status === 'placed' && (
+        <p className="m-0 rounded-lg bg-sunk px-3 py-2 text-[13.5px] text-ink">
+          <strong>Paid first by UPI.</strong> Waiting for {order.name} to pay. Don't start it yet.
+        </p>
+      )}
+      {order.payment === 'claimed' && order.status === 'placed' && (
+        <div className="flex flex-col gap-2 rounded-lg bg-marigold-soft px-3 py-2.5 text-[13.5px] text-marigold-text">
+          <p className="m-0">
+            <strong>
+              {order.name} says they paid {rupees(order.total)}.
+            </strong>{' '}
+            Check your own UPI app or bank SMS (never a screenshot), then confirm.
+          </p>
+          <Button size="sm" disabled={paid.isPending} onClick={() => paid.mutate()} className="self-start">
+            {paid.isPending ? 'Saving…' : 'Payment received'}
+          </Button>
+        </div>
+      )}
+      {order.payment === 'paid' && (
+        <p className="m-0 text-[13.5px] font-semibold text-teal-text">Paid by UPI ✓</p>
+      )}
       <ul className="m-0 p-0 list-none flex flex-col gap-1 text-[15px] text-ink">
         {order.lines.map((l) => (
           <li key={`${l.name}${l.detail}`} className="flex justify-between gap-3">
@@ -148,6 +181,11 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="text-[14px] leading-relaxed text-ink min-w-0">
           <p className="m-0 font-semibold">{order.name}</p>
+          {trust && (
+            <p className={`m-0 text-[13px] ${trust.bad ? 'font-semibold text-blush-text' : 'text-ink2'}`}>
+              {trust.text}
+            </p>
+          )}
           {order.mode === 'delivery' && <p className="m-0">{order.address}</p>}
           <a href={`tel:+91${order.phone}`} className="font-semibold text-ink tabular-nums no-underline">
             {formatMobile(order.phone)}
@@ -174,9 +212,9 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
         </button>
       )}
 
-      {move.error && (
+      {(move.error || paid.error || missed.error) && (
         <p role="alert" className="m-0 text-[13px] text-blush-text">
-          {friendly(move.error)}
+          {friendly(move.error ?? paid.error ?? missed.error)}
         </p>
       )}
       {order.status === 'placed' && !declining && (
@@ -184,7 +222,7 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
           <div className="flex gap-2">
             <Button
               className="flex-1"
-              disabled={move.isPending}
+              disabled={move.isPending || waitingPay}
               onClick={() => move.mutate({ status: 'accepted' })}
             >
               {order.tiffin ? 'Accept tiffin plan' : 'Accept'}
@@ -193,7 +231,7 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
               Decline
             </Button>
           </div>
-          <div className={`flex flex-wrap gap-1.5 ${order.tiffin ? 'hidden' : ''}`}>
+          <div className={`flex flex-wrap gap-1.5 ${order.tiffin || waitingPay ? 'hidden' : ''}`}>
             {ACCEPT.map((n) => (
               <button
                 key={n}
@@ -219,6 +257,11 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
           <span className="text-[13px] font-semibold text-ink2">
             {order.status === 'placed' ? 'Tell the student why' : 'Cancel this order? Tell the student why'}
           </span>
+          {(order.payment === 'paid' || order.payment === 'claimed') && (
+            <span className="text-[13px] font-semibold text-blush-text">
+              They paid {rupees(order.total)} by UPI: return it if you cancel.
+            </span>
+          )}
           <div className="flex flex-wrap gap-1.5">
             {(order.status === 'placed' ? DECLINE : CANCEL).map((r) => (
               <button
@@ -267,17 +310,44 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
           {order.mode === 'delivery' ? 'Delivered' : 'Picked up'}
         </Button>
       )}
-      {(order.status === 'accepted' || order.status === 'ready') && !declining && (
-        <button
-          type="button"
-          onClick={() => {
-            setReason('');
-            setDeclining(true);
-          }}
-          className="self-start border-0 bg-transparent p-0 text-[13.5px] font-semibold text-blush-text underline underline-offset-4 cursor-pointer"
-        >
-          Cancel this order
-        </button>
+      {(order.status === 'accepted' || order.status === 'ready') && !declining && !askMissed && (
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {!order.tiffin && (
+            <button
+              type="button"
+              onClick={() => setAskMissed(true)}
+              className="border-0 bg-transparent p-0 text-[13.5px] font-semibold text-ink2 underline underline-offset-4 cursor-pointer"
+            >
+              Didn't collect
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setReason('');
+              setDeclining(true);
+            }}
+            className="border-0 bg-transparent p-0 text-[13.5px] font-semibold text-blush-text underline underline-offset-4 cursor-pointer"
+          >
+            Cancel this order
+          </button>
+        </div>
+      )}
+      {askMissed && (
+        <div className="flex flex-col gap-2 rounded-lg bg-sunk px-3 py-2.5">
+          <p className="m-0 text-[13.5px] text-ink">
+            {order.name} never collected it? It counts on their record at every restaurant: after 2 they pay
+            first, after 3 they can't order for a while.
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="ink" disabled={missed.isPending} onClick={() => missed.mutate()}>
+              {missed.isPending ? 'Saving…' : 'Yes, not collected'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setAskMissed(false)}>
+              Back
+            </Button>
+          </div>
+        </div>
       )}
     </article>
   );
@@ -1102,6 +1172,8 @@ const toForm = (m: MessDto): OwnerMessInput => ({
   cycleStart: m.cycleStart,
   dailyOrderCap: m.dailyOrderCap ?? 0,
   offers: m.offers ?? [],
+  upiId: m.upiId ?? '',
+  prepayAbove: m.prepayAbove ?? 0,
 });
 
 /**

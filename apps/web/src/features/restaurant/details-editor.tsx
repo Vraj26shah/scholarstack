@@ -124,6 +124,37 @@ export function DetailsEditor({
         />
       </Row>
       <Row
+        label="Your UPI ID (for pay-first orders)"
+        hint="e.g. shopname@okaxis. Students pay you straight; nothing passes through Scholars Stack. Tiffin plans, big orders and students who didn't collect before pay first."
+      >
+        <input
+          className={`${box} max-w-[320px]`}
+          value={form.upiId ?? ''}
+          maxLength={110}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          placeholder="shopname@okaxis"
+          onChange={(e) => onChange({ upiId: e.target.value.trim() })}
+        />
+      </Row>
+      <Row
+        label="Pay first above (₹)"
+        hint="Orders above this amount are paid by UPI before you make them. 0 means only tiffin plans and students who didn't collect before. Needs a UPI ID."
+      >
+        <input
+          className={`${box} max-w-[160px] tabular-nums`}
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={100000}
+          value={form.prepayAbove ?? 0}
+          onChange={(e) =>
+            onChange({ prepayAbove: Math.max(0, Math.min(100000, Math.floor(Number(e.target.value) || 0))) })
+          }
+        />
+      </Row>
+      <Row
         label="Prices at the top of your page"
         hint="Your best-known prices, separated with ·, e.g. Mess thali ₹80 · Tiffin ₹3,600 a month."
       >

@@ -1,6 +1,5 @@
 import {
   MEAL_NAMES,
-  MESS_ORDER_STATUS_TEXT,
   type MessDto,
   type MessOrderDto,
   OPEN_MESS_ORDER,
@@ -32,6 +31,7 @@ import { jumpTo } from '../../../../shared/ui/jump';
 import { askToSignIn } from '../../../auth/sign-in-prompt';
 import { useLive } from '../../../chat/live';
 import { ChatButton, OrderChat } from '../../../chat/order-chat';
+import { PayFirstBox, StandingNote, orderStatusText, useOrderStanding } from '../../../orders/pay-first';
 import { rupees } from '../../../restaurant/shared';
 import { useToolState } from '../../core/storage';
 import { field } from '../../core/ui';
@@ -298,8 +298,9 @@ function Tracker({
       )}
       {tiffinOn ? null : stopped ? (
         <p className="m-0 border-l-[3px] border-blush-text pl-3 text-[15px] text-ink">
-          <strong>{MESS_ORDER_STATUS_TEXT[order.status]}.</strong>
-          {order.ownerNote ? ` “${order.ownerNote}”` : ''}
+          <strong>{orderStatusText(order)}.</strong>
+          {order.ownerNote && !order.noShow ? ` “${order.ownerNote}”` : ''}
+          {order.noShow && " The restaurant says you didn't collect it."}
         </p>
       ) : (
         <>
@@ -316,7 +317,7 @@ function Tracker({
             ))}
           </ol>
           <p className="m-0 text-[14px] text-ink">
-            {MESS_ORDER_STATUS_TEXT[order.status]}
+            {orderStatusText(order)}
             {order.ownerNote ? ` · “${order.ownerNote}”` : ''}
           </p>
         </>
@@ -334,6 +335,7 @@ function Tracker({
               : ''}
         </p>
       )}
+      <PayFirstBox order={order} />
       <ul className="m-0 p-0 list-none text-[14px] leading-relaxed text-ink2">
         {order.lines.map((l) => (
           <li key={`${l.name}${l.detail}`}>
@@ -356,14 +358,14 @@ function Tracker({
           </a>
         )}
       </div>
-      {order.status === 'placed' && waited >= ORDER_TIMERS.nudgeAfterMs && (
+      {order.status === 'placed' && order.payment !== 'due' && waited >= ORDER_TIMERS.nudgeAfterMs && (
         <p className="m-0 rounded-xl bg-marigold-soft px-3 py-2.5 text-[14px] text-marigold-text">
           <strong>Not answered yet.</strong> We've alerted the restaurant again.
           {tel ? ' Call them if it is urgent.' : ''} If nobody answers, the order cancels by itself in{' '}
           {cancelsIn} min.
         </p>
       )}
-      {order.status === 'placed' && (
+      {order.status === 'placed' && order.payment !== 'claimed' && order.payment !== 'paid' && (
         <button
           type="button"
           onClick={onCancel}
@@ -480,6 +482,7 @@ export function OrderPanel({
   // With SMS codes set up, the number is checked once and then fixed; otherwise a tick box.
   const phoneStatus = usePhoneStatus(signedIn);
   const otp = !!phoneStatus.data?.available;
+  const standing = useOrderStanding(signedIn);
   const [activeSection, setActiveSection] = useState<string | null>(null);
 
   const mine = useQuery({
@@ -654,6 +657,10 @@ export function OrderPanel({
       return next;
     });
   const tiffinLine = all.find((i) => i.tiffin && cart[i.key]);
+  // Paid first by UPI: big orders (the owner's limit), tiffin plans, students with no-shows.
+  const payFirst =
+    !!mess.upiId &&
+    (!!standing.data?.payFirst || !!tiffinLine || (mess.prepayAbove > 0 && payable > mess.prepayAbove));
   const todayIso = today;
   const lastStart = (() => {
     const d = new Date(`${today}T00:00:00Z`);
@@ -1273,6 +1280,13 @@ export function OrderPanel({
                           placeholder="Less spicy, no onion…"
                         />
                       </label>
+                      <StandingNote standing={standing.data} />
+                      {payFirst && (
+                        <p className="m-0 rounded-xl bg-marigold-soft px-3 py-2.5 text-[13.5px] leading-snug text-marigold-text">
+                          <strong>Pay first by UPI.</strong> After you confirm, pay {rupees(payable)} straight
+                          to {mess.name} from any UPI app. They make it once the money arrives.
+                        </p>
+                      )}
                       {tried && problem && (
                         <p role="alert" className="m-0 text-[14px] text-blush-text">
                           {problem}
@@ -1295,7 +1309,7 @@ export function OrderPanel({
                         {place.isPending
                           ? 'Sending…'
                           : count
-                            ? `Confirm order · ${rupees(payable)}`
+                            ? `${payFirst ? 'Confirm and pay' : 'Confirm order'} · ${rupees(payable)}`
                             : 'Confirm order'}
                       </Button>
                       <p className="m-0 text-[12.5px] leading-relaxed text-ink2">

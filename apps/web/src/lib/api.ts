@@ -97,6 +97,7 @@ import type {
   MySupportDto,
   OpenReaderDto,
   OrderDto,
+  OrderStandingDto,
   OwnerInsightsDto,
   PackRunBody,
   PackRunDto,
@@ -323,6 +324,15 @@ export class ApiClient {
   /** Where an item photo is served ('' when the item has none). */
   messPhotoUrl = (slug: string, photo: string) =>
     photo ? `${this.base}/mess-photos/${encodeURIComponent(slug)}/${photo}` : '';
+  /** Pay-first orders: the student says they paid; the owner saw it arrive. */
+  claimMessOrderPaid = (id: string) =>
+    this.request<MessOrderDto>('POST', `/me/mess-orders/${encodeURIComponent(id)}/paid`);
+  ownerConfirmPaid = (id: string) =>
+    this.request<MessOrderDto>('POST', `/owner/orders/${encodeURIComponent(id)}/paid`);
+  /** The student never collected an accepted order. */
+  ownerNoShow = (id: string) =>
+    this.request<MessOrderDto>('POST', `/owner/orders/${encodeURIComponent(id)}/no-show`);
+  orderStanding = () => this.request<OrderStandingDto>('GET', '/me/order-standing');
   ownerSetOrder = (id: string, status: MessOrderStatus, note = '') =>
     this.request<MessOrderDto>('PUT', `/owner/orders/${encodeURIComponent(id)}`, { status, note });
   adminMesses = () => this.request<MessDto[]>('GET', '/admin/mess');

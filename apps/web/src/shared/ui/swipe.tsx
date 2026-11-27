@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { appMode } from '../../lib/app-mode';
 import { SwipeHint } from './swipe-hint';
 
 /** Phones only. A swipe counts past a quarter of the screen, or as a quick flick. */
@@ -315,6 +316,8 @@ export function useTrackpadSwipe(opts: {
 
 /** The phone tabs, in the order of the tab bar. */
 const TABS = ['/#catalogue', '/shelf', '/contribute', '/#toolbox'] as const;
+/** The student app's five tabs (Today, Food, Notes, Tools, Me), in the order of its tab bar. */
+export const APP_TABS = ['/app', '/tools/mess-menu', '/app/notes', '/app/tools', '/app/me'] as const;
 
 function tabIndex(pathname: string, hash: string): number {
   if (pathname === '/') return hash === '#toolbox' ? 3 : 0;
@@ -329,13 +332,21 @@ function tabIndex(pathname: string, hash: string): number {
  * swipes between its own sections.
  */
 export function SwipeTabs() {
-  const { pathname, hash } = useLocation();
+  const { pathname, hash, search } = useLocation();
   const navigate = useNavigate();
-  const i = tabIndex(pathname, hash);
+  // The student app swipes between its own tabs, on each tab's main screen (a restaurant
+  // opened from Food, or a chat, keeps its own gestures).
+  const inApp = appMode() === 'student';
+  const tabs: readonly string[] = inApp ? APP_TABS : TABS;
+  const i = inApp
+    ? new URLSearchParams(search).has('chat')
+      ? -1
+      : APP_TABS.indexOf(pathname as (typeof APP_TABS)[number])
+    : tabIndex(pathname, hash);
   useSectionSwipe({
     enabled: i >= 0,
-    ...(i >= 0 && i < TABS.length - 1 ? { onNext: () => navigate(TABS[i + 1]!) } : {}),
-    ...(i > 0 ? { onPrev: () => navigate(TABS[i - 1]!) } : {}),
+    ...(i >= 0 && i < tabs.length - 1 ? { onNext: () => navigate(tabs[i + 1]!) } : {}),
+    ...(i > 0 ? { onPrev: () => navigate(tabs[i - 1]!) } : {}),
   });
   // Above the phone tab bar, the first few visits: the four tabs can be swiped between.
   return i >= 0 ? (

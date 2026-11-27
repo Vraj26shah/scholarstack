@@ -255,6 +255,14 @@ const MessFields = z.object({
   dailyOrderCap: z.number().int().min(0).max(2000).default(0),
   /** Promo codes, automatic deals and combos (see MessOffer). */
   offers: z.array(MessOffer).max(20).default([]),
+  /** The owner's UPI ID ("name@okaxis"): students pay it straight, before pay-first orders are made. */
+  upiId: z
+    .string()
+    .trim()
+    .regex(/^([a-zA-Z0-9._-]{2,64}@[a-zA-Z][a-zA-Z0-9.-]{1,40})?$/, 'Use a UPI ID like shopname@okaxis')
+    .default(''),
+  /** Orders above this many rupees are paid first by UPI (0 = no limit; needs a UPI ID). */
+  prepayAbove: z.number().int().min(0).max(100_000).default(0),
   meals: z.array(MessMeal).min(1).max(4),
   /** A rotating menu: week 1, week 2… counted from cycleStart. One week repeats every week. */
   weeks: z.array(MessWeek).min(1).max(6),
@@ -289,6 +297,8 @@ export const OwnerMessBody = MessFields.pick({
   cycleStart: true,
   dailyOrderCap: true,
   offers: true,
+  upiId: true,
+  prepayAbove: true,
 })
   .refine(uniqueMeals, UNIQUE)
   .refine(mealsInOrder, IN_ORDER);
@@ -344,6 +354,23 @@ export const MESS_ORDER_NEXT: Record<MessOrderStatus, MessOrderStatus[]> = {
   rejected: [],
   cancelled: [],
 };
+
+/**
+ * Students who don't collect what they ordered. The owner marks it ("Didn't collect"); the count
+ * covers every restaurant over the last 60 days. One is a warning, two means paying first by UPI,
+ * three pauses ordering until the oldest one is 60 days old.
+ */
+export const NO_SHOW = { windowDays: 60, payFirstAt: 2, pauseAt: 3 };
+/** A pay-first order not paid in this long is cancelled; once paid the restaurant's usual clock runs. */
+export const PAY_FIRST_WINDOW_MS = 20 * 60_000;
+export const ORDER_PAYMENTS = ['', 'due', 'claimed', 'paid'] as const;
+/** '' = pay on delivery/pickup; due = waiting for the student's UPI payment; claimed = the student
+ *  says they paid; paid = the owner saw the money arrive. */
+export type OrderPayment = (typeof ORDER_PAYMENTS)[number];
+
+/** A UPI app link for paying a restaurant (opens GPay, PhonePe, Paytm… on a phone). */
+export const upiPayLink = (upiId: string, name: string, rupees: number, note: string) =>
+  `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(name.slice(0, 40))}&am=${rupees.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note.slice(0, 40))}`;
 
 export const PlaceMessOrderBody = z.object({
   lines: z
@@ -552,6 +579,9 @@ export interface OwnerCustomerDetailDto {
   /** Cancelled by the student, declined or cancelled by the restaurant, or never answered. */
   cancelledByThem: number;
   declinedByYou: number;
+  /** Orders they didn't collect, here and at every restaurant (last 60 days). */
+  noShows: number;
+  noShowsEverywhere: number;
   unanswered: number;
   /** Rupees per completed order (0 when none). */
   avgOrder: number;
@@ -622,6 +652,14 @@ export interface MessOrderDto {
   /** Rupees taken off by an offer (the total is after it), and which offer ('' = none). */
   discount: number;
   offer: string;
+  /** Paying first by UPI ('' = pays the restaurant on delivery or pickup). */
+  payment: OrderPayment;
+  /** Where to pay ('' unless the order is pay-first). */
+  upiId: string;
+  /** The restaurant marked that the student never collected it. */
+  noShow: boolean;
+  /** For the restaurant: this student's record across all restaurants (null for students). */
+  trust: { orders: number; noShows: number } | null;
 }
 
 export interface OwnedMessDto {
@@ -1410,4 +1448,14 @@ export interface AppsSummaryDto {
   };
   /** Per restaurant, this year (best first). */
   byRestaurant: { slug: string; name: string; open: boolean; orders: number; revenue: number }[];
+}
+
+/** A student's ordering standing from no-shows (see NO_SHOW), for the cart and their orders. */
+export interface OrderStandingDto {
+  /** Orders not collected in the last 60 days, at any restaurant. */
+  noShows: number;
+  /** Every order must be paid first by UPI. */
+  payFirst: boolean;
+  /** Ordering is paused until this moment (null = not paused). */
+  pausedUntil: string | null;
 }

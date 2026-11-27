@@ -1,4 +1,9 @@
-import { MESS_ORDER_STATUS_TEXT, type MessOrderStatus, ORDER_TIMERS } from '@ss/contracts';
+import {
+  MESS_ORDER_STATUS_TEXT,
+  type MessOrderStatus,
+  ORDER_TIMERS,
+  PAY_FIRST_WINDOW_MS,
+} from '@ss/contracts';
 import type {
   LiveSignal,
   MessOrderRecord,
@@ -147,6 +152,26 @@ export class OrderEvents {
     await this.ping(order);
   }
 
+  /** The student says they paid by UPI: the owner checks their UPI app, then accepts. */
+  async paymentClaimed(order: MessOrderRecord, mess: MessRecord) {
+    await this.system(order, `The student says they paid ${rupees(order.total)} by UPI.`).catch(() => {});
+    await this.toOwners(
+      mess,
+      {
+        title: `💰 Paid? Order ${order.code} · ${rupees(order.total)}`,
+        body: `${order.name} says they paid by UPI. Check your UPI app, then tap "Payment received" and accept.`.slice(
+          0,
+          200,
+        ),
+        tag: `order-${order.id}`,
+        url: ownerChatUrl(order).replace(/&chat=.*/, ''),
+        requireInteraction: true,
+      },
+      ORDER_TIMERS.autoCancelAfterMs / 1000,
+    ).catch(() => null);
+    await this.ping(order);
+  }
+
   /** The order moved on: a line in the chat, a notification to whoever didn't do it, and a ping. */
   async statusChanged(
     order: MessOrderRecord,
@@ -161,9 +186,13 @@ export class OrderEvents {
         ? 'The student cancelled this order.'
         : order.status === 'rejected' && from && from !== 'placed'
           ? `The restaurant cancelled this order.${note}`
-          : by === 'auto'
-            ? "Cancelled automatically: the restaurant didn't answer within 10 minutes."
-            : `${STATUS_LINE[order.status] ?? MESS_ORDER_STATUS_TEXT[order.status]}${note}`;
+          : order.chat.noShowAt && order.status === 'cancelled'
+            ? "The restaurant marked this order as not collected. Orders you don't collect count against you: after 2 you pay first, after 3 ordering is paused."
+            : by === 'auto' && order.chat.payment === 'due'
+              ? 'Cancelled automatically: it was not paid within 20 minutes.'
+              : by === 'auto'
+                ? "Cancelled automatically: the restaurant didn't answer within 10 minutes."
+                : `${STATUS_LINE[order.status] ?? MESS_ORDER_STATUS_TEXT[order.status]}${note}`;
     await this.system(order, line).catch(() => {});
     // The student's own cancellation isn't news to them: no unread badge for it.
     if (by === 'student')
@@ -175,7 +204,7 @@ export class OrderEvents {
         mess,
         {
           title: `❌ Order ${order.code} cancelled${by === 'student' ? ` by ${order.name}` : ''}`,
-          body: `${by === 'student' ? "Don't make it" : 'Nobody answered in 10 minutes, so it was cancelled'}: ${orderSummary(order)}`.slice(
+          body: `${by === 'student' ? "Don't make it" : order.chat.payment === 'due' ? 'It was never paid, so it was cancelled' : 'Nobody answered in 10 minutes, so it was cancelled'}: ${orderSummary(order)}`.slice(
             0,
             200,
           ),
@@ -207,8 +236,21 @@ export class OrderEvents {
     const now = this.clock.now().getTime();
     const out: MessOrderRecord[] = [];
     for (const o of list) {
-      const age = now - o.createdAt.getTime();
       const mess = messOf(o.messSlug);
+      // Pay-first: the student has 20 minutes to pay; the owner's clock starts once they say they have.
+      if (o.status === 'placed' && mess && o.chat.payment === 'due') {
+        if (now - o.createdAt.getTime() >= PAY_FIRST_WINDOW_MS) {
+          const done = await this.orders.patch(
+            o.id,
+            { status: 'cancelled', endedBy: 'auto', ownerNote: 'Not paid within 20 minutes' },
+            'placed',
+          );
+          if (done) await this.statusChanged(done, mess, 'auto');
+          out.push((await this.orders.find(o.id)) ?? done ?? o);
+        } else out.push(o);
+        continue;
+      }
+      const age = now - (o.chat.payment && o.chat.paidAt ? o.chat.paidAt : o.createdAt).getTime();
       if (o.status !== 'placed' || !mess || age < ORDER_TIMERS.nudgeAfterMs) {
         out.push(o);
         continue;

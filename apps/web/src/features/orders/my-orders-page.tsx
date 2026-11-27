@@ -1,4 +1,4 @@
-import { MESS_ORDER_STATUS_TEXT, type MessOrderDto, OPEN_MESS_ORDER, TIFFIN_PLAN_TEXT } from '@ss/contracts';
+import { type MessOrderDto, OPEN_MESS_ORDER, TIFFIN_PLAN_TEXT } from '@ss/contracts';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -8,6 +8,7 @@ import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { useLive, usePushWhileOpen } from '../chat/live';
 import { ChatButton, OrderChat } from '../chat/order-chat';
 import { rupees } from '../restaurant/shared';
+import { PayFirstBox, orderStatusText } from './pay-first';
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString('en-IN', {
@@ -91,8 +92,8 @@ export function MyOrdersPage() {
                       <span className="font-mono text-[14px] text-ink2">{o.code}</span>
                     </p>
                     <p className={`m-0 text-[14px] ${open ? 'text-teal-text font-semibold' : 'text-ink2'}`}>
-                      {MESS_ORDER_STATUS_TEXT[o.status]}
-                      {o.ownerNote ? ` · “${o.ownerNote}”` : ''}
+                      {orderStatusText(o)}
+                      {o.ownerNote && !o.noShow ? ` · “${o.ownerNote}”` : ''}
                     </p>
                     {o.tiffin && (
                       <p className="m-0 text-[13.5px] font-semibold text-marigold-text">
@@ -116,6 +117,11 @@ export function MyOrdersPage() {
                       </p>
                     )}
                   </div>
+                  {o.payment && o.status === 'placed' && (
+                    <div className="basis-full">
+                      <PayFirstBox order={o} />
+                    </div>
+                  )}
                   <ChatButton
                     unread={o.unread}
                     onClick={() => setParams({ chat: o.id }, { replace: true })}

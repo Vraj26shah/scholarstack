@@ -162,6 +162,18 @@ campusRoutes.post('/me/mess-orders/:id/cancel', async (c) => {
   return c.json(await c.get('container').orders.cancel(principal, c.req.param('id')));
 });
 
+/** The student paid a pay-first order by UPI: the restaurant is told to check. */
+campusRoutes.post('/me/mess-orders/:id/paid', async (c) => {
+  const { principal } = await requireLive(c);
+  return c.json(await c.get('container').orders.claimPaid(principal, c.req.param('id')));
+});
+
+/** Orders not collected, and whether that means paying first or a pause (for the cart). */
+campusRoutes.get('/me/order-standing', async (c) => {
+  const { principal } = await requireLive(c);
+  return c.json(await c.get('container').orders.standing(principal));
+});
+
 /** The restaurants the caller runs (admins: all of them). Empty for everyone else. */
 campusRoutes.get('/owner/messes', async (c) => {
   const { principal } = await requireLive(c);
@@ -275,6 +287,20 @@ campusRoutes.put('/owner/orders/:id', async (c) => {
   return c.json(
     await k.orders.setStatus(principal, await k.account.isAdmin(principal), c.req.param('id'), status, note),
   );
+});
+
+/** The owner saw a pay-first order's UPI payment arrive. */
+campusRoutes.post('/owner/orders/:id/paid', async (c) => {
+  const { principal } = await requireLive(c);
+  const k = c.get('container');
+  return c.json(await k.orders.confirmPaid(principal, await k.account.isAdmin(principal), c.req.param('id')));
+});
+
+/** The student never collected an accepted order. */
+campusRoutes.post('/owner/orders/:id/no-show', async (c) => {
+  const { principal } = await requireLive(c);
+  const k = c.get('container');
+  return c.json(await k.orders.noShow(principal, await k.account.isAdmin(principal), c.req.param('id')));
 });
 
 /** How fast this restaurant usually answers (public, on its page). */

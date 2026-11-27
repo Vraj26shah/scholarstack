@@ -22,6 +22,8 @@ export const ownerForm = (m: MessDto): OwnerMessInput => ({
   cycleStart: m.cycleStart,
   dailyOrderCap: m.dailyOrderCap ?? 0,
   offers: m.offers ?? [],
+  upiId: m.upiId ?? '',
+  prepayAbove: m.prepayAbove ?? 0,
 });
 
 /** Sold out / available for each dish, and quick price changes. One Save for everything. */
@@ -60,7 +62,8 @@ export function PartnerMenu({ mess }: { mess: OwnedMessDto }) {
     );
 
   return (
-    <div className="flex flex-col gap-6">
+    // Unsaved changes: a sideways swipe must not carry the owner to another tab and lose them.
+    <div className="flex flex-col gap-6" data-no-swipe={dirty ? '' : undefined}>
       <div className="flex flex-col gap-3">
         <p className="m-0 text-[16px] leading-relaxed text-ink2">{t('menuHint')}</p>
         <Link

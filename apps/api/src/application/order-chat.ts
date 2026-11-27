@@ -130,7 +130,7 @@ export class ChatService {
       this.events.orderTopic(order.id),
     ]);
     return {
-      order: toDto(order, mess.name, side, topic),
+      order: toDto(order, mess, side, topic),
       role: side,
       messages: messages.map(toMessage),
       otherReadAt:

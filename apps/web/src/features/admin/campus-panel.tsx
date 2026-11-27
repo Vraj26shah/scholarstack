@@ -56,6 +56,8 @@ const newMess = (): MessInput => ({
   ownerEmails: [],
   ordersOpen: false,
   dailyOrderCap: 0,
+  upiId: '',
+  prepayAbove: 0,
   offers: [],
   meals: DEFAULT_MEALS.hostel,
   weeks: [emptyWeek('Week 1')],
@@ -427,6 +429,27 @@ function MessEditor({
                 value={form.dailyOrderCap ?? 0}
                 onChange={(e) =>
                   set({ dailyOrderCap: Math.max(0, Math.min(2000, Math.floor(Number(e.target.value) || 0))) })
+                }
+              />
+            </Field>
+            <Field label="Owner's UPI ID (pay-first orders)">
+              <input
+                className={input}
+                value={form.upiId ?? ''}
+                maxLength={110}
+                placeholder="shopname@okaxis"
+                onChange={(e) => set({ upiId: e.target.value.trim() })}
+              />
+            </Field>
+            <Field label="Pay first above ₹ (0 = tiffin and no-shows only)">
+              <input
+                className={`${input} tabular-nums`}
+                type="number"
+                min={0}
+                max={100000}
+                value={form.prepayAbove ?? 0}
+                onChange={(e) =>
+                  set({ prepayAbove: Math.max(0, Math.min(100000, Math.floor(Number(e.target.value) || 0))) })
                 }
               />
             </Field>

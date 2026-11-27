@@ -7,6 +7,7 @@ import { Skeleton } from '../../shared/ui/feedback';
 import { Bowl, ChatBubble, Phone } from '../../shared/ui/icons';
 import { useLive, usePushWhileOpen } from '../chat/live';
 import { OrderChat } from '../chat/order-chat';
+import { trustText } from '../orders/pay-first';
 import { rupees } from '../restaurant/shared';
 import { type TextKey, useT } from './i18n';
 import { bigButton } from './partner-app';
@@ -141,8 +142,21 @@ function OrderCard({ order: o, slug, onChat }: { order: MessOrderDto; slug: stri
       qc.invalidateQueries({ queryKey: ['owned-messes'] });
     },
   });
+  const done = () => {
+    qc.invalidateQueries({ queryKey: ['partner-orders', slug] });
+  };
+  const paid = useMutation({ mutationFn: () => api.ownerConfirmPaid(o.id), onSuccess: done });
+  const missed = useMutation({ mutationFn: () => api.ownerNoShow(o.id), onSuccess: done });
+  const [askMissed, setAskMissed] = useState(false);
   const mins = Math.max(0, Math.round((Date.now() - Date.parse(o.createdAt)) / 60_000));
   const isNew = o.status === 'placed';
+  const waitingPay = isNew && (o.payment === 'due' || o.payment === 'claimed');
+  const trust = trustText(o.trust, {
+    fresh: t('newCustomer'),
+    orders: t('pastOrders'),
+    missed: t('notCollected'),
+  });
+  const err = m.error ?? paid.error ?? missed.error;
   return (
     <article
       className={`rounded-3xl bg-surface p-5 flex flex-col gap-4 shadow-[0_18px_34px_-26px_var(--shadow),0_0_0_1px_var(--line)] ${isNew ? 'ring-2 ring-marigold' : ''}`}
@@ -157,6 +171,13 @@ function OrderCard({ order: o, slug, onChat }: { order: MessOrderDto; slug: stri
             {o.mode === 'delivery' ? `${t('delivery')} · ${o.address}` : t('pickup')}
           </p>
           <p className="m-0 font-mono text-[15px] text-ink2">{formatMobile(o.phone)}</p>
+          {trust && (
+            <p
+              className={`m-0 text-[15px] ${trust.bad ? 'font-bold text-blush-text' : 'font-semibold text-ink2'}`}
+            >
+              {trust.text}
+            </p>
+          )}
         </div>
         <p className="m-0 flex-none font-display font-extrabold text-[26px] tabular-nums">
           {rupees(o.total)}
@@ -174,14 +195,32 @@ function OrderCard({ order: o, slug, onChat }: { order: MessOrderDto; slug: stri
         ))}
         {o.note && <li className="text-[16px] text-marigold-text font-semibold">“{o.note}”</li>}
       </ul>
+      {isNew && o.payment === 'due' && (
+        <p className="m-0 rounded-2xl bg-sunk px-4 py-3 text-[17px] font-bold">{t('payDue')}</p>
+      )}
+      {isNew && o.payment === 'claimed' && (
+        <div className="flex flex-col gap-2.5 rounded-2xl bg-marigold-soft px-4 py-3 text-marigold-text">
+          <p className="m-0 text-[17px] font-bold">{t('payClaimed')}</p>
+          <p className="m-0 text-[14px]">{t('payNoScreenshot')}</p>
+          <button
+            type="button"
+            disabled={paid.isPending}
+            onClick={() => paid.mutate()}
+            className={bigButton('accept')}
+          >
+            ✓ {t('payReceived')}
+          </button>
+        </div>
+      )}
+      {o.payment === 'paid' && <p className="m-0 text-[16px] font-bold text-teal-text">{t('paidDone')}</p>}
       {isNew && !rejecting && (
         <>
           <div className="grid grid-cols-[1.4fr_1fr] gap-3">
             <button
               type="button"
-              disabled={m.isPending}
+              disabled={m.isPending || waitingPay}
               onClick={() => m.mutate({ status: 'accepted' })}
-              className={bigButton('accept')}
+              className={`${bigButton('accept')} disabled:opacity-40`}
             >
               ✓ {t('accept')}
             </button>
@@ -194,12 +233,15 @@ function OrderCard({ order: o, slug, onChat }: { order: MessOrderDto; slug: stri
               {t('reject')}
             </button>
           </div>
-          <p className="m-0 -mt-1 text-[13px] text-ink2">{t('autoCancel')}</p>
+          {!waitingPay && <p className="m-0 -mt-1 text-[13px] text-ink2">{t('autoCancel')}</p>}
         </>
       )}
       {rejecting && (
         <div className="flex flex-col gap-2.5">
           <p className="m-0 text-[17px] font-bold">{t('rejectWhy')}</p>
+          {(o.payment === 'paid' || o.payment === 'claimed') && (
+            <p className="m-0 text-[15px] font-bold text-blush-text">{t('refundPaid')}</p>
+          )}
           <div className="grid grid-cols-2 gap-2.5">
             {REASONS.map((r) => (
               <button
@@ -242,9 +284,40 @@ function OrderCard({ order: o, slug, onChat }: { order: MessOrderDto; slug: stri
           ✓ {t('markDone')}
         </button>
       )}
-      {m.isError && (
+      {(o.status === 'accepted' || o.status === 'ready') && !o.tiffin && !askMissed && (
+        <button
+          type="button"
+          onClick={() => setAskMissed(true)}
+          className={`${bigButton('ghost')} min-h-11 text-[16px]`}
+        >
+          {t('noShow')}
+        </button>
+      )}
+      {askMissed && (
+        <div className="flex flex-col gap-2.5 rounded-2xl bg-sunk px-4 py-3">
+          <p className="m-0 text-[16px] font-semibold">{t('noShowSure')}</p>
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              disabled={missed.isPending}
+              onClick={() => missed.mutate()}
+              className={`${bigButton('reject')} min-h-12 text-[16px]`}
+            >
+              {t('noShowYes')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAskMissed(false)}
+              className={`${bigButton('outline')} min-h-12 text-[16px]`}
+            >
+              {t('cancel')}
+            </button>
+          </div>
+        </div>
+      )}
+      {err && (
         <p role="alert" className="m-0 text-[15px] font-semibold text-blush-text">
-          {(m.error as Error).message}
+          {(err as Error).message}
         </p>
       )}
       <div className="grid grid-cols-2 gap-3">

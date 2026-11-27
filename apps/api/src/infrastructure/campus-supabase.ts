@@ -57,6 +57,8 @@ const toMess = (r: Row): MessRecord => ({
   ownerEmails: (r.owner_emails as string[]) ?? [],
   ordersOpen: !!r.orders_open,
   dailyOrderCap: Number(r.daily_order_cap ?? 0),
+  upiId: (r.upi_id as string) ?? '',
+  prepayAbove: Number(r.prepay_above ?? 0),
   meals: r.meals as MessRecord['meals'],
   weeks: r.weeks as MessRecord['weeks'],
   cycleStart: String(r.cycle_start).slice(0, 10),
@@ -94,6 +96,8 @@ export class SupabaseMesses implements MessRepository {
               owner_emails: m.ownerEmails,
               orders_open: m.ordersOpen,
               daily_order_cap: m.dailyOrderCap ?? 0,
+              upi_id: m.upiId ?? '',
+              prepay_above: m.prepayAbove ?? 0,
               offers: m.offers ?? [],
               meals: m.meals,
               weeks: m.weeks,
@@ -352,7 +356,7 @@ export class SupabasePush implements PushRepository {
 const PAGE = 1000;
 
 const ORDER_COLS =
-  'id, code, mess_slug, user_id, email, lines, total, mode, address, name, phone, note, status, owner_note, ip_hash, created_at, updated_at, student_unread, owner_unread, student_read_at, owner_read_at, student_cleared_at, owner_cleared_at, last_body, last_sender, last_at, responded_at, nudged_at, ended_by, alert_note, tiffin_plan, tiffin_starts, tiffin_ends, discount, offer_label';
+  'id, code, mess_slug, user_id, email, lines, total, mode, address, name, phone, note, status, owner_note, ip_hash, created_at, updated_at, student_unread, owner_unread, student_read_at, owner_read_at, student_cleared_at, owner_cleared_at, last_body, last_sender, last_at, responded_at, nudged_at, ended_by, alert_note, payment, paid_at, no_show_at, tiffin_plan, tiffin_starts, tiffin_ends, discount, offer_label';
 
 const when = (v: unknown) => (v ? new Date(v as string) : null);
 
@@ -370,6 +374,9 @@ const toChatState = (r: Row): OrderChatState => ({
   nudgedAt: when(r.nudged_at),
   endedBy: ((r.ended_by as string) ?? '') as OrderChatState['endedBy'],
   alertNote: (r.alert_note as string) ?? '',
+  payment: ((r.payment as string) ?? '') as OrderChatState['payment'],
+  paidAt: when(r.paid_at),
+  noShowAt: when(r.no_show_at),
 });
 
 const CHAT_COLUMNS: Record<keyof OrderChatState, string> = {
@@ -386,6 +393,9 @@ const CHAT_COLUMNS: Record<keyof OrderChatState, string> = {
   nudgedAt: 'nudged_at',
   endedBy: 'ended_by',
   alertNote: 'alert_note',
+  payment: 'payment',
+  paidAt: 'paid_at',
+  noShowAt: 'no_show_at',
 };
 
 const toOrder = (r: Row): MessOrderRecord => ({

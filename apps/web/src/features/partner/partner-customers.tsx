@@ -234,6 +234,11 @@ function CustomerRecord({
         <span className="rounded-full bg-sunk px-3 py-1 font-semibold text-ink2">
           {t('declinedByYou')}: {r.declinedByYou}
         </span>
+        {(r.noShows ?? 0) + (r.noShowsEverywhere ?? 0) > 0 && (
+          <span className="rounded-full bg-blush px-3 py-1 font-semibold text-blush-text">
+            {t('notCollectedHere')}: {r.noShows ?? 0} · {t('everywhere')}: {r.noShowsEverywhere ?? 0}
+          </span>
+        )}
         {r.unanswered > 0 && (
           <span className="rounded-full bg-blush px-3 py-1 font-semibold text-blush-text">
             {t('unanswered')}: {r.unanswered}

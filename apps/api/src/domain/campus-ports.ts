@@ -7,6 +7,7 @@ import type {
   MessOrderStatus,
   MessReportStatus,
   OrderEndedBy,
+  OrderPayment,
   PushDailyDto,
   PushKind,
   ReminderPrefs,
@@ -172,6 +173,12 @@ export interface OrderChatState {
   nudgedAt: Date | null;
   endedBy: OrderEndedBy;
   alertNote: string;
+  /** Pay-first by UPI ('' = pays on delivery or pickup). */
+  payment: OrderPayment;
+  /** When the student said they paid. */
+  paidAt: Date | null;
+  /** When the restaurant marked that the student never collected it. */
+  noShowAt: Date | null;
 }
 
 export const EMPTY_CHAT_STATE: OrderChatState = {
@@ -188,6 +195,9 @@ export const EMPTY_CHAT_STATE: OrderChatState = {
   nudgedAt: null,
   endedBy: '',
   alertNote: '',
+  payment: '',
+  paidAt: null,
+  noShowAt: null,
 };
 
 export interface MessOrderRepository {
