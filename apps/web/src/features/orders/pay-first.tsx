@@ -7,7 +7,7 @@ import {
   upiPayLink,
 } from '@ss/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, friendly } from '../../lib/api';
 import { rupees } from '../restaurant/shared';
 
@@ -60,6 +60,23 @@ const isPhone = () =>
 export function PayFirstBox({ order }: { order: MessOrderDto }) {
   const qc = useQueryClient();
   const [copied, setCopied] = useState(false);
+  // After "Pay by UPI": did the UPI app open (the page went to the background), and are they back?
+  const [upi, setUpi] = useState<'idle' | 'opening' | 'away' | 'back' | 'none'>('idle');
+  useEffect(() => {
+    if (upi !== 'opening' && upi !== 'away') return;
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') setUpi('away');
+      else if (upi === 'away') setUpi('back');
+    };
+    document.addEventListener('visibilitychange', onVis);
+    // Still on this page after a moment: no UPI app took it (none installed, or it was refused).
+    const t =
+      upi === 'opening' ? window.setTimeout(() => setUpi((u) => (u === 'opening' ? 'none' : u)), 1800) : 0;
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.clearTimeout(t);
+    };
+  }, [upi]);
   const claim = useMutation({
     mutationFn: () => api.claimMessOrderPaid(order.id),
     onSuccess: (o) => {
@@ -114,6 +131,7 @@ export function PayFirstBox({ order }: { order: MessOrderDto }) {
         {isPhone() && (
           <a
             href={link}
+            onClick={() => setUpi('opening')}
             className="inline-flex items-center h-11 px-5 rounded-full bg-ink text-bg text-[15px] font-bold no-underline"
           >
             Pay {rupees(order.total)} by UPI
@@ -129,12 +147,29 @@ export function PayFirstBox({ order }: { order: MessOrderDto }) {
           <span className="text-ink2">{copied ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
+      {upi === 'none' && (
+        <p className="m-0 rounded-lg bg-surface px-3 py-2 text-[13.5px] text-ink" role="status">
+          <strong>No UPI app opened?</strong> Copy the UPI ID above and pay {rupees(order.total)} from any UPI
+          app (GPay, PhonePe, Paytm, BHIM), then come back here.
+        </p>
+      )}
+      {upi === 'back' && (
+        <p
+          className="m-0 rounded-lg bg-teal/10 px-3 py-2 text-[13.5px] font-semibold text-teal-text"
+          role="status"
+        >
+          Done paying? Tap "I've paid" once the money has gone.
+        </p>
+      )}
+      <p className="m-0 text-[12.5px] text-ink2">
+        Your UPI PIN is entered only in your UPI app, never here. Scholars Stack never asks for it.
+      </p>
       <div className="flex flex-col gap-1">
         <button
           type="button"
           onClick={() => claim.mutate()}
           disabled={claim.isPending}
-          className="self-start inline-flex items-center h-11 px-5 rounded-full border-0 bg-teal text-white text-[15px] font-bold cursor-pointer disabled:opacity-60"
+          className={`self-start inline-flex items-center h-11 px-5 rounded-full border-0 bg-teal text-white text-[15px] font-bold cursor-pointer disabled:opacity-60 ${upi === 'back' ? 'ring-4 ring-teal/30 animate-[pulse_1.2s_ease-in-out_3]' : ''}`}
         >
           {claim.isPending ? 'Telling the restaurant…' : "I've paid"}
         </button>
