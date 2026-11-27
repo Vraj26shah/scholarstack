@@ -1,4 +1,4 @@
-import type { OwnedMessDto } from '@ss/contracts';
+import { type OwnedMessDto, isOwnerAddress } from '@ss/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -30,9 +30,45 @@ const TABS: { key: Tab; label: TextKey; icon: ReactNode }[] = [
  * /partner: the restaurant owner's app. Minimal on purpose: the shop switch, four tabs, big
  * buttons, Hindi first. The Android Partner app opens this page; it works in a browser too.
  */
+/**
+ * The PIN lock: an owner who is still signed in types their 4-digit PIN every time the app opens,
+ * and again after more than a minute away (another app, the screen off). Signing in with the PIN
+ * unlocks it, so the PIN is never asked twice in a row.
+ */
+const RELOCK_AFTER_MS = 60_000;
+const lock = { open: false, hiddenAt: 0, listeners: new Set<() => void>() };
+const tellLock = () => {
+  for (const f of lock.listeners) f();
+};
+export const unlockPartner = () => {
+  lock.open = true;
+  tellLock();
+};
+if (typeof document !== 'undefined')
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') lock.hiddenAt = Date.now();
+    else if (lock.open && lock.hiddenAt && Date.now() - lock.hiddenAt > RELOCK_AFTER_MS) {
+      lock.open = false;
+      tellLock();
+    }
+  });
+function usePartnerUnlocked() {
+  const [open, setOpen] = useState(lock.open);
+  useEffect(() => {
+    const on = () => setOpen(lock.open);
+    lock.listeners.add(on);
+    on();
+    return () => {
+      lock.listeners.delete(on);
+    };
+  }, []);
+  return open;
+}
+
 export default function PartnerApp() {
   const status = useSession((s) => s.status);
   const me = useSession((s) => s.me);
+  const unlocked = usePartnerUnlocked();
   if (status === 'loading')
     return (
       <Frame>
@@ -45,6 +81,12 @@ export default function PartnerApp() {
   // Only a restaurant owner's own sign-in opens the dashboard. An admin's or a student's website
   // session (admins can see every restaurant) gets the PIN screen instead.
   if (me?.isAdmin) return <PartnerSignIn otherAccount={me.email} />;
+  // Signed in, but the app was just opened: the PIN first. The number is the one this phone
+  // remembers, or the one in the owner's own address.
+  // Only owners (a student's session gets "restaurant owners only" further on).
+  const fromAddress = me && isOwnerAddress(me.email) ? me.email.slice(1, 11) : '';
+  const lockPhone = fromAddress || savedPhone();
+  if (!unlocked && lockPhone) return <PartnerSignIn lockPhone={lockPhone} />;
   return <Signed />;
 }
 
@@ -334,9 +376,16 @@ const shown = (d: string) => `+91 ${d.slice(0, 5)} ${d.slice(5)}`;
 
 type Step = 'phone' | 'pin' | 'code' | 'newPin' | 'confirmPin';
 
-function PartnerSignIn({ otherAccount = '' }: { otherAccount?: string }) {
+function PartnerSignIn({
+  otherAccount = '',
+  lockPhone = '',
+}: {
+  otherAccount?: string;
+  /** Signed in already: the app-open PIN lock for this number. */
+  lockPhone?: string;
+}) {
   const { t } = useT();
-  const remembered = savedPhone();
+  const remembered = lockPhone || savedPhone();
   const [step, setStep] = useState<Step>(remembered ? 'pin' : 'phone');
   const [phone, setPhone] = useState(remembered);
   const [code, setCode] = useState('');
@@ -373,6 +422,7 @@ function PartnerSignIn({ otherAccount = '' }: { otherAccount?: string }) {
     keepPhone(digits);
     await authGateway.adoptSession(s);
     await useSession.getState().claim();
+    unlockPartner();
   };
 
   const loginWith = async (p: string) => {
@@ -444,6 +494,8 @@ function PartnerSignIn({ otherAccount = '' }: { otherAccount?: string }) {
                 type="button"
                 onClick={() => {
                   keepPhone(null);
+                  // From the lock: a different number means signing this one out.
+                  if (lockPhone) void useSession.getState().signOut();
                   setPhone('');
                   setCode('');
                   setFirst('');
@@ -527,11 +579,17 @@ function PartnerSignIn({ otherAccount = '' }: { otherAccount?: string }) {
               onComplete={(v) => void loginWith(v)}
               length={4}
               masked
-              autoFocus
               invalid={!!error}
             />
             {error && <ErrorLine text={error} />}
             {busy && <p className="m-0 text-[16px] font-semibold text-ink2">{t('pleaseWait')}</p>}
+            <PinPad
+              disabled={busy}
+              onKey={(k) => {
+                setError('');
+                typeKey(pin, k, 4, setPin, (v) => void loginWith(v));
+              }}
+            />
           </div>
         )}
 
@@ -548,10 +606,15 @@ function PartnerSignIn({ otherAccount = '' }: { otherAccount?: string }) {
               }}
               onComplete={() => go('newPin')}
               length={6}
-              autoFocus
               invalid={!!error}
             />
             {error && <ErrorLine text={error} />}
+            <PinPad
+              onKey={(k) => {
+                setError('');
+                typeKey(code, k, 6, setCode, () => go('newPin'));
+              }}
+            />
           </div>
         )}
 
@@ -577,11 +640,23 @@ function PartnerSignIn({ otherAccount = '' }: { otherAccount?: string }) {
               }}
               length={4}
               masked
-              autoFocus
               invalid={!!error}
             />
             {error && <ErrorLine text={error} />}
             {busy && <p className="m-0 text-[16px] font-semibold text-ink2">{t('pleaseWait')}</p>}
+            <PinPad
+              disabled={busy}
+              onKey={(k) => {
+                if (step === 'newPin') setError('');
+                typeKey(pin, k, 4, setPin, (v) => {
+                  if (step === 'newPin') {
+                    setFirst(v);
+                    setPin('');
+                    setStep('confirmPin');
+                  } else void savePin(v);
+                });
+              }}
+            />
           </div>
         )}
 
@@ -606,6 +681,48 @@ function PartnerSignIn({ otherAccount = '' }: { otherAccount?: string }) {
     </Frame>
   );
 }
+
+/**
+ * A big number pad, like banking apps: always on screen (the phone's keyboard doesn't always open
+ * by itself in an app) and easy to hit. The phone's keyboard still works too.
+ */
+function PinPad({ onKey, disabled }: { onKey: (k: string) => void; disabled?: boolean }) {
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'back'];
+  return (
+    <div className="grid grid-cols-3 gap-3 select-none" aria-label="Number pad">
+      {keys.map((k, i) =>
+        k === '' ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed layout
+          <span key={i} />
+        ) : (
+          <button
+            key={k}
+            type="button"
+            disabled={disabled}
+            onClick={() => onKey(k)}
+            aria-label={k === 'back' ? 'Delete' : k}
+            className="h-16 rounded-2xl bg-card text-ink text-[28px] font-bold tabular-nums shadow-[0_0_0_1.5px_var(--line)] active:scale-95 active:bg-sunk transition-transform disabled:opacity-50"
+          >
+            {k === 'back' ? '⌫' : k}
+          </button>
+        ),
+      )}
+    </div>
+  );
+}
+
+/** Types one key into a code; when it reaches `length`, calls `full`. */
+const typeKey = (
+  value: string,
+  key: string,
+  length: number,
+  set: (v: string) => void,
+  full: (v: string) => void,
+) => {
+  const next = key === 'back' ? value.slice(0, -1) : (value + key).slice(0, length);
+  set(next);
+  if (key !== 'back' && next.length === length && value.length < length) full(next);
+};
 
 function ErrorLine({ text }: { text: string }) {
   return (

@@ -38,7 +38,7 @@ const T = {
     en: 'This number isn’t registered. Talk to Scholars Stack.',
   },
   forgotPinCode: { hi: 'PIN भूल गए? सेटअप कोड डालें', en: 'Forgot your PIN? Use a setup code' },
-  forgot: { hi: 'PIN भूल गए? Scholars Stack को कॉल करें', en: 'Forgot your PIN? Call Scholars Stack' },
+  forgot: { hi: 'मदद चाहिए? Scholars Stack को कॉल करें', en: 'Need help? Call Scholars Stack' },
   pleaseWait: { hi: 'रुकिए…', en: 'Please wait…' },
   otherAccount: {
     hi: 'यह ऐप सिर्फ़ रेस्टोरेंट मालिकों के लिए है। अपने रेस्टोरेंट के नंबर और PIN से लॉग इन करें। अभी लॉग इन:',

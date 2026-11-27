@@ -101,7 +101,9 @@ test('partner: only a PIN opens it, then orders, sales by year and a customer’
   await page.getByRole('tab', { name: 'This year' }).click();
   await expect(page.getByText('Earned')).toBeVisible();
 
+  // Reopening the app asks for the PIN first (the app lock), then opens where it was going.
   await page.goto('/partner?tab=more&page=customers');
+  await page.getByLabel(/PIN/).fill('1234');
   const first = page.locator('main ul button').first();
   await expect(first).toBeVisible({ timeout: 15_000 });
   await first.click();
