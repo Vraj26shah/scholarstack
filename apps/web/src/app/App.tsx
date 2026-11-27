@@ -23,7 +23,7 @@ import { appMode, appPathFor, sitePathFor } from '../lib/app-mode';
 import { authGateway } from '../lib/auth';
 import { env } from '../lib/env';
 import { decidesLanding, homeFor, isPhone, jumpTo, landing } from '../lib/landing';
-import { isNotesScreen, protectScreen, startNativeApp } from '../lib/native-push';
+import { hideSplash, isNotesScreen, protectScreen, startNativeApp } from '../lib/native-push';
 import { recordVisit } from '../lib/nav-history';
 import { usePageActivity } from '../lib/page-views';
 import { persistQueries, restoreQueries } from '../lib/persist-queries';
@@ -355,6 +355,18 @@ function AppOnly({ children }: { children: ReactNode }) {
   return appMode() === 'student' ? <>{children}</> : <Navigate to={sitePathFor(pathname, search)} replace />;
 }
 
+/**
+ * In the Android apps the navy splash stays up until the app knows whether you're signed in, so
+ * it goes straight to the real screen (no blank page or spinner in between). 10 s at most.
+ */
+function SplashDone() {
+  const status = useSession((s) => s.status);
+  useEffect(() => {
+    if (status !== 'loading') hideSplash();
+  }, [status]);
+  return null;
+}
+
 function NotFound() {
   return (
     <Page>
@@ -494,6 +506,7 @@ function Shell() {
       <TabBar />
       <SwipeTabs />
       <SessionSheets />
+      <SplashDone />
       <SignInPrompt />
     </>
   );

@@ -185,7 +185,10 @@ function AppBar() {
     <header className="sticky top-0 z-30 bg-card/95 backdrop-blur-xl text-ink pt-[env(safe-area-inset-top)] shadow-[0_1px_0_var(--line)]">
       <div className="mx-auto max-w-[720px] h-16 px-4 flex items-center gap-3">
         {root ? (
-          <span className="grid place-items-center size-10 flex-none rounded-[14px] bg-brand shadow-[0_6px_14px_-8px_rgba(47,60,126,0.9)]">
+          <span
+            data-splash-target="14"
+            className="grid place-items-center size-10 flex-none rounded-[14px] bg-brand shadow-[0_6px_14px_-8px_rgba(47,60,126,0.9)]"
+          >
             <LogoMark size={24} onDark />
           </span>
         ) : (

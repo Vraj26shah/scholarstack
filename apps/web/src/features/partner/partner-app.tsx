@@ -151,7 +151,10 @@ function Signed() {
 
   return (
     <Frame>
-      <header className="sticky top-0 z-20 bg-brand text-white px-4 pt-[env(safe-area-inset-top)] [color-scheme:dark]">
+      <header
+        data-splash-target="0"
+        className="sticky top-0 z-20 bg-brand text-white px-4 pt-[env(safe-area-inset-top)] [color-scheme:dark]"
+      >
         <div className="flex items-center justify-between gap-3 max-w-[720px] mx-auto h-16">
           <div className="min-w-0 flex items-center gap-2.5">
             <span className="grid place-items-center size-9 flex-none rounded-xl bg-white/10 ring-1 ring-white/15">

@@ -35,9 +35,143 @@
     <!-- The logo and the handwritten margin notes only need a handful of letters. -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&display=swap&text=%20Sachklorst" />
     <title>Scholars Stack · semester notes, stacked</title>
+    <!--
+      The Android apps' animated splash (only inside the apps: theme-init.js sets data-app-splash).
+      It starts exactly where the native splash leaves off (navy, the logo centred at 106 px), so the
+      hand-over can't be seen. In the website's style: the S's five bars fan out and stack back up,
+      the bookmark drops in, the name rises. src/lib/native-push.ts plays it backwards on the way out
+      and folds the splash into the header's logo.
+    -->
+    <style>
+      #ss-splash { display: none; }
+      html[data-app-splash] #ss-splash {
+        position: fixed; inset: 0; z-index: 2147483647; display: grid; place-items: center;
+        background: #2F3C7E; color: #fff; overflow: hidden; -webkit-tap-highlight-color: transparent;
+      }
+      html[data-app-splash] body { overflow: hidden; }
+      #ss-splash .ss-glow {
+        position: absolute; width: 140vmax; height: 140vmax; left: 50%; top: 42%;
+        transform: translate(-50%, -50%);
+        background: radial-gradient(closest-side, rgba(161,214,226,.20), rgba(161,214,226,.07) 45%, transparent 70%);
+        opacity: 0; animation: ss-fade 1.2s .2s ease-out forwards;
+      }
+      #ss-splash .ss-grain {
+        position: absolute; inset: -20%; opacity: 0;
+        background:
+          radial-gradient(60% 40% at 15% 10%, rgba(245,184,61,.10), transparent 70%),
+          radial-gradient(50% 35% at 90% 95%, rgba(161,214,226,.10), transparent 70%);
+        animation: ss-fade 1.4s .3s ease-out forwards;
+      }
+      #ss-splash .ss-stage { position: relative; width: 106px; height: 106px; }
+      #ss-splash .ss-mark {
+        position: absolute; inset: 0; width: 106px; height: 106px; overflow: visible; transform-origin: 50% 50%;
+        animation: ss-lift .75s .95s cubic-bezier(.22,1,.36,1) forwards;
+        filter: drop-shadow(0 14px 28px rgba(10,14,40,.35));
+      }
+      /* The stack: each bar fans out to its own side and settles back, one after another. */
+      #ss-splash .ss-b { transform-box: fill-box; transform-origin: 50% 50%; animation: ss-restack .95s cubic-bezier(.65,0,.35,1) both; }
+      #ss-splash .ss-b1 { --x: 0px; --y: -7px; --r: -7deg; animation-delay: .08s; }
+      #ss-splash .ss-b2 { --x: -6px; --y: -3px; --r: -5deg; animation-delay: .13s; }
+      #ss-splash .ss-b3 { --x: 0px; --y: 0px; --r: 4deg; animation-delay: .18s; }
+      #ss-splash .ss-b4 { --x: 6px; --y: 3px; --r: 5deg; animation-delay: .23s; }
+      #ss-splash .ss-b5 { --x: 0px; --y: 7px; --r: 7deg; animation-delay: .28s; }
+      #ss-splash .ss-ribbon { transform-box: fill-box; transform-origin: 50% 0; animation: ss-ribbon 1.15s .05s cubic-bezier(.34,1.56,.64,1) both; }
+      #ss-splash .ss-shine {
+        transform-box: fill-box; transform: translateX(-140%) skewX(-18deg);
+        animation: ss-shine 1s 1.05s cubic-bezier(.4,0,.2,1) forwards;
+      }
+      #ss-splash .ss-word {
+        position: absolute; left: 50%; top: calc(50% + 38px); transform: translate(-50%, 14px);
+        white-space: nowrap; text-align: center; opacity: 0;
+        font-family: "Bricolage Grotesque", "Geist", system-ui, sans-serif; font-weight: 800;
+        font-size: 31px; letter-spacing: -.045em; line-height: 1;
+        animation: ss-rise .7s 1.12s cubic-bezier(.22,1,.36,1) forwards;
+      }
+      #ss-splash .ss-word b { font-weight: 800; color: #A1D6E2; }
+      #ss-splash .ss-tag {
+        position: absolute; left: 50%; top: calc(50% + 82px); transform: translate(-50%, 10px);
+        white-space: nowrap; opacity: 0; color: rgba(236,238,244,.72);
+        font: 500 14px/1 "Geist", system-ui, sans-serif; letter-spacing: .02em;
+        animation: ss-rise .7s 1.27s cubic-bezier(.22,1,.36,1) forwards;
+      }
+      #ss-splash .ss-partner {
+        display: none; position: absolute; left: 50%; top: calc(50% + 78px); transform: translate(-50%, 10px);
+        padding: 6px 12px; border-radius: 999px; background: #F5B83D; color: #161B3A; opacity: 0;
+        font: 700 12px/1 "Geist", system-ui, sans-serif; letter-spacing: .14em; text-transform: uppercase;
+        animation: ss-rise .7s 1.27s cubic-bezier(.22,1,.36,1) forwards;
+      }
+      html[data-app-splash="partner"] #ss-splash .ss-partner { display: block; }
+      html[data-app-splash="partner"] #ss-splash .ss-tag { display: none; }
+      #ss-splash .ss-bar {
+        position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 64px);
+        width: 96px; height: 3px; margin-left: -48px; border-radius: 3px; overflow: hidden;
+        background: rgba(255,255,255,.14); opacity: 0; animation: ss-fade .5s 1.5s ease-out forwards;
+      }
+      #ss-splash .ss-bar i {
+        position: absolute; top: 0; bottom: 0; width: 40%; border-radius: 3px;
+        background: linear-gradient(90deg, transparent, #A1D6E2, transparent);
+        animation: ss-load 1.15s 1.5s cubic-bezier(.45,0,.55,1) infinite;
+      }
+      @keyframes ss-fade { to { opacity: 1; } }
+      @keyframes ss-lift { to { transform: translateY(-46px) scale(.74); } }
+      @keyframes ss-rise { to { opacity: 1; transform: translate(-50%, 0); } }
+      @keyframes ss-restack {
+        0% { transform: none; }
+        42% { transform: translate(var(--x), var(--y)) rotate(var(--r)); }
+        100% { transform: none; }
+      }
+      @keyframes ss-ribbon {
+        0% { transform: none; opacity: 1; }
+        22% { transform: translateY(-120%) scaleY(.6); opacity: 0; }
+        62% { transform: translateY(-120%) scaleY(.6); opacity: 0; }
+        84% { transform: translateY(6%) scaleY(1.06); opacity: 1; }
+        100% { transform: none; opacity: 1; }
+      }
+      @keyframes ss-shine { to { transform: translateX(240%) skewX(-18deg); } }
+      @keyframes ss-load { from { left: -40%; } to { left: 100%; } }
+      @media (prefers-reduced-motion: reduce) {
+        #ss-splash *, #ss-splash { animation-duration: 1ms !important; animation-delay: 0s !important; }
+        #ss-splash .ss-bar i { animation: none !important; left: 30%; }
+      }
+    </style>
     <script src="/theme-init.js"></script>
   </head>
   <body>
+    <div id="ss-splash" aria-hidden="true">
+      <div class="ss-grain"></div>
+      <div class="ss-glow"></div>
+      <div class="ss-stage">
+        <svg class="ss-mark" viewBox="0 0 32 32">
+          <defs>
+            <clipPath id="ss-s">
+              <rect x="4" y="2" width="24" height="7.5" rx="3.2" />
+              <rect x="4" y="2" width="7.5" height="18" rx="3.2" />
+              <rect x="4" y="12.5" width="24" height="7.5" rx="3.2" />
+              <rect x="20.5" y="12.5" width="7.5" height="18" rx="3.2" />
+              <rect x="4" y="23" width="24" height="7.5" rx="3.2" />
+            </clipPath>
+            <linearGradient id="ss-g" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0" stop-color="#fff" stop-opacity="0" />
+              <stop offset=".5" stop-color="#A1D6E2" stop-opacity=".75" />
+              <stop offset="1" stop-color="#fff" stop-opacity="0" />
+            </linearGradient>
+          </defs>
+          <g fill="#fff">
+            <rect class="ss-b ss-b1" x="4" y="2" width="24" height="7.5" rx="3.2" />
+            <rect class="ss-b ss-b2" x="4" y="2" width="7.5" height="18" rx="3.2" />
+            <rect class="ss-b ss-b3" x="4" y="12.5" width="24" height="7.5" rx="3.2" />
+            <rect class="ss-b ss-b4" x="20.5" y="12.5" width="7.5" height="18" rx="3.2" />
+            <rect class="ss-b ss-b5" x="4" y="23" width="24" height="7.5" rx="3.2" />
+          </g>
+          <g clip-path="url(#ss-s)"><rect class="ss-shine" x="0" y="0" width="10" height="32" fill="url(#ss-g)" /></g>
+          <path class="ss-ribbon" d="M21 0.5h4.6v11.3l-2.3-1.9-2.3 1.9z" fill="#F5B83D" />
+        </svg>
+      </div>
+      <div class="ss-word">Scholars <b>Stack</b></div>
+      <div class="ss-tag">semester notes, stacked</div>
+      <div class="ss-partner">Partner</div>
+      <div class="ss-bar"><i></i></div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

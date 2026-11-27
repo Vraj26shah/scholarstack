@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Scholars Stack logo (same shapes as the website's LogoMark), drawn as a vector so it stays sharp. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="106dp"
+    android:height="106dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <path android:fillColor="#FFFFFF" android:pathData="M7.2,2 H24.8 A3.2,3.2 0 0 1 28,5.2 V6.3 A3.2,3.2 0 0 1 24.8,9.5 H7.2 A3.2,3.2 0 0 1 4,6.3 V5.2 A3.2,3.2 0 0 1 7.2,2 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M7.2,2 H8.3 A3.2,3.2 0 0 1 11.5,5.2 V16.8 A3.2,3.2 0 0 1 8.3,20 H7.2 A3.2,3.2 0 0 1 4,16.8 V5.2 A3.2,3.2 0 0 1 7.2,2 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M7.2,12.5 H24.8 A3.2,3.2 0 0 1 28,15.7 V16.8 A3.2,3.2 0 0 1 24.8,20 H7.2 A3.2,3.2 0 0 1 4,16.8 V15.7 A3.2,3.2 0 0 1 7.2,12.5 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M23.7,12.5 H24.8 A3.2,3.2 0 0 1 28,15.7 V27.3 A3.2,3.2 0 0 1 24.8,30.5 H23.7 A3.2,3.2 0 0 1 20.5,27.3 V15.7 A3.2,3.2 0 0 1 23.7,12.5 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M7.2,23 H24.8 A3.2,3.2 0 0 1 28,26.2 V27.3 A3.2,3.2 0 0 1 24.8,30.5 H7.2 A3.2,3.2 0 0 1 4,27.3 V26.2 A3.2,3.2 0 0 1 7.2,23 Z" />
+    <path android:fillColor="#F5B83D" android:pathData="M21,0.5 h4.6 v11.3 l-2.3,-1.9 l-2.3,1.9 z" />
+</vector>
