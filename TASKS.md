@@ -4,6 +4,10 @@ Status as of 23 Oct 2026 (v0.7.0). **Me** = built here. **You** = an account ste
 Everything marked done is covered by an automated test (see QA_REPORT.md).
 
 ## Done
+- [x] 0.48.0 · Restaurant fees: fee rule per restaurant (per order ₹ + %, tiffin plans, monthly, free period), append-only ledger written when an order is accepted, waivers, payments, adjustments, closing months; Admin › Campus › Restaurant fees, owner Fees tab (website + Partner › More); student numbers hidden from restaurants until they accept
+- [ ] 0.48.0 · **You:** after the deploy, set each restaurant's fee in Admin › Campus › Restaurant fees (start with a free period), and agree it with the owner in writing; record their payments there and close each month once checked
+- [x] 0.47.0 · Handover codes: a secret 4-digit code per order and per tiffin meal on the student's phone, typed by the restaurant when handing food over; "I got it" / "It never came" for students, contested "didn't collect", Admin › Orders & chats › Disputes; no notification for a screen already open
+- [ ] 0.47.0 · **You:** deploy for migration `20261127000600_handover_codes_and_presence` (no new APK: both apps load the live site); tell owners to ask for the student's code at the counter or door
 - [x] 0.46.1 · Phone browsers get the website; the student app only inside the Android app (download from /get-app)
 - [x] 0.46.0 · Pay-first orders by UPI, "Didn't collect" with strikes (2 → pay first, 3 → paused), tab swipes in both apps (APKs 1.0.2)
 - [ ] 0.46.0 · **You:** deploy for migration `20261127000400_order_pay_first_and_no_shows`; ask each owner for their UPI ID (or they add it under Details) and a pay-first amount

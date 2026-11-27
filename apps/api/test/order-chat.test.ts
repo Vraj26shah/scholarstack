@@ -76,9 +76,11 @@ describe('new-order alerts and the timers', () => {
     expect(sentTo(1).length).toBe(nudges); // only once
 
     clock.t += 7 * 60_000;
+    // The owner's board runs the timer; the student isn't looking, so their phone is told.
+    await owner.call('GET', `/owner/messes/${SLUG}/orders`);
+    expect(sentTo(2).at(-1)!.message.body).toMatch(/didn't answer within 10 minutes/);
     const mine = (await student.call('GET', '/me/mess-orders')).json;
     expect(mine[0]).toMatchObject({ status: 'cancelled', endedBy: 'auto', unread: 1 });
-    expect(sentTo(2).at(-1)!.message.body).toMatch(/didn't answer within 10 minutes/);
   });
 
   it('accepting stops the timers and counts toward the public reply time', async () => {
@@ -121,8 +123,10 @@ describe('the chat on an order', () => {
     expect(board[0]).toMatchObject({ unread: 1, last: { sender: 'student', body: 'Less spicy please' } });
     expect((await owner.call('GET', '/owner/messes')).json[0].unread).toBe(1);
 
+    // The student's number reaches the restaurant only once it accepts the order.
+    expect(board[0].phone).toBe('');
     const chat = (await owner.call('GET', `/chats/${placed.id}`)).json;
-    expect(chat).toMatchObject({ role: 'owner', canSend: true, callPhone: '+919876543210' });
+    expect(chat).toMatchObject({ role: 'owner', canSend: true, callPhone: '' });
     await owner.call('POST', `/chats/${placed.id}/read`);
     expect((await student.call('GET', `/chats/${placed.id}`)).json.otherReadAt).toBeTruthy();
 

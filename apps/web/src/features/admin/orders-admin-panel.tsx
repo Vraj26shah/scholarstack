@@ -1,4 +1,5 @@
 import {
+  type AdminDisputeDto,
   type AdminRestaurantStatsDto,
   MESS_ORDER_STATUS_TEXT,
   type MessOrderStatus,
@@ -361,6 +362,127 @@ function Reports({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
+const DISPUTE_KIND: Record<AdminDisputeDto['kind'], string> = {
+  not_received: 'Says the order never reached them',
+  no_show: `Contests "didn't collect"`,
+  tiffin: 'Says a tiffin meal never came',
+};
+
+/**
+ * Contested handovers: the student says food marked handed over (without their code) never came,
+ * or contests a "didn't collect", or a tiffin meal. A contested no-show doesn't count until decided.
+ */
+function Disputes({ onOpen }: { onOpen: (id: string) => void }) {
+  const qc = useQueryClient();
+  const [show, setShow] = useState<'open' | 'all'>('open');
+  const q = useQuery({ queryKey: ['admin-disputes'], queryFn: api.adminDisputes });
+  const decide = useMutation({
+    mutationFn: ({ d, decision }: { d: AdminDisputeDto; decision: 'student' | 'owner' }) =>
+      d.kind === 'tiffin' && d.meal
+        ? api.adminDecideTiffin({ orderId: d.orderId, ...d.meal, decision })
+        : api.adminDecideDispute(d.orderId, decision),
+    onSuccess: (list) => qc.setQueryData(['admin-disputes'], list),
+  });
+  const open = (q.data ?? []).filter((d) => d.state === 'open');
+  const rows = show === 'open' ? open : (q.data ?? []);
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="m-0 max-w-[680px] text-[14px] text-ink2">
+        Every order has a 4-digit code on the student's phone. A handover with the code is proved. These are
+        the ones without it that the student disputes. Look at the chat, call both sides if needed, then
+        decide.
+      </p>
+      <div className="flex gap-1">
+        {(['open', 'all'] as const).map((k) => (
+          <Button key={k} size="sm" variant={show === k ? 'ink' : 'ghost'} onClick={() => setShow(k)}>
+            {k === 'open' ? `Open (${open.length})` : 'Last 90 days'}
+          </Button>
+        ))}
+      </div>
+      {q.isLoading ? (
+        <Skeleton className="h-32" />
+      ) : q.isError ? (
+        <ErrorState title="Couldn't load disputes" message={friendly(q.error)} onRetry={() => q.refetch()} />
+      ) : !rows.length ? (
+        <p className="m-0 text-ink2">
+          {show === 'open' ? 'Nothing waiting for a decision.' : 'No disputes yet.'}
+        </p>
+      ) : (
+        <ul className="m-0 p-0 list-none divide-y divide-line">
+          {rows.map((d) => (
+            <li
+              key={`${d.orderId}-${d.meal?.day ?? ''}-${d.meal?.meal ?? ''}-${d.meal?.makeupFor ?? ''}`}
+              className="py-3 flex flex-col gap-1.5"
+            >
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink2">
+                <strong className="text-ink text-[15px]">
+                  {d.messName} · {d.code}
+                </strong>
+                <span>{when(d.at)}</span>
+                <span className="font-semibold text-ink">
+                  {d.state === 'open'
+                    ? 'Waiting'
+                    : d.state === 'student'
+                      ? 'Decided for the student'
+                      : d.state === 'owner'
+                        ? 'Decided for the restaurant'
+                        : 'Settled by the code'}
+                </span>
+              </div>
+              <p className="m-0 text-[15px] text-ink">
+                {DISPUTE_KIND[d.kind]}
+                {d.meal
+                  ? ` · ${d.meal.meal} on ${d.meal.day}${d.meal.makeupFor ? ` (make-up for ${d.meal.makeupFor})` : ''}`
+                  : ''}
+                {d.note ? ` · “${d.note}”` : ''}
+              </p>
+              <p className="m-0 text-[13px] text-ink2">
+                {d.name} · {d.email} · {formatMobile(d.phone)} · {rupees(d.total)}
+              </p>
+              <p
+                className={`m-0 text-[13px] ${d.studentDisputes > 2 || d.messDisputes > 4 ? 'font-semibold text-blush-text' : 'text-ink2'}`}
+              >
+                In 90 days: {plural(d.studentDisputes, 'dispute')} by this student,{' '}
+                {plural(d.messDisputes, 'dispute')} at this restaurant
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => onOpen(d.orderId)}>
+                  Read the chat
+                </Button>
+                {d.state !== 'settled' && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant={d.state === 'student' ? 'ink' : 'ghost'}
+                      disabled={decide.isPending}
+                      onClick={() => decide.mutate({ d, decision: 'student' })}
+                    >
+                      Student is right
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={d.state === 'owner' ? 'ink' : 'ghost'}
+                      disabled={decide.isPending}
+                      onClick={() => decide.mutate({ d, decision: 'owner' })}
+                    >
+                      Restaurant is right
+                    </Button>
+                  </>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {decide.error && (
+        <p role="alert" className="m-0 text-[13px] text-blush-text">
+          {friendly(decide.error)}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Blocks() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['admin-blocks'], queryFn: api.adminBlocks });
@@ -401,7 +523,7 @@ function Blocks() {
   );
 }
 
-type Tab = 'workflow' | 'orders' | 'reports' | 'blocks';
+type Tab = 'workflow' | 'orders' | 'disputes' | 'reports' | 'blocks';
 
 /**
  * Admin › Campus › Orders & chats: how the whole ordering workflow is doing per restaurant (do the
@@ -420,6 +542,7 @@ export function OrdersAdminPanel() {
             [
               ['workflow', 'Workflow'],
               ['orders', 'Orders'],
+              ['disputes', 'Disputes'],
               ['reports', 'Reports'],
               ['blocks', 'Blocked'],
             ] as const
@@ -433,6 +556,7 @@ export function OrdersAdminPanel() {
     >
       {tab === 'workflow' && <Workflow />}
       {tab === 'orders' && <OrdersList onOpen={setChat} />}
+      {tab === 'disputes' && <Disputes onOpen={setChat} />}
       {tab === 'reports' && <Reports onOpen={setChat} />}
       {tab === 'blocks' && (
         <div className="flex flex-col gap-8">

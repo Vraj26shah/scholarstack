@@ -22,6 +22,7 @@ import {
   CreateFeatureBody,
   DeleteCourseBody,
   DiscountReportQuery,
+  DisputeDecisionBody,
   FileContributionBody,
   ImportBody,
   InsightsQuery,
@@ -54,6 +55,13 @@ import {
   normaliseMobile,
   ownerLoginAddSchema,
 } from '@ss/contracts';
+import {
+  FeeCloseBody,
+  FeeEntryBody,
+  FeeRuleBody,
+  FeeWaiveBody,
+  TiffinDisputeDecisionBody,
+} from '@ss/contracts';
 import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 import { openProblems, todaySummary } from '../../application/admin-today';
@@ -71,6 +79,66 @@ async function requireAdmin(c: Context<AppEnv>) {
   if (!(await c.get('container').account.isAdmin(live.principal))) throw fail.forbidden();
   return live;
 }
+
+// ── Contested handovers and "didn't collect" marks ──
+
+adminRoutes.get('/admin/disputes', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').orders.disputes());
+});
+
+adminRoutes.post('/admin/disputes/orders/:id', async (c) => {
+  await requireAdmin(c);
+  const { decision } = DisputeDecisionBody.parse(await c.req.json());
+  return c.json(await c.get('container').orders.decideDispute(c.req.param('id'), decision));
+});
+
+adminRoutes.post('/admin/disputes/tiffin', async (c) => {
+  await requireAdmin(c);
+  const { decision, ...key } = TiffinDisputeDecisionBody.parse(await c.req.json());
+  return c.json(await c.get('container').orders.decideTiffin(key, decision));
+});
+
+// ── Restaurant fees: rules, the ledger, payments, closing months ──
+
+adminRoutes.get('/admin/fees', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').fees.overview());
+});
+
+adminRoutes.get('/admin/fees/:slug', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').fees.statement(c.req.param('slug'), c.req.query('period'), false));
+});
+
+adminRoutes.post('/admin/fees/:slug/rules', async (c) => {
+  const { principal } = await requireAdmin(c);
+  const body = FeeRuleBody.parse(await c.req.json());
+  return c.json(await c.get('container').fees.setRule(c.req.param('slug'), body, principal.email));
+});
+
+/** An adjustment or a payment received from the restaurant. */
+adminRoutes.post('/admin/fees/:slug/entries', async (c) => {
+  const { principal } = await requireAdmin(c);
+  const body = FeeEntryBody.parse(await c.req.json());
+  return c.json(await c.get('container').fees.addEntry(c.req.param('slug'), body, principal.email));
+});
+
+adminRoutes.post('/admin/fees/:slug/orders/:orderId/waive', async (c) => {
+  const { principal } = await requireAdmin(c);
+  const { waive, note } = FeeWaiveBody.parse(await c.req.json());
+  return c.json(
+    await c
+      .get('container')
+      .fees.waiveOrder(c.req.param('slug'), c.req.param('orderId'), waive, note, principal.email),
+  );
+});
+
+adminRoutes.post('/admin/fees/:slug/close', async (c) => {
+  const { principal } = await requireAdmin(c);
+  const { period, note } = FeeCloseBody.parse(await c.req.json());
+  return c.json(await c.get('container').fees.close(c.req.param('slug'), period, note, principal.email));
+});
 
 // ── Courses ──
 

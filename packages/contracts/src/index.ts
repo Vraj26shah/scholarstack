@@ -11,3 +11,4 @@ export * from './winter-2026-27-offerings';
 export * from './device-label';
 export * from './course-blurbs';
 export * from './campus';
+export * from './fees';

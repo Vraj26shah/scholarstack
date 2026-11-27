@@ -103,7 +103,7 @@ function CustomerList({ mess, onOpen }: { mess: OwnedMessDto; onOpen: (id: strin
                 <span className="flex-1 min-w-0">
                   <span className="flex items-center gap-2">
                     <span className="text-[16.5px] font-bold truncate">
-                      {c.name || formatMobile(c.phone)}
+                      {c.name || formatMobile(c.phone) || 'Customer'}
                     </span>
                     {c.tiffin && (
                       <span className="flex-none rounded-full bg-mist/50 px-2 py-0.5 text-[11px] font-bold text-on-mist">
@@ -194,17 +194,21 @@ function CustomerRecord({
             <span className="block font-display text-[24px] font-bold leading-tight tracking-[-0.02em] truncate">
               {c.name}
             </span>
-            <span className="block font-mono text-[14px] text-ink2">{formatMobile(c.phone)}</span>
+            {c.phone && (
+              <span className="block font-mono text-[14px] text-ink2">{formatMobile(c.phone)}</span>
+            )}
             <span className="block text-[12.5px] text-ink2">{t('record12')}</span>
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <a
-            href={`tel:+91${c.phone}`}
-            className={`${bigButton('outline')} min-h-12 text-[16px] no-underline`}
-          >
-            <Phone size={18} /> {t('call')}
-          </a>
+        <div className={`grid gap-3 ${c.phone ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          {c.phone && (
+            <a
+              href={`tel:+91${c.phone}`}
+              className={`${bigButton('outline')} min-h-12 text-[16px] no-underline`}
+            >
+              <Phone size={18} /> {t('call')}
+            </a>
+          )}
           <button
             type="button"
             onClick={() => setChat(c.lastOrderId)}

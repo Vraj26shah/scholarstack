@@ -364,6 +364,78 @@ export const MESS_ORDER_NEXT: Record<MessOrderStatus, MessOrderStatus[]> = {
  * three pauses ordering until the oldest one is 60 days old.
  */
 export const NO_SHOW = { windowDays: 60, payFirstAt: 2, pauseAt: 3 };
+
+/**
+ * Handing food over, checked from both sides. The student's order screen shows a secret 4-digit
+ * code (one per order, and one per tiffin meal). The restaurant types it in when it hands the food
+ * over: that proves the student got it. When there's no code (left at the door, phone dead), the
+ * restaurant can still mark it handed over and the student is asked "Did you get it?". The student
+ * can also say "I got it" themselves, or "I didn't get it". A "didn't collect" can be contested
+ * too. Anything contested goes to the admin, and a contested no-show doesn't count until then.
+ */
+export const HANDOVER = {
+  codeLength: 4,
+  /** Wrong codes allowed per order (or tiffin plan) per day before only "without code" is left. */
+  triesPerDay: 5,
+  /** How long the student has to answer "Did you get it?" or contest a no-show. */
+  answerHours: 48,
+  /** "I didn't get it" on an order still being made opens this long after the restaurant accepted it. */
+  lateAfterMinutes: 45,
+  /** "Didn't collect" can be marked only this long after accepting (time to come and get it). */
+  noShowAfterMinutes: 20,
+};
+/** How an order or tiffin meal was handed over: the student's code, the student's own word, or
+ *  the restaurant's word alone (the student is asked to confirm). '' = not handed over yet. */
+export const HANDOVER_HOW = ['', 'code', 'student', 'owner'] as const;
+export type HandoverHow = (typeof HANDOVER_HOW)[number];
+/** What a student contests: food marked handed over (or long late) that never came, or a no-show. */
+export const DISPUTE_KINDS = ['', 'not_received', 'no_show'] as const;
+export type DisputeKind = (typeof DISPUTE_KINDS)[number];
+/** open = waiting for the admin; student/owner = the admin sided with them; settled = the code
+ *  was entered after all (the food did reach the student). */
+export const DISPUTE_STATES = ['', 'open', 'student', 'owner', 'settled'] as const;
+export type DisputeState = (typeof DISPUTE_STATES)[number];
+
+export const HandoverBody = z.object({
+  /** The student's 4-digit code; '' with `withoutCode` when there isn't one. */
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{4}$|^$/, 'The code is 4 digits')
+    .default(''),
+  withoutCode: z.boolean().default(false),
+});
+export type HandoverInput = z.infer<typeof HandoverBody>;
+export const OrderDisputeBody = z.object({
+  kind: z.enum(['not_received', 'no_show']),
+  note: z.string().trim().max(300).default(''),
+});
+export const DisputeDecisionBody = z.object({ decision: z.enum(['student', 'owner']) });
+/** The admin's decision on one tiffin meal the student says never came. */
+export const TiffinDisputeDecisionBody = z.object({
+  orderId: z.string().min(1).max(64),
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  meal: z.enum(['lunch', 'dinner']),
+  makeupFor: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal('')]).default(''),
+  decision: z.enum(['student', 'owner']),
+});
+export const TiffinConfirmBody = z.object({
+  orderId: z.string().min(1).max(64),
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  meal: z.enum(['lunch', 'dinner']),
+  makeupFor: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal('')]).default(''),
+  /** yes = I got this meal; no = I didn't. */
+  answer: z.enum(['yes', 'no']),
+});
+export type TiffinConfirmInput = z.infer<typeof TiffinConfirmBody>;
+
+/** Where someone is looking right now, so a notification about it isn't sent (they see it live). */
+export const PRESENCE_SCOPE = /^(orders|board:[a-z0-9-]{1,60}|chat:[A-Za-z0-9-]{1,64})$/;
+export const PresenceLeaveBody = z.object({
+  scopes: z.array(z.string().regex(PRESENCE_SCOPE)).max(6),
+});
+/** Seen within this long = still looking (pages refresh every 10–30 seconds while visible). */
+export const PRESENCE_MS = 45_000;
 /** A pay-first order not paid in this long is cancelled; once paid the restaurant's usual clock runs. */
 export const PAY_FIRST_WINDOW_MS = 20 * 60_000;
 export const ORDER_PAYMENTS = ['', 'due', 'claimed', 'paid'] as const;
@@ -479,6 +551,26 @@ export interface TiffinDto {
   delivered?: number;
   missed?: number;
   makeups?: { day: string; meal: TiffinMeal; until: string }[];
+  /**
+   * For the student: today's meals (and make-ups) with the secret code to give at the door, and
+   * meals the restaurant marked delivered without a code that wait for "Did you get it?".
+   */
+  meals?: TiffinMealDto[];
+}
+
+export interface TiffinMealDto {
+  day: string;
+  meal: TiffinMeal;
+  /** '' for the day's regular meal, else the missed day this make-up is for. */
+  makeupFor: string;
+  /** Give this only once the tiffin is in your hands ('' once it's handed over). */
+  code: string;
+  mark: 'delivered' | 'missed' | null;
+  how: HandoverHow;
+  /** The student's answer to a delivery marked without a code. */
+  confirm: '' | 'yes' | 'no';
+  /** The student may still say yes or no about this meal. */
+  canAnswer: boolean;
 }
 
 // ── Tiffin deliveries: delivered, missed, and make-up meals ──
@@ -498,6 +590,12 @@ export const TiffinMarkBody = z.object({
   status: z.enum(['delivered', 'missed', 'clear']),
   /** A make-up meal: the day of the missed meal it makes up for. */
   makeupFor: z.union([isoDate, z.literal('')]).default(''),
+  /** Delivered: the student's 4-digit code for this meal ('' = without a code, the student confirms). */
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{4}$|^$/, 'The code is 4 digits')
+    .default(''),
 });
 export type TiffinMarkInput = z.infer<typeof TiffinMarkBody>;
 
@@ -521,6 +619,9 @@ export interface TiffinRowDto {
   /** Which meal this row is for, and how it was marked on the sheet's day (null = not yet). */
   meal: TiffinMeal;
   mark: TiffinMark | null;
+  /** How a delivered meal was proved, and the student's answer when it was without a code. */
+  how: HandoverHow;
+  confirm: '' | 'yes' | 'no';
   /** A make-up row: the missed day it makes up for, and the last day it can be given. */
   makeupFor: string;
   makeupUntil: string;
@@ -663,6 +764,16 @@ export interface MessOrderDto {
   noShow: boolean;
   /** For the restaurant: this student's record across all restaurants (null for students). */
   trust: { orders: number; noShows: number } | null;
+  /** For the student only, while the order is open: the code to give when the food is in hand. */
+  handoverCode: string;
+  /** How it was handed over ('' = not yet), and when. */
+  handoverHow: HandoverHow;
+  handedOverAt: string | null;
+  /** Something the student contested, and where it stands. */
+  dispute: { kind: DisputeKind; state: DisputeState; at: string; note: string } | null;
+  /** For the student: they can say "I got it" now, or contest ('' = nothing to contest). */
+  canConfirm: boolean;
+  canDispute: DisputeKind;
 }
 
 export interface OwnedMessDto {
@@ -848,6 +959,28 @@ export interface AdminOrderRowDto extends MessOrderDto {
   /** What happened to the owner's alert ("Sent to 2 phones", "No phone has alerts on"). */
   alertNote: string;
   reports: number;
+}
+
+/** Something a student contested, for the admin to decide: an order, or one tiffin meal. */
+export interface AdminDisputeDto {
+  orderId: string;
+  code: string;
+  messSlug: string;
+  messName: string;
+  name: string;
+  email: string;
+  phone: string;
+  total: number;
+  /** not_received / no_show on an order, or 'tiffin' (a meal marked delivered that the student says never came). */
+  kind: 'not_received' | 'no_show' | 'tiffin';
+  state: DisputeState;
+  note: string;
+  at: string;
+  /** Tiffin: which meal. */
+  meal: { day: string; meal: TiffinMeal; makeupFor: string } | null;
+  /** How many contests this student and this restaurant have had in 90 days (patterns of abuse). */
+  studentDisputes: number;
+  messDisputes: number;
 }
 
 export type OrderStatusCounts = Record<MessOrderStatus, number>;

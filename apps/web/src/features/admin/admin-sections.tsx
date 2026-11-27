@@ -9,6 +9,7 @@ import { CourseListPanel } from './course-list-panel';
 import { CoursesPanel } from './courses-panel';
 import { DiscountsPanel } from './discounts-panel';
 import { EarningsPanel } from './earnings-panel';
+import { FeesPanel } from './fees-panel';
 import { FolderExplorer } from './folder-explorer';
 import { InsightsPanel } from './insights-panel';
 import { MailPanel } from './mail-panel';
@@ -251,6 +252,16 @@ export const GROUPS: Group[] = [
           </>
         ),
         render: () => <OrdersAdminPanel />,
+      },
+      {
+        key: 'fees',
+        label: 'Restaurant fees',
+        note: (
+          <>
+            What each restaurant <U>owes</U>: its fee, every order's fee, payments, and closing each month.
+          </>
+        ),
+        render: () => <FeesPanel />,
       },
       {
         key: 'owner-logins',

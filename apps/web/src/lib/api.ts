@@ -1,4 +1,6 @@
 import type {
+  AdminDisputeDto,
+  AdminFeeRowDto,
   AdminOrderRowDto,
   AdminOrdersOverviewDto,
   AdminPushDeviceDto,
@@ -8,6 +10,9 @@ import type {
   ChatMessageInput,
   ChatReportDto,
   ChatReportStatus,
+  FeeEntryInput,
+  FeeRuleInput,
+  FeeStatementDto,
   MessBlockDto,
   MessDto,
   MessInput,
@@ -335,6 +340,63 @@ export class ApiClient {
   ownerNoShow = (id: string) =>
     this.request<MessOrderDto>('POST', `/owner/orders/${encodeURIComponent(id)}/no-show`);
   orderStanding = () => this.request<OrderStandingDto>('GET', '/me/order-standing');
+  /** Handing food over: the owner types the student's code, or hands it over without one. */
+  ownerHandover = (id: string, h: { code?: string; withoutCode?: boolean }) =>
+    this.request<MessOrderDto>('POST', `/owner/orders/${encodeURIComponent(id)}/handover`, h);
+  /** The student: "I got it", or contests (food that never came, or a "didn't collect"). */
+  confirmReceived = (id: string) =>
+    this.request<MessOrderDto>('POST', `/me/mess-orders/${encodeURIComponent(id)}/received`);
+  disputeOrder = (id: string, kind: 'not_received' | 'no_show', note = '') =>
+    this.request<MessOrderDto>('POST', `/me/mess-orders/${encodeURIComponent(id)}/dispute`, { kind, note });
+  /** The student about one tiffin meal: got it, or didn't. Answers with their orders. */
+  confirmTiffin = (m: {
+    orderId: string;
+    day: string;
+    meal: 'lunch' | 'dinner';
+    makeupFor: string;
+    answer: 'yes' | 'no';
+  }) => this.request<MessOrderDto[]>('POST', '/me/tiffin/confirm', m);
+  /** Left the order screens: notifications about them come again. */
+  presenceLeave = (scopes: string[]) => this.request<{ ok: true }>('POST', '/me/presence/leave', { scopes });
+  /** Restaurant fees: the owner's own statement, and the admin's accounts. */
+  ownerFees = (slug: string, period = '') =>
+    this.request<FeeStatementDto>(
+      'GET',
+      `/owner/messes/${encodeURIComponent(slug)}/fees${period ? `?period=${period}` : ''}`,
+    );
+  adminFees = () => this.request<AdminFeeRowDto[]>('GET', '/admin/fees');
+  adminFeeStatement = (slug: string, period = '') =>
+    this.request<FeeStatementDto>(
+      'GET',
+      `/admin/fees/${encodeURIComponent(slug)}${period ? `?period=${period}` : ''}`,
+    );
+  adminSetFeeRule = (slug: string, r: Partial<FeeRuleInput> & { mode: FeeRuleInput['mode'] }) =>
+    this.request<FeeStatementDto>('POST', `/admin/fees/${encodeURIComponent(slug)}/rules`, r);
+  adminFeeEntry = (
+    slug: string,
+    e: Partial<FeeEntryInput> & Pick<FeeEntryInput, 'kind' | 'amount' | 'note'>,
+  ) => this.request<FeeStatementDto>('POST', `/admin/fees/${encodeURIComponent(slug)}/entries`, e);
+  adminWaiveFee = (slug: string, orderId: string, waive: boolean, note: string) =>
+    this.request<FeeStatementDto>(
+      'POST',
+      `/admin/fees/${encodeURIComponent(slug)}/orders/${encodeURIComponent(orderId)}/waive`,
+      { waive, note },
+    );
+  adminCloseFeeMonth = (slug: string, period: string, note = '') =>
+    this.request<FeeStatementDto>('POST', `/admin/fees/${encodeURIComponent(slug)}/close`, { period, note });
+  /** Admin: contested handovers and "didn't collect" marks. */
+  adminDisputes = () => this.request<AdminDisputeDto[]>('GET', '/admin/disputes');
+  adminDecideDispute = (orderId: string, decision: 'student' | 'owner') =>
+    this.request<AdminDisputeDto[]>('POST', `/admin/disputes/orders/${encodeURIComponent(orderId)}`, {
+      decision,
+    });
+  adminDecideTiffin = (m: {
+    orderId: string;
+    day: string;
+    meal: 'lunch' | 'dinner';
+    makeupFor: string;
+    decision: 'student' | 'owner';
+  }) => this.request<AdminDisputeDto[]>('POST', '/admin/disputes/tiffin', m);
   ownerSetOrder = (id: string, status: MessOrderStatus, note = '') =>
     this.request<MessOrderDto>('PUT', `/owner/orders/${encodeURIComponent(id)}`, { status, note });
   adminMesses = () => this.request<MessDto[]>('GET', '/admin/mess');

@@ -4,6 +4,7 @@ import type { Container } from '../http/container';
 import { SupabaseJwtVerifier } from '../infrastructure/auth';
 import {
   SupabaseChatReports,
+  SupabaseFees,
   SupabaseLiveSignal,
   SupabaseMessBlocks,
   SupabaseMessOrders,
@@ -13,6 +14,7 @@ import {
   SupabaseOrderChat,
   SupabaseOwnerLogins,
   SupabasePhones,
+  SupabasePresence,
   SupabasePush,
   SupabaseTiffinMarks,
 } from '../infrastructure/campus-supabase';
@@ -142,6 +144,8 @@ export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): C
       whatsappNumber: env.WHATSAPP_APP_SECRET?.trim() ? (env.WHATSAPP_NUMBER ?? '').replace(/\D/g, '') : '',
       messViews: new SupabaseMessViews(db),
       tiffinMarks: new SupabaseTiffinMarks(db),
+      presence: new SupabasePresence(db),
+      fees: new SupabaseFees(db),
       // One SMS service: 2Factor (India) when its key is set, else Twilio Verify, else none (then
       // ordering keeps the "tick to confirm your number" box).
       sms: env.TWOFACTOR_API_KEY?.trim()

@@ -2,6 +2,9 @@ import type {
   ChatReportStatus,
   ChatSender,
   DayKey,
+  DisputeKind,
+  DisputeState,
+  HandoverHow,
   MealKey,
   MessInput,
   MessOrderStatus,
@@ -179,6 +182,20 @@ export interface OrderChatState {
   paidAt: Date | null;
   /** When the restaurant marked that the student never collected it. */
   noShowAt: Date | null;
+  /** When the restaurant accepted it (its fee is worked out from that day's rule). */
+  acceptedAt: Date | null;
+  /** Never shown to the restaurant: the handover codes are made from it ('' on old orders). */
+  handoverSecret: string;
+  /** Wrong codes typed on `handoverTriesOn` (campus date). */
+  handoverTries: number;
+  handoverTriesOn: string;
+  handedOverAt: Date | null;
+  handoverHow: HandoverHow;
+  /** What the student contested, where it stands, when, and in their words. */
+  dispute: DisputeKind;
+  disputeState: DisputeState;
+  disputedAt: Date | null;
+  disputeNote: string;
 }
 
 export const EMPTY_CHAT_STATE: OrderChatState = {
@@ -198,11 +215,24 @@ export const EMPTY_CHAT_STATE: OrderChatState = {
   payment: '',
   paidAt: null,
   noShowAt: null,
+  acceptedAt: null,
+  handoverSecret: '',
+  handoverTries: 0,
+  handoverTriesOn: '',
+  handedOverAt: null,
+  handoverHow: '',
+  dispute: '',
+  disputeState: '',
+  disputedAt: null,
+  disputeNote: '',
 };
 
 export interface MessOrderRepository {
   add(
-    order: Omit<MessOrderRecord, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'ownerNote' | 'chat'>,
+    order: Omit<MessOrderRecord, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'ownerNote' | 'chat'> & {
+      /** Where the handover codes come from (kept from the restaurant). */
+      handoverSecret?: string;
+    },
   ): Promise<MessOrderRecord>;
   find(id: string): Promise<MessOrderRecord | null>;
   listForUser(userId: string, limit: number): Promise<MessOrderRecord[]>;
@@ -376,13 +406,37 @@ export interface TiffinMarkRecord {
   meal: 'lunch' | 'dinner';
   makeupFor: string;
   status: 'delivered' | 'missed';
+  /** How a delivery was proved ('' for a missed meal). */
+  how?: HandoverHow;
+  /** The student's answer to a delivery marked without a code. */
+  confirm?: '' | 'yes' | 'no';
+  /** The admin's decision on a "no" ('' = not decided). */
+  decided?: '' | 'student' | 'owner';
+  markedAt?: Date;
 }
+
+export type TiffinMarkKey = Pick<TiffinMarkRecord, 'orderId' | 'day' | 'meal' | 'makeupFor'>;
 
 export interface TiffinMarkRepository {
   /** Marks on these plans between two days (inclusive). */
   list(orderIds: string[], fromDay: string, toDay: string): Promise<TiffinMarkRecord[]>;
   set(m: TiffinMarkRecord): Promise<void>;
-  clear(m: Omit<TiffinMarkRecord, 'status'>): Promise<void>;
+  clear(m: TiffinMarkKey): Promise<void>;
+  /** Meals a student said never came, marked on or after this day (the admin's list). */
+  listDisputed(sinceDay: string): Promise<TiffinMarkRecord[]>;
+}
+
+// ── Who is looking at what right now (to skip notifications they'd see live anyway) ──
+
+export interface PresenceRepository {
+  /** This person (by email) is looking at this scope now. */
+  touch(scope: string, who: string): Promise<void>;
+  /** They left these scopes (tab hidden, page closed). */
+  leave(scopes: string[], who: string): Promise<void>;
+  /** Everyone seen in any of these scopes since `since`. */
+  here(scopes: string[], since: Date): Promise<Set<string>>;
+  /** Forget rows not seen since `before` (the cron). */
+  prune(before: Date): Promise<void>;
 }
 
 // ── Partner app sign-in (restaurant owners: mobile number + PIN) ──
@@ -415,4 +469,73 @@ export interface OwnerLoginRepository {
 /** Makes a real signed-in session for an account (Supabase in production, demo tokens in the demo). */
 export interface SessionMinter {
   mint(email: string): Promise<{ accessToken: string; refreshToken: string | null }>;
+}
+
+// ── Restaurant fees: rules, the append-only ledger, and closed months ──
+
+export interface FeeRuleRecord {
+  id: string;
+  messSlug: string;
+  startsOn: string;
+  mode: 'none' | 'per_order' | 'monthly';
+  perOrder: number;
+  /** Basis points (1 % = 100). */
+  percentBp: number;
+  tiffinFee: number;
+  monthly: number;
+  freeUntil: string;
+  note: string;
+  createdAt: Date;
+  createdBy: string;
+}
+
+export interface LedgerRecord {
+  id: string;
+  messSlug: string;
+  /** Campus date it belongs to (decides its month). */
+  day: string;
+  kind: 'order' | 'waive' | 'unwaive' | 'monthly' | 'adjust' | 'payment';
+  orderId: string;
+  /** Monthly charges: the month ('YYYY-MM'). */
+  period: string;
+  /** Paise: + owed, − credited or paid. */
+  amount: number;
+  note: string;
+  method: string;
+  createdAt: Date;
+  createdBy: string;
+}
+
+export interface SettlementRecord {
+  messSlug: string;
+  period: string;
+  opening: number;
+  charges: number;
+  credits: number;
+  payments: number;
+  closing: number;
+  orders: number;
+  sales: number;
+  note: string;
+  closedAt: Date;
+  closedBy: string;
+}
+
+export interface FeeRepository {
+  rules(slug: string): Promise<FeeRuleRecord[]>;
+  allRules(): Promise<FeeRuleRecord[]>;
+  addRule(r: Omit<FeeRuleRecord, 'id' | 'createdAt'>): Promise<FeeRuleRecord>;
+  /** Every entry of one restaurant (oldest first). */
+  entries(slug: string): Promise<LedgerRecord[]>;
+  /** Every entry since a day, all restaurants (admin overview). */
+  entriesSince(day: string): Promise<LedgerRecord[]>;
+  /**
+   * Adds an entry. Returns null (and adds nothing) when it would repeat one that may exist only
+   * once: an order's fee, or a month's monthly charge.
+   */
+  add(e: Omit<LedgerRecord, 'id' | 'createdAt'>): Promise<LedgerRecord | null>;
+  settlements(slug: string): Promise<SettlementRecord[]>;
+  allSettlements(): Promise<SettlementRecord[]>;
+  /** False when that month is already closed. */
+  close(s: SettlementRecord): Promise<boolean>;
 }

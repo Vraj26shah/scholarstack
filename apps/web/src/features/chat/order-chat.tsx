@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, friendly } from '../../lib/api';
+import { useLeaveWhenHidden } from '../../lib/presence';
 import { Button } from '../../shared/ui/button';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { ArrowUp, Bell, Cross, Phone, PhotoIcon } from '../../shared/ui/icons';
@@ -172,6 +173,7 @@ export function OrderChat({
   const connected = useLive(chat?.order.topic, () => void qc.invalidateQueries({ queryKey: key }));
   useEffect(() => setLive(connected), [connected]);
   usePushWhileOpen(() => void qc.invalidateQueries({ queryKey: key }));
+  useLeaveWhenHidden([`chat:${orderId}`]);
 
   const [text, setText] = useState('');
   const [panel, setPanel] = useState<Panel>(null);
@@ -413,7 +415,8 @@ export function OrderChat({
               {chat.order.mode === 'delivery' && <li className="text-ink2">To {chat.order.address}</li>}
               {role !== 'student' && (
                 <li className="text-ink2">
-                  {chat.order.name} · {formatMobile(chat.order.phone)}
+                  {chat.order.name}
+                  {chat.order.phone ? ` · ${formatMobile(chat.order.phone)}` : ''}
                 </li>
               )}
               {chat.order.note && <li className="text-ink2">“{chat.order.note}”</li>}

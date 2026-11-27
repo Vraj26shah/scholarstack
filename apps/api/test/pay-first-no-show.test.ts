@@ -1,4 +1,4 @@
-import { NO_SHOW, PAY_FIRST_WINDOW_MS } from '@ss/contracts';
+import { HANDOVER, NO_SHOW, PAY_FIRST_WINDOW_MS } from '@ss/contracts';
 import { describe, expect, it } from 'vitest';
 import { memoryContainer } from '../src/composition/memory';
 import { createApp } from '../src/http/app';
@@ -52,6 +52,7 @@ async function missOne(s: Awaited<ReturnType<typeof setup>>) {
   expect((await s.admin.call('PUT', `/owner/orders/${id}`, { status: 'accepted', note: '' })).status).toBe(
     200,
   );
+  s.clock.advance(HANDOVER.noShowAfterMinutes * 60_000); // time to come and collect
   const marked = await s.admin.call('POST', `/owner/orders/${id}/no-show`);
   expect(marked.status).toBe(200);
   s.clock.advance(2 * 60_000); // past the double-tap gap
@@ -82,6 +83,7 @@ describe('orders the student never collects', () => {
     await s.student.call('POST', `/me/mess-orders/${third.json.id}/paid`);
     await s.admin.call('POST', `/owner/orders/${third.json.id}/paid`);
     await s.admin.call('PUT', `/owner/orders/${third.json.id}`, { status: 'accepted', note: '' });
+    s.clock.advance(HANDOVER.noShowAfterMinutes * 60_000); // time to come and collect
     await s.admin.call('POST', `/owner/orders/${third.json.id}/no-show`);
     s.clock.advance(2 * 60_000);
     // Three: paused, with the date it lifts.
@@ -171,6 +173,7 @@ describe('every sale is shown to the restaurant', () => {
     await s.student.call('POST', `/me/mess-orders/${paid.id}/paid`);
     await s.admin.call('POST', `/owner/orders/${paid.id}/paid`);
     await s.admin.call('PUT', `/owner/orders/${paid.id}`, { status: 'accepted', note: '' });
+    s.clock.advance(HANDOVER.noShowAfterMinutes * 60_000); // time to come and collect
     await s.admin.call('POST', `/owner/orders/${paid.id}/no-show`);
     // A declined order: not a sale.
     s.clock.advance(2 * 60_000);

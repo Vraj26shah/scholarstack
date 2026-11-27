@@ -32,7 +32,7 @@ import type { Principal } from '../domain/entities';
 import type { Clock, UploadStore } from '../domain/ports';
 import { fail } from './errors';
 import { type OrderEvents, ownerChatUrl, studentChatUrl } from './order-events';
-import { type OrderService, imageKind, toDto } from './order-service';
+import { type OrderService, imageKind, ownerSeesPhone, toDto } from './order-service';
 
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
@@ -130,7 +130,7 @@ export class ChatService {
       this.events.orderTopic(order.id),
     ]);
     return {
-      order: toDto(order, mess, side, topic),
+      order: toDto(order, mess, side, topic, this.clock.now()),
       role: side,
       messages: messages.map(toMessage),
       otherReadAt:
@@ -140,7 +140,12 @@ export class ChatService {
             ? (c.studentReadAt?.toISOString() ?? null)
             : null,
       ...st,
-      callPhone: side === 'student' ? digits(mess.phone) : side === 'owner' ? digits(order.phone) : '',
+      callPhone:
+        side === 'student'
+          ? digits(mess.phone)
+          : side === 'owner' && ownerSeesPhone(order, this.clock.now())
+            ? digits(order.phone)
+            : '',
       clearedAt: clearedAt?.toISOString() ?? null,
     };
   }
@@ -188,22 +193,32 @@ export class ChatService {
       this.events.ping(order),
       side === 'student'
         ? this.events
-            .toOwners(mess, {
-              title: `💬 ${order.name} · order ${order.code}`,
-              body: preview,
-              tag: `chat-${order.id}`,
-              url: ownerChatUrl(order),
-              quietWhen: `chat=${order.id}`,
-            })
+            .toOwners(
+              mess,
+              {
+                title: `💬 ${order.name} · order ${order.code}`,
+                body: preview,
+                tag: `chat-${order.id}`,
+                url: ownerChatUrl(order),
+                quietWhen: `chat=${order.id}`,
+              },
+              600,
+              [`chat:${order.id}`],
+            )
             .catch(() => null)
         : this.events
-            .toStudent(order, {
-              title: `💬 ${mess.name} · order ${order.code}`,
-              body: preview,
-              tag: `chat-${order.id}`,
-              url: studentChatUrl(order),
-              quietWhen: `chat=${order.id}`,
-            })
+            .toStudent(
+              order,
+              {
+                title: `💬 ${mess.name} · order ${order.code}`,
+                body: preview,
+                tag: `chat-${order.id}`,
+                url: studentChatUrl(order),
+                quietWhen: `chat=${order.id}`,
+              },
+              3600,
+              [`chat:${order.id}`],
+            )
             .catch(() => null),
     ]);
     return toMessage(saved);
@@ -296,7 +311,8 @@ export class ChatService {
       messName: names.get(b.messSlug) ?? b.messSlug,
       userId: b.userId,
       name: b.name,
-      phone: b.phone,
+      // Owners see only the last digits of a blocked student's number (enough to recognise it).
+      phone: withEmail ? b.phone : b.phone ? `••••••${b.phone.slice(-4)}` : '',
       reason: b.reason,
       createdAt: b.createdAt.toISOString(),
       email: withEmail ? b.email : '',

@@ -4,6 +4,7 @@ import {
   ChatMessageBody,
   ChatReportBody,
   ChatReportStatusBody,
+  HandoverBody,
   INSIGHT_PERIODS,
   type InsightPeriod,
   MESS_PHOTO_MAX_BYTES,
@@ -11,10 +12,12 @@ import {
   MessOrdersOpenBody,
   MessReportBody,
   MessReportStatusBody,
+  OrderDisputeBody,
   OwnerMessBody,
   PhoneCheckBody,
   PhoneStartBody,
   PlaceMessOrderBody,
+  PresenceLeaveBody,
   PushAccountBody,
   PushEndpointBody,
   PushPrefsBody,
@@ -23,6 +26,7 @@ import {
   PushSubscribeBody,
   PushTestBody,
   SaveMessBody,
+  TiffinConfirmBody,
   TiffinMarkBody,
   partnerLoginSchema,
   partnerSetPinSchema,
@@ -58,6 +62,22 @@ async function maybeSignedIn(c: Ctx): Promise<Principal | null> {
 }
 
 /** Admins may try a tool before it launches. */
+
+/**
+ * This person has this order screen open (its regular refresh says so): notifications about what
+ * it shows are skipped while they look. Written after the answer when the platform allows.
+ */
+async function seen(c: Ctx, scope: string, email: string) {
+  const job = c
+    .get('container')
+    .orders.here(scope, email)
+    .catch(() => {});
+  try {
+    c.executionCtx.waitUntil(job);
+  } catch {
+    await job;
+  }
+}
 async function callerIsAdmin(c: Ctx, principal?: Principal | null) {
   const p = principal === undefined ? await maybeSignedIn(c) : principal;
   return p ? c.get('container').account.isAdmin(p) : false;
@@ -154,7 +174,37 @@ campusRoutes.post('/me/phone/check', async (c) => {
 
 campusRoutes.get('/me/mess-orders', async (c) => {
   const { principal } = await requireLive(c);
+  await seen(c, 'orders', principal.email);
   return c.json(await c.get('container').orders.mine(principal));
+});
+
+/** The student got the food ("I got it"), or confirms a handover marked without their code. */
+campusRoutes.post('/me/mess-orders/:id/received', async (c) => {
+  const { principal } = await requireLive(c);
+  return c.json(await c.get('container').orders.confirmReceived(principal, c.req.param('id')));
+});
+
+/** The student contests: food that never came, or a "didn't collect". The admin decides. */
+campusRoutes.post('/me/mess-orders/:id/dispute', async (c) => {
+  const { principal } = await requireLive(c);
+  await throttle(c, 'order-dispute', principal.userId);
+  const { kind, note } = OrderDisputeBody.parse(await c.req.json());
+  return c.json(await c.get('container').orders.dispute(principal, c.req.param('id'), kind, note));
+});
+
+/** The student about one tiffin meal: got it, or didn't. Answers with their orders. */
+campusRoutes.post('/me/tiffin/confirm', async (c) => {
+  const { principal } = await requireLive(c);
+  const body = TiffinConfirmBody.parse(await c.req.json());
+  return c.json(await c.get('container').orders.confirmTiffin(principal, body));
+});
+
+/** They left these order screens (tab hidden, app sent to the background): notify them again. */
+campusRoutes.post('/me/presence/leave', async (c) => {
+  const { principal } = await requireLive(c);
+  const { scopes } = PresenceLeaveBody.parse(await c.req.json());
+  await c.get('container').orders.left(scopes, principal.email);
+  return c.json({ ok: true });
 });
 
 campusRoutes.post('/me/mess-orders/:id/cancel', async (c) => {
@@ -184,7 +234,16 @@ campusRoutes.get('/owner/messes', async (c) => {
 campusRoutes.get('/owner/messes/:slug/orders', async (c) => {
   const { principal } = await requireLive(c);
   const k = c.get('container');
+  await seen(c, `board:${c.req.param('slug')}`, principal.email);
   return c.json(await k.orders.board(principal, await k.account.isAdmin(principal), c.req.param('slug')));
+});
+
+/** The restaurant's own fee statement for a month (?period=YYYY-MM): read only. */
+campusRoutes.get('/owner/messes/:slug/fees', async (c) => {
+  const { principal } = await requireLive(c);
+  const k = c.get('container');
+  await k.orders.ownedMess(principal, await k.account.isAdmin(principal), c.req.param('slug'));
+  return c.json(await k.fees.statement(c.req.param('slug'), c.req.query('period'), true));
 });
 
 /** One customer's record at this restaurant (12 months): visits, every order, habits. */
@@ -296,6 +355,16 @@ campusRoutes.post('/owner/orders/:id/paid', async (c) => {
   return c.json(await k.orders.confirmPaid(principal, await k.account.isAdmin(principal), c.req.param('id')));
 });
 
+/** The restaurant hands the food over: with the student's code, or without (the student confirms). */
+campusRoutes.post('/owner/orders/:id/handover', async (c) => {
+  const { principal } = await requireLive(c);
+  const body = HandoverBody.parse(await c.req.json());
+  const k = c.get('container');
+  return c.json(
+    await k.orders.handover(principal, await k.account.isAdmin(principal), c.req.param('id'), body),
+  );
+});
+
 /** The student never collected an accepted order. */
 campusRoutes.post('/owner/orders/:id/no-show', async (c) => {
   const { principal } = await requireLive(c);
@@ -324,6 +393,7 @@ async function chatCaller(c: Ctx) {
 
 campusRoutes.get('/chats/:id', async (c) => {
   const { principal, admin } = await chatCaller(c);
+  await seen(c, `chat:${c.req.param('id')}`, principal.email);
   return c.json(await c.get('container').chats.get(principal, admin, c.req.param('id')));
 });
 

@@ -4,11 +4,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { nativePush } from '../../lib/native-push';
+import { useLeaveWhenHidden } from '../../lib/presence';
 import { Skeleton } from '../../shared/ui/feedback';
 import { Bowl, ChatBubble, Phone } from '../../shared/ui/icons';
 import { useAccountAlerts } from '../chat/alerts';
 import { useLive, usePushWhileOpen } from '../chat/live';
 import { OrderChat } from '../chat/order-chat';
+import { CodeEntry, type HandoverLabels } from '../orders/handover';
 import { trustText } from '../orders/pay-first';
 import { rupees } from '../restaurant/shared';
 import { type TextKey, useT } from './i18n';
@@ -49,6 +51,7 @@ export function PartnerOrders({ mess }: { mess: OwnedMessDto }) {
   const qc = useQueryClient();
   const live = useLive(mess.topic, () => qc.invalidateQueries({ queryKey: ['partner-orders', mess.slug] }));
   usePushWhileOpen(() => qc.invalidateQueries({ queryKey: ['partner-orders', mess.slug] }));
+  useLeaveWhenHidden([`board:${mess.slug}`]);
   const q = useQuery({
     queryKey: ['partner-orders', mess.slug],
     queryFn: () => api.ownerOrders(mess.slug),
@@ -143,6 +146,25 @@ export function PartnerOrders({ mess }: { mess: OwnedMessDto }) {
           </section>
         );
       })}
+      {(() => {
+        // Finished today but not settled: handed over without a code, or contested by the student.
+        const look = orders.filter(
+          (o) =>
+            !open.includes(o) &&
+            (o.dispute?.state === 'open' || (o.status === 'done' && o.handoverHow === 'owner' && !o.dispute)),
+        );
+        if (!look.length) return null;
+        return (
+          <section className="flex flex-col gap-3">
+            <h2 className="m-0 text-[15px] font-extrabold uppercase tracking-[0.08em] text-ink2">
+              {t('needsLook')} · {look.length}
+            </h2>
+            {look.map((o) => (
+              <OrderCard key={o.id} order={o} slug={mess.slug} onChat={() => setChat(o.id)} />
+            ))}
+          </section>
+        );
+      })()}
       {chat && <OrderChat orderId={chat} asOwner onClose={() => setChat(null)} />}
     </div>
   );
@@ -166,6 +188,42 @@ function OrderCard({ order: o, slug, onChat }: { order: MessOrderDto; slug: stri
   const paid = useMutation({ mutationFn: () => api.ownerConfirmPaid(o.id), onSuccess: done });
   const missed = useMutation({ mutationFn: () => api.ownerNoShow(o.id), onSuccess: done });
   const [askMissed, setAskMissed] = useState(false);
+  const handover = useMutation({
+    mutationFn: (h: { code?: string; withoutCode?: boolean }) => api.ownerHandover(o.id, h),
+    onSuccess: done,
+  });
+  const [lateCode, setLateCode] = useState(false);
+  const labels: HandoverLabels = {
+    codeLabel: t('codeLabel'),
+    submit: t('handOver'),
+    without: t('withoutCode'),
+    withoutSure: t('withoutCodeSure'),
+    withoutYes: t('withoutCodeYes'),
+    back: t('back'),
+  };
+  const handedText =
+    o.status !== 'done' || o.tiffin
+      ? ''
+      : o.handoverHow === 'code'
+        ? t('handedCode')
+        : o.handoverHow === 'student'
+          ? t('handedStudent')
+          : o.handoverHow === 'owner'
+            ? t('handedOwner')
+            : '';
+  const disputeText = o.dispute
+    ? `${o.dispute.kind === 'no_show' ? t('disputeNoShow') : t('disputeNotReceived')}${
+        o.dispute.state === 'student'
+          ? ` ${t('disputeForStudent')}`
+          : o.dispute.state === 'owner'
+            ? ` ${t('disputeForYou')}`
+            : o.dispute.state === 'settled'
+              ? ` ${t('disputeSettled')}`
+              : ''
+      }`
+    : '';
+  const canTypeLate =
+    o.status === 'done' && o.handoverHow === 'owner' && (!o.dispute || o.dispute.state === 'open');
   const mins = Math.max(0, Math.round((Date.now() - Date.parse(o.createdAt)) / 60_000));
   const isNew = o.status === 'placed';
   const waitingPay = isNew && (o.payment === 'due' || o.payment === 'claimed');
@@ -174,7 +232,7 @@ function OrderCard({ order: o, slug, onChat }: { order: MessOrderDto; slug: stri
     orders: t('pastOrders'),
     missed: t('notCollected'),
   });
-  const err = m.error ?? paid.error ?? missed.error;
+  const err = m.error ?? paid.error ?? missed.error ?? handover.error;
   return (
     <article
       className={`rounded-3xl bg-surface p-5 flex flex-col gap-4 shadow-[0_18px_34px_-26px_var(--shadow),0_0_0_1px_var(--line)] ${isNew ? 'ring-2 ring-marigold' : ''}`}
@@ -188,7 +246,11 @@ function OrderCard({ order: o, slug, onChat }: { order: MessOrderDto; slug: stri
           <p className="m-0 text-[15px] font-semibold text-ink2">
             {o.mode === 'delivery' ? `${t('delivery')} · ${o.address}` : t('pickup')}
           </p>
-          <p className="m-0 font-mono text-[15px] text-ink2">{formatMobile(o.phone)}</p>
+          {o.phone ? (
+            <p className="m-0 font-mono text-[15px] text-ink2">{formatMobile(o.phone)}</p>
+          ) : (
+            isNew && <p className="m-0 text-[14px] text-ink2">{t('phoneAfterAccept')}</p>
+          )}
           {trust && (
             <p
               className={`m-0 text-[15px] ${trust.bad ? 'font-bold text-blush-text' : 'font-semibold text-ink2'}`}
@@ -293,15 +355,44 @@ function OrderCard({ order: o, slug, onChat }: { order: MessOrderDto; slug: stri
         </button>
       )}
       {o.status === 'ready' && (
-        <button
-          type="button"
-          disabled={m.isPending}
-          onClick={() => m.mutate({ status: 'done' })}
-          className={bigButton('accept')}
-        >
-          ✓ {t('markDone')}
-        </button>
+        <div className="flex flex-col gap-2">
+          <p className="m-0 text-[16px] font-bold">{t('codeAsk')}</p>
+          <CodeEntry
+            big
+            labels={labels}
+            busy={handover.isPending}
+            onCode={(code) => handover.mutate({ code })}
+            onWithout={() => handover.mutate({ withoutCode: true })}
+            buttonClass={`${bigButton('accept')} px-4`}
+            quietClass={`${bigButton('ghost')} min-h-11 px-0 text-[16px] underline underline-offset-4`}
+          />
+        </div>
       )}
+      {disputeText && (
+        <p className="m-0 rounded-2xl bg-blush px-4 py-3 text-[16px] font-bold text-blush-text">
+          {disputeText}
+        </p>
+      )}
+      {handedText && !o.dispute && <p className="m-0 text-[16px] font-semibold text-ink2">{handedText}</p>}
+      {canTypeLate &&
+        (lateCode ? (
+          <CodeEntry
+            big
+            labels={labels}
+            busy={handover.isPending}
+            onCode={(code) => handover.mutate({ code })}
+            buttonClass={`${bigButton('accept')} px-4`}
+            quietClass=""
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setLateCode(true)}
+            className={`${bigButton('outline')} min-h-12 text-[16px]`}
+          >
+            {t('typeLateCode')}
+          </button>
+        ))}
       {(o.status === 'accepted' || o.status === 'ready') && !o.tiffin && !askMissed && (
         <button
           type="button"
@@ -338,10 +429,15 @@ function OrderCard({ order: o, slug, onChat }: { order: MessOrderDto; slug: stri
           {(err as Error).message}
         </p>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        <a href={`tel:+91${o.phone}`} className={`${bigButton('outline')} min-h-12 text-[16px] no-underline`}>
-          <Phone size={18} /> {t('call')}
-        </a>
+      <div className={`grid gap-3 ${o.phone ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        {o.phone && (
+          <a
+            href={`tel:+91${o.phone}`}
+            className={`${bigButton('outline')} min-h-12 text-[16px] no-underline`}
+          >
+            <Phone size={18} /> {t('call')}
+          </a>
+        )}
         <button
           type="button"
           onClick={onChat}

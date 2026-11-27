@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useSession } from '../../lib/session';
 import { Bell, Calendar, ChatBubble, ChevronLeft, Cross, Lock, PhotoIcon, User } from '../../shared/ui/icons';
 import { OrderChat } from '../chat/order-chat';
+import { OwnerFees } from '../fees/fee-statement';
 import { AlertsCard, BlockedList, type EditorTab, Editors, TiffinSheet } from '../orders/orders-page';
 import { Row, RowGroup } from '../student-app/app-ui';
 import { type TextKey, setLang, useT } from './i18n';
@@ -19,7 +20,8 @@ export type MorePage =
   | 'week'
   | 'details'
   | 'blocked'
-  | 'alerts';
+  | 'alerts'
+  | 'fees';
 
 const ITEMS: { key: MorePage; label: TextKey; hint: TextKey; icon: ReactNode }[] = [
   {
@@ -63,6 +65,12 @@ const ITEMS: { key: MorePage; label: TextKey; hint: TextKey; icon: ReactNode }[]
     label: 'moreDetails',
     hint: 'hintDetails',
     icon: <ChatBubble size={22} />,
+  },
+  {
+    key: 'fees',
+    label: 'moreFees',
+    hint: 'hintFees',
+    icon: <span className="text-[19px] font-black leading-none">₹</span>,
   },
   {
     key: 'blocked',
@@ -114,6 +122,7 @@ export function PartnerMore({ mess }: { mess: OwnedMessDto }) {
           {page === 'tiffin' && <TiffinSheet mess={mess} onChat={setChat} />}
           {page === 'customers' && <PartnerCustomers mess={mess} />}
           {page === 'blocked' && <BlockedList mess={mess} />}
+          {page === 'fees' && <OwnerFees mess={mess} />}
           {editor && <Editors key={`${mess.slug}-${editor}`} tab={editor} mess={mess} />}
         </div>
         {chat && <OrderChat orderId={chat} asOwner onClose={() => setChat(null)} />}
@@ -124,7 +133,7 @@ export function PartnerMore({ mess }: { mess: OwnedMessDto }) {
   const groups: { title: TextKey; keys: MorePage[] }[] = [
     { title: 'groupToday', keys: ['alerts', 'tiffin', 'customers'] },
     { title: 'groupMenu', keys: ['photos', 'week', 'offers'] },
-    { title: 'groupShop', keys: ['details', 'blocked'] },
+    { title: 'groupShop', keys: ['details', 'fees', 'blocked'] },
   ];
   return (
     <div className="flex flex-col gap-7 pt-1">

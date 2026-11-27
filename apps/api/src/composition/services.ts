@@ -18,6 +18,7 @@ import { ContributionFilingService } from '../application/contributions/filing';
 import { FiledCourses } from '../application/contributions/pipeline';
 import { DiscountReportService } from '../application/discount-report';
 import { EarningsService } from '../application/earnings/earnings-service';
+import { FeeService } from '../application/fee-service';
 import { InsightsService } from '../application/insights-service';
 import { StudentMailer } from '../application/notify/student-mailer';
 import { OfferService } from '../application/offer-service';
@@ -41,6 +42,7 @@ import { SupportDeskService } from '../application/support/support-desk-service'
 import { SupportService } from '../application/support/support-service';
 import type {
   ChatReportRepository,
+  FeeRepository,
   LiveSignal,
   MessBlockRepository,
   MessOrderRepository,
@@ -50,6 +52,7 @@ import type {
   OrderChatRepository,
   OwnerLoginRepository,
   PhoneRepository,
+  PresenceRepository,
   PushQueue,
   PushRepository,
   PushSender,
@@ -153,6 +156,10 @@ export interface Ports {
   messViews: MessViewRepository;
   /** Tiffin meals marked delivered or missed. */
   tiffinMarks: TiffinMarkRepository;
+  /** Who has an order screen open (optional: without it every notification is sent). */
+  presence?: PresenceRepository;
+  /** Restaurant fees: rules, the append-only ledger, closed months. */
+  fees: FeeRepository;
   signInStrikes: SignInStrikes;
   admins: AdminDirectory;
   academic: AcademicRepository;
@@ -238,9 +245,19 @@ export function buildServices(p: Ports, config: AppConfig) {
     prices,
   );
   const admins = new AdminAccess(p.admins, config.adminEmails);
-  const orderEvents = new OrderEvents(p.messOrders, p.orderChat, p.push, p.pushSender, p.live, p.clock);
+  const orderEvents = new OrderEvents(
+    p.messOrders,
+    p.orderChat,
+    p.push,
+    p.pushSender,
+    p.live,
+    p.clock,
+    p.presence,
+  );
   const phones = new PhoneService(p.phones, p.sms, p.clock, p.profiles, p.whatsappNumber ?? '');
+  const fees = new FeeService(p.fees, p.messes, p.messOrders, p.clock);
   const orders = new OrderService(p.messes, p.messOrders, p.features, p.clock, p.uploads, {
+    fees,
     events: orderEvents,
     phones,
     views: p.messViews,
@@ -335,6 +352,7 @@ export function buildServices(p: Ports, config: AppConfig) {
     books: new BookService(p.catalogueReader, p.books),
     mess: new MessService(p.messes, p.messReports, p.features),
     orders,
+    fees,
     phones,
     partnerLogin: new PartnerLoginService(
       p.ownerLogins,

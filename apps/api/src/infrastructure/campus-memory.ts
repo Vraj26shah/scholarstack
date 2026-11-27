@@ -14,6 +14,9 @@ import {
   type ChatReportRecord,
   type ChatReportRepository,
   EMPTY_CHAT_STATE,
+  type FeeRepository,
+  type FeeRuleRecord,
+  type LedgerRecord,
   type LiveSignal,
   type MessBlockRecord,
   type MessBlockRepository,
@@ -31,9 +34,12 @@ import {
   type OwnerLoginRepository,
   type PhoneRecord,
   type PhoneRepository,
+  type PresenceRepository,
   type PushCounter,
   type PushRepository,
   type PushSubscriptionRecord,
+  type SettlementRecord,
+  type TiffinMarkKey,
   type TiffinMarkRecord,
   type TiffinMarkRepository,
 } from '../domain/campus-ports';
@@ -159,16 +165,21 @@ const OPEN = new Set<MessOrderStatus>(OPEN_MESS_ORDER);
 export class MemoryMessOrders implements MessOrderRepository {
   readonly rows: MessOrderRecord[] = [];
   constructor(private readonly now: () => Date = () => new Date()) {}
-  async add(o: Omit<MessOrderRecord, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'ownerNote' | 'chat'>) {
+  async add(
+    o: Omit<MessOrderRecord, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'ownerNote' | 'chat'> & {
+      handoverSecret?: string;
+    },
+  ) {
     const at = this.now();
+    const { handoverSecret = '', ...rest } = structuredClone(o);
     const row: MessOrderRecord = {
-      ...structuredClone(o),
+      ...rest,
       id: nextId('order'),
       status: 'placed',
       ownerNote: '',
       createdAt: at,
       updatedAt: at,
-      chat: { ...EMPTY_CHAT_STATE },
+      chat: { ...EMPTY_CHAT_STATE, handoverSecret },
     };
     this.rows.unshift(row);
     return structuredClone(row);
@@ -389,7 +400,8 @@ export class MemoryMessViews implements MessViewRepository {
 
 export class MemoryTiffinMarks implements TiffinMarkRepository {
   readonly rows = new Map<string, TiffinMarkRecord>();
-  private key = (m: Omit<TiffinMarkRecord, 'status'>) => `${m.orderId}|${m.day}|${m.meal}|${m.makeupFor}`;
+  constructor(private readonly now: () => Date = () => new Date()) {}
+  private key = (m: TiffinMarkKey) => `${m.orderId}|${m.day}|${m.meal}|${m.makeupFor}`;
   async list(orderIds: string[], fromDay: string, toDay: string) {
     const ids = new Set(orderIds);
     return [...this.rows.values()]
@@ -397,10 +409,43 @@ export class MemoryTiffinMarks implements TiffinMarkRepository {
       .map((r) => ({ ...r }));
   }
   async set(m: TiffinMarkRecord) {
-    this.rows.set(this.key(m), { ...m });
+    this.rows.set(this.key(m), {
+      how: '',
+      confirm: '',
+      decided: '',
+      ...m,
+      markedAt: m.markedAt ?? this.now(),
+    });
   }
-  async clear(m: Omit<TiffinMarkRecord, 'status'>) {
+  async clear(m: TiffinMarkKey) {
     this.rows.delete(this.key(m));
+  }
+  async listDisputed(sinceDay: string) {
+    return [...this.rows.values()]
+      .filter((r) => r.confirm === 'no' && r.day >= sinceDay)
+      .map((r) => ({ ...r }));
+  }
+}
+
+export class MemoryPresence implements PresenceRepository {
+  readonly rows = new Map<string, Date>();
+  constructor(private readonly now: () => Date = () => new Date()) {}
+  async touch(scope: string, who: string) {
+    this.rows.set(`${scope}|${who}`, this.now());
+  }
+  async leave(scopes: string[], who: string) {
+    for (const s of scopes) this.rows.delete(`${s}|${who}`);
+  }
+  async here(scopes: string[], since: Date) {
+    const out = new Set<string>();
+    for (const [k, at] of this.rows) {
+      const i = k.indexOf('|');
+      if (at >= since && scopes.includes(k.slice(0, i))) out.add(k.slice(i + 1));
+    }
+    return out;
+  }
+  async prune(before: Date) {
+    for (const [k, at] of this.rows) if (at < before) this.rows.delete(k);
   }
 }
 
@@ -418,5 +463,50 @@ export class MemoryOwnerLogins implements OwnerLoginRepository {
   }
   async remove(phone: string) {
     this.rows.delete(phone);
+  }
+}
+
+export class MemoryFees implements FeeRepository {
+  readonly ruleRows: FeeRuleRecord[] = [];
+  readonly ledger: LedgerRecord[] = [];
+  readonly closed: SettlementRecord[] = [];
+  constructor(private readonly now: () => Date = () => new Date()) {}
+  async rules(slug: string) {
+    return this.ruleRows.filter((r) => r.messSlug === slug).map((r) => ({ ...r }));
+  }
+  async allRules() {
+    return this.ruleRows.map((r) => ({ ...r }));
+  }
+  async addRule(r: Omit<FeeRuleRecord, 'id' | 'createdAt'>) {
+    const row = { ...r, id: nextId('fee-rule'), createdAt: this.now() };
+    this.ruleRows.push(row);
+    return { ...row };
+  }
+  async entries(slug: string) {
+    return this.ledger.filter((e) => e.messSlug === slug).map((e) => ({ ...e }));
+  }
+  async entriesSince(day: string) {
+    return this.ledger.filter((e) => e.day >= day).map((e) => ({ ...e }));
+  }
+  async add(e: Omit<LedgerRecord, 'id' | 'createdAt'>) {
+    const once =
+      (e.kind === 'order' && this.ledger.some((x) => x.kind === 'order' && x.orderId === e.orderId)) ||
+      (e.kind === 'monthly' &&
+        this.ledger.some((x) => x.kind === 'monthly' && x.messSlug === e.messSlug && x.period === e.period));
+    if (once) return null;
+    const row = { ...e, id: nextId('ledger'), createdAt: this.now() };
+    this.ledger.push(row);
+    return { ...row };
+  }
+  async settlements(slug: string) {
+    return this.closed.filter((s) => s.messSlug === slug).map((s) => ({ ...s }));
+  }
+  async allSettlements() {
+    return this.closed.map((s) => ({ ...s }));
+  }
+  async close(s: SettlementRecord) {
+    if (this.closed.some((x) => x.messSlug === s.messSlug && x.period === s.period)) return false;
+    this.closed.push({ ...s });
+    return true;
   }
 }

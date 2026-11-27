@@ -1,5 +1,9 @@
 import {
+  type AdminDisputeDto,
   COMBO_PREFIX,
+  type DisputeKind,
+  HANDOVER,
+  type HandoverInput,
   type InsightPeriod,
   MESS_ORDER_NEXT,
   MESS_PHOTO_MAX_BYTES,
@@ -17,8 +21,10 @@ import {
   TIFFIN_MAKEUP_DAYS,
   TIFFIN_MEALS,
   TIFFIN_START_WITHIN_DAYS,
+  type TiffinConfirmInput,
   type TiffinMarkInput,
   type TiffinMeal,
+  type TiffinMealDto,
   type TiffinRowDto,
   type TiffinSheetDto,
   bestDiscount,
@@ -40,12 +46,23 @@ import type {
   MessRepository,
   MessViewRepository,
   OrderChatRepository,
+  TiffinMarkRecord,
   TiffinMarkRepository,
 } from '../domain/campus-ports';
 import type { Principal } from '../domain/entities';
 import type { Clock, FeatureRepository, UploadStore } from '../domain/ports';
 import { MESS_FEATURE, toDto as messDto } from './campus-service';
 import { fail } from './errors';
+import type { FeeService } from './fee-service';
+import {
+  ORDER_SCOPE,
+  handoverCode,
+  mealScope,
+  newHandoverSecret,
+  noShowCounts,
+  studentOptions,
+  triesToday,
+} from './handover';
 import type { OrderEvents } from './order-events';
 import { addDays, computeInsights, periodRange } from './owner-insights';
 import type { PhoneService } from './phone-service';
@@ -88,6 +105,18 @@ const CODE_CHARS = 'ACDEFGHJKMNPQRTUVWXY3479';
 const newCode = () =>
   Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
 
+/**
+ * The restaurant sees a student's mobile number only while it has something to do for them: an
+ * accepted order (until a day after it ends) or a running tiffin plan. Not on a new order it hasn't
+ * accepted, and not on old orders, so numbers can't be collected for ordering off the site.
+ */
+export function ownerSeesPhone(o: MessOrderRecord, now: Date): boolean {
+  if (o.status === 'accepted' || o.status === 'ready') return true;
+  if (o.tiffin && o.status === 'done' && o.tiffin.endsOn >= campusClock(now).date) return true;
+  const accepted = !!o.chat.acceptedAt || o.status === 'done' || !!o.chat.noShowAt;
+  return accepted && o.status !== 'placed' && now.getTime() - o.updatedAt.getTime() < DAY_MS;
+}
+
 /** Whose eyes an order is shown to: their unread count, and what their own "clear chat" hid. */
 export type OrderViewer = 'student' | 'owner' | 'admin';
 
@@ -97,6 +126,7 @@ export const toDto = (
   mess: string | { name: string; upiId?: string },
   viewer: OrderViewer = 'admin',
   topic = '',
+  now: Date = new Date(),
 ): MessOrderDto => {
   const c = o.chat;
   const messName = typeof mess === 'string' ? mess : mess.name;
@@ -104,6 +134,7 @@ export const toDto = (
   const showLast = !!c.lastAt && !!c.lastSender && (!cleared || c.lastAt > cleared);
   return {
     ...baseDto(o, messName),
+    phone: viewer !== 'owner' || ownerSeesPhone(o, now) ? o.phone : '',
     respondedAt: c.respondedAt?.toISOString() ?? null,
     endedBy: c.endedBy,
     unread: viewer === 'student' ? c.studentUnread : viewer === 'owner' ? c.ownerUnread : 0,
@@ -116,6 +147,17 @@ export const toDto = (
     upiId: c.payment && typeof mess !== 'string' ? (mess.upiId ?? '') : '',
     noShow: !!c.noShowAt,
     trust: null,
+    // The code is the student's alone, and only while there's food still to hand over.
+    handoverCode:
+      viewer === 'student' && !o.tiffin && ['placed', 'accepted', 'ready'].includes(o.status)
+        ? handoverCode(c.handoverSecret, ORDER_SCOPE)
+        : '',
+    handoverHow: c.handoverHow,
+    handedOverAt: c.handedOverAt?.toISOString() ?? null,
+    dispute: c.dispute
+      ? { kind: c.dispute, state: c.disputeState, at: c.disputedAt?.toISOString() ?? '', note: c.disputeNote }
+      : null,
+    ...(viewer === 'student' ? studentOptions(o, now) : { canConfirm: false, canDispute: '' as DisputeKind }),
   };
 };
 
@@ -124,6 +166,7 @@ const DAY = 24 * 3600 * 1000;
 export function standingOf(orders: MessOrderRecord[], now: Date): OrderStandingDto {
   const since = now.getTime() - NO_SHOW.windowDays * DAY;
   const misses = orders
+    .filter(noShowCounts)
     .map((o) => o.chat.noShowAt?.getTime() ?? 0)
     .filter((t) => t > since)
     .sort((a, b) => b - a);
@@ -175,6 +218,8 @@ export interface OrderExtras {
   views?: MessViewRepository;
   /** Tiffin meals marked delivered or missed. */
   tiffinMarks?: TiffinMarkRepository;
+  /** Restaurant fees: written when an order is accepted. */
+  fees?: FeeService;
 }
 
 /** Orders from students to restaurants for day scholars, and the owner's side of them. */
@@ -211,6 +256,8 @@ export class OrderService {
   async sweepAll() {
     if (!this.events) return 0;
     const now = this.clock.now().getTime();
+    await this.events.prunePresence();
+    await this.extras.fees?.reconcile().catch(() => 0);
     const waiting = await this.orders.listPlacedBefore(new Date(now - 2.5 * 60_000), 100);
     const after = await this.swept(waiting);
     return after.filter(
@@ -338,7 +385,7 @@ export class OrderService {
     const trust = await this.trustFor(list.filter((o) => ['placed', 'accepted', 'ready'].includes(o.status)));
     return Promise.all(
       list.map(async (o) => ({
-        ...toDto(o, mess, 'owner', await this.topic(o)),
+        ...toDto(o, mess, 'owner', await this.topic(o), this.clock.now()),
         trust: trust.get(o.userId) ?? null,
       })),
     );
@@ -393,6 +440,14 @@ export class OrderService {
     const mess = await this.ownedMess(p, admin, order.messSlug);
     if (order.tiffin || !['accepted', 'ready'].includes(order.status))
       throw fail.badRequest('Only an accepted order that was never collected can be marked.');
+    const since = (order.chat.respondedAt ?? order.createdAt).getTime();
+    const wait = HANDOVER.noShowAfterMinutes * 60_000 - (this.clock.now().getTime() - since);
+    if (wait > 0)
+      throw fail.badRequest(
+        `Give the student time to come: you can mark this in ${Math.ceil(wait / 60_000)} min.`,
+      );
+    if (order.chat.dispute === 'not_received' && order.chat.disputeState === 'open')
+      throw fail.badRequest('The student says this never reached them. The admin will look at it.');
     const saved = await this.orders.patch(
       id,
       { status: 'cancelled', endedBy: 'owner', ownerNote: 'Not collected', noShowAt: this.clock.now() },
@@ -402,6 +457,74 @@ export class OrderService {
     await this.events?.statusChanged(saved, mess, 'owner', order.status);
     const now = (await this.orders.find(id)) ?? saved;
     return toDto(now, mess, 'owner', await this.topic(now));
+  }
+
+  /**
+   * The restaurant hands the food over. With the student's code it's proved; without one (left at
+   * the door, phone dead) it's the restaurant's word, and the student is asked "Did you get it?".
+   * A code typed later on a handover marked without one upgrades it (and settles a contest).
+   */
+  async handover(p: Principal, admin: boolean, id: string, input: HandoverInput) {
+    const order = await this.orders.find(id);
+    if (!order) throw fail.notFound('That order');
+    const mess = await this.ownedMess(p, admin, order.messSlug);
+    if (order.tiffin) throw fail.badRequest('Tiffin meals are marked on the tiffin sheet.');
+    const c = order.chat;
+    const upgrade = order.status === 'done' && c.handoverHow === 'owner' && !!input.code;
+    if (!upgrade && order.status !== 'accepted' && order.status !== 'ready')
+      throw fail.badRequest(
+        order.status === 'done' ? 'This order was already handed over.' : 'Accept the order first.',
+      );
+    const now = this.clock.now();
+    const today = campusClock(now).date;
+    let how: 'code' | 'owner';
+    if (input.code) {
+      if (!c.handoverSecret) throw fail.badRequest('This order has no code. Hand it over without one.');
+      const tries = triesToday(order, today);
+      if (tries >= HANDOVER.triesPerDay)
+        throw fail.badRequest(
+          'Too many wrong codes today. Hand it over without the code: the student will be asked to confirm.',
+        );
+      if (input.code !== handoverCode(c.handoverSecret, ORDER_SCOPE)) {
+        await this.orders.patch(id, { handoverTries: tries + 1, handoverTriesOn: today });
+        const left = HANDOVER.triesPerDay - tries - 1;
+        throw fail.badRequest(
+          left > 0
+            ? `That's not the student's code. ${left} ${left === 1 ? 'try' : 'tries'} left today.`
+            : 'That code is wrong too. Hand it over without the code: the student will be asked to confirm.',
+        );
+      }
+      how = 'code';
+    } else {
+      if (!input.withoutCode) throw fail.badRequest("Type the student's 4-digit code.");
+      how = 'owner';
+    }
+    const settles = c.dispute === 'not_received' && c.disputeState === 'open' && how === 'code';
+    const saved = await this.orders.patch(
+      id,
+      {
+        status: 'done',
+        handoverHow: how,
+        handedOverAt: upgrade ? (c.handedOverAt ?? now) : now,
+        ...(settles ? { disputeState: 'settled' as const } : {}),
+      },
+      order.status,
+    );
+    if (!saved) throw fail.badRequest('This order just changed. Look again.');
+    const said =
+      how === 'code'
+        ? upgrade
+          ? "The student's code was entered: it reached them."
+          : "Handed over. The student's code matched."
+        : c.handoverSecret
+          ? 'The restaurant marked it handed over without the code. Did you get it? Say so on the order.'
+          : undefined;
+    if (upgrade) {
+      await this.events?.system(saved, said!).catch(() => {});
+      await this.events?.ping(saved);
+    } else await this.events?.statusChanged(saved, mess, 'owner', order.status, said);
+    const after = (await this.orders.find(id)) ?? saved;
+    return toDto(after, mess, 'owner', await this.topic(after), now);
   }
 
   async setOpen(p: Principal, admin: boolean, slug: string, open: boolean): Promise<OwnedMessDto> {
@@ -426,6 +549,9 @@ export class OrderService {
       order.status === 'done' && !!order.tiffin && order.tiffin.endsOn >= campusClock(this.clock.now()).date;
     if (!MESS_ORDER_NEXT[order.status].includes(status) && !(runningTiffin && status === 'rejected'))
       throw fail.badRequest(`This order is already ${order.status}; it can't be moved to ${status}.`);
+    // "Done" without a code (an older screen): handed over on the restaurant's word, the student confirms.
+    if (status === 'done' && !order.tiffin)
+      return this.handover(p, admin, id, { code: '', withoutCode: true });
     if (status === 'rejected' && note.length < 3) throw fail.badRequest('Say why, so the student knows.');
     if (status === 'accepted' && (order.chat.payment === 'due' || order.chat.payment === 'claimed'))
       throw fail.badRequest(
@@ -440,8 +566,18 @@ export class OrderService {
     let saved = await this.orders.setStatus(id, to, why);
     if (!saved) throw fail.notFound('That order');
     if (order.status === 'placed')
-      saved = (await this.orders.patch(id, { respondedAt: this.clock.now() })) ?? saved;
+      saved =
+        (await this.orders.patch(id, {
+          respondedAt: this.clock.now(),
+          ...(status === 'accepted' ? { acceptedAt: this.clock.now() } : {}),
+        })) ?? saved;
     if (status === 'rejected') saved = (await this.orders.patch(id, { endedBy: 'owner' })) ?? saved;
+    // The fee is written the moment an order is accepted (the cron writes it if this fails), and a
+    // cancellation soon after accepting (ran out, closed) isn't charged.
+    if (order.status === 'placed' && status === 'accepted')
+      await this.extras.fees?.accepted(saved).catch(() => {});
+    if (status === 'rejected' && order.status !== 'placed')
+      await this.extras.fees?.cancelledAfterAccepting(saved).catch(() => {});
     await this.events?.statusChanged(saved, mess, 'owner', order.status);
     saved = (await this.orders.find(id)) ?? saved;
     this.replyCache.delete(mess.slug);
@@ -498,7 +634,7 @@ export class OrderService {
       const c = by.get(o.userId) ?? {
         userId: o.userId,
         name: o.name,
-        phone: o.phone,
+        phone: '',
         orders: 0,
         spent: 0,
         firstOrderAt: o.createdAt.toISOString(),
@@ -510,7 +646,8 @@ export class OrderService {
       c.orders++;
       if (o.status !== 'rejected' && o.status !== 'cancelled') c.spent += o.total;
       c.name = o.name || c.name;
-      c.phone = o.phone || c.phone;
+      // Only a customer with an order on the go (or a running tiffin) shows a number.
+      if (ownerSeesPhone(o, this.clock.now())) c.phone = o.phone || c.phone;
       c.lastOrderAt = o.createdAt.toISOString();
       c.lastOrderId = o.id;
       if (o.tiffin && o.status === 'done' && o.tiffin.endsOn >= today) c.tiffin = o.tiffin;
@@ -562,7 +699,7 @@ export class OrderService {
       customer: {
         userId,
         name: last.name,
-        phone: last.phone,
+        phone: mine.some((o) => ownerSeesPhone(o, now)) ? last.phone : '',
         orders: mine.length,
         spent,
         firstOrderAt: mine[0]!.createdAt.toISOString(),
@@ -631,9 +768,10 @@ export class OrderService {
           addDays(day, TIFFIN_MAKEUP_DAYS),
         )
       : [];
+    const fullMark = (id: string, d: string, meal: TiffinMeal, makeupFor = '') =>
+      marks.find((m) => m.orderId === id && m.day === d && m.meal === meal && m.makeupFor === makeupFor);
     const markOf = (id: string, d: string, meal: TiffinMeal, makeupFor = '') =>
-      marks.find((m) => m.orderId === id && m.day === d && m.meal === meal && m.makeupFor === makeupFor)
-        ?.status ?? null;
+      fullMark(id, d, meal, makeupFor)?.status ?? null;
     const serves = (o: MessOrderRecord, meal: TiffinMeal) =>
       o.tiffin!.plan === 'both' || o.tiffin!.plan === meal;
     const soonDay = addDays(day, 3);
@@ -688,6 +826,8 @@ export class OrderService {
       unread: o.chat.ownerUnread,
       meal,
       mark,
+      how: mark ? (fullMark(o.id, day, meal, makeupFor)?.how ?? '') : '',
+      confirm: mark ? (fullMark(o.id, day, meal, makeupFor)?.confirm ?? '') : '',
       makeupFor,
       makeupUntil: makeupFor ? makeupUntil(makeupFor) : '',
       record: recordOf(o),
@@ -739,9 +879,45 @@ export class OrderService {
     };
   }
 
+  /** The checks every tiffin meal key must pass: on the plan, or a make-up for a meal really missed. */
+  private async checkMeal(
+    order: MessOrderRecord,
+    input: { day: string; meal: TiffinMeal; makeupFor: string },
+    givenNow: boolean,
+  ) {
+    const t = order.tiffin!;
+    if (t.plan !== 'both' && t.plan !== input.meal)
+      throw fail.badRequest(`This plan doesn't include ${input.meal}.`);
+    if (input.makeupFor) {
+      const missed = await this.extras.tiffinMarks!.list([order.id], input.makeupFor, input.makeupFor);
+      if (!missed.some((m) => m.meal === input.meal && !m.makeupFor && m.status === 'missed'))
+        throw fail.badRequest('That meal was not marked missed.');
+      if (givenNow && (input.day <= input.makeupFor || input.day > makeupUntil(input.makeupFor)))
+        throw fail.badRequest(`A missed meal can be made up within ${TIFFIN_MAKEUP_DAYS} days.`);
+    } else if (input.day < t.startsOn || input.day > t.endsOn) {
+      throw fail.badRequest('That day is outside the plan.');
+    }
+  }
+
+  private async markOn(key: { orderId: string; day: string; meal: TiffinMeal; makeupFor: string }) {
+    const list = await this.extras.tiffinMarks!.list([key.orderId], key.day, key.day);
+    return list.find((m) => m.meal === key.meal && m.makeupFor === key.makeupFor) ?? null;
+  }
+
+  /** A line in the chat that isn't news to whoever did it (their unread count stays as it was). */
+  private async say(order: MessOrderRecord, text: string, by: 'student' | 'owner' | 'admin') {
+    if (!this.events) return;
+    await this.events.system(order, text).catch(() => {});
+    if (by === 'student')
+      await this.orders.patch(order.id, { studentUnread: order.chat.studentUnread }).catch(() => null);
+    if (by === 'owner')
+      await this.orders.patch(order.id, { ownerUnread: order.chat.ownerUnread }).catch(() => null);
+  }
+
   /**
-   * The owner marks a tiffin meal: delivered, missed, or takes the mark back. A make-up meal (for a
-   * meal missed on `makeupFor`) can only be given within TIFFIN_MAKEUP_DAYS days of the miss.
+   * The owner marks a tiffin meal: delivered, missed, or takes the mark back. Delivered takes the
+   * student's code for that meal; without one, the student is asked "Did you get it?". A make-up
+   * meal (for a meal missed on `makeupFor`) can only be given within TIFFIN_MAKEUP_DAYS days.
    */
   async markTiffin(p: Principal, admin: boolean, input: TiffinMarkInput) {
     const order = await this.orders.find(input.orderId);
@@ -749,33 +925,413 @@ export class OrderService {
     const mess = await this.ownedMess(p, admin, order.messSlug);
     if (!this.extras.tiffinMarks) throw fail.badRequest('Tiffin marks are not set up.');
     if (order.status !== 'done') throw fail.badRequest("This tiffin plan isn't running.");
-    const today = campusClock(this.clock.now()).date;
+    const now = this.clock.now();
+    const today = campusClock(now).date;
     if (input.day > today) throw fail.badRequest("You can't mark a day that hasn't come yet.");
-    const t = order.tiffin;
-    if (t.plan !== 'both' && t.plan !== input.meal)
-      throw fail.badRequest(`This plan doesn't include ${input.meal}.`);
+    if (input.makeupFor && input.status === 'missed')
+      throw fail.badRequest('A make-up meal is either given or not.');
+    await this.checkMeal(order, input, true);
     const key = { orderId: order.id, day: input.day, meal: input.meal, makeupFor: input.makeupFor };
-    if (input.makeupFor) {
-      if (input.status === 'missed') throw fail.badRequest('A make-up meal is either given or not.');
-      const missed = await this.extras.tiffinMarks.list([order.id], input.makeupFor, input.makeupFor);
-      if (!missed.some((m) => m.meal === input.meal && !m.makeupFor && m.status === 'missed'))
-        throw fail.badRequest('That meal was not marked missed.');
-      if (input.day <= input.makeupFor || input.day > makeupUntil(input.makeupFor))
-        throw fail.badRequest(`A missed meal can be made up within ${TIFFIN_MAKEUP_DAYS} days.`);
-    } else if (input.day < t.startsOn || input.day > t.endsOn) {
-      throw fail.badRequest('That day is outside the plan.');
+    const label = input.meal === 'lunch' ? 'Lunch' : 'Dinner';
+    const existing = await this.markOn(key);
+    // A meal the student says never came: only their code for it (proof) changes that now.
+    if (existing?.confirm === 'no' && !existing.decided && !(input.status === 'delivered' && input.code))
+      throw fail.badRequest(
+        'The student says this meal never came. Type their code for it, or the admin will decide.',
+      );
+    const secret = order.chat.handoverSecret;
+    if (input.status === 'delivered') {
+      let how: TiffinMarkRecord['how'] = secret ? 'owner' : '';
+      if (input.code) {
+        if (!secret) throw fail.badRequest('This plan has no codes. Mark it without one.');
+        const tries = triesToday(order, today);
+        if (tries >= HANDOVER.triesPerDay)
+          throw fail.badRequest(
+            'Too many wrong codes today. Mark it without the code: the student will be asked to confirm.',
+          );
+        if (input.code !== handoverCode(secret, mealScope(input.day, input.meal, input.makeupFor))) {
+          await this.orders.patch(order.id, { handoverTries: tries + 1, handoverTriesOn: today });
+          const left = HANDOVER.triesPerDay - tries - 1;
+          throw fail.badRequest(
+            left > 0
+              ? `That's not the student's code for this ${input.meal}. ${left} ${left === 1 ? 'try' : 'tries'} left today.`
+              : 'That code is wrong too. Mark it without the code: the student will be asked to confirm.',
+          );
+        }
+        how = 'code';
+      }
+      // Already proved (code, or the student's own word): marking it again without a code changes nothing.
+      const proved =
+        existing?.status === 'delivered' && (existing.how === 'code' || existing.how === 'student');
+      if (!(proved && how !== 'code')) {
+        await this.extras.tiffinMarks.set({ ...key, status: 'delivered', how, confirm: '', decided: '' });
+        if (existing?.confirm === 'no')
+          await this.say(
+            order,
+            `${label} on ${input.day}: the student's code was entered, so it reached them.`,
+            'owner',
+          );
+        if (how === 'owner')
+          await this.events
+            ?.toStudent(
+              order,
+              {
+                title: `${mess.name} · ${label.toLowerCase()} delivered?`,
+                body: `${mess.name} marked your ${input.meal} delivered without your code. Did you get it? Tap to say.`,
+                tag: `tiffin-${order.id}-${input.day}-${input.meal}`,
+                url: '/my-orders',
+              },
+              2 * 24 * 3600,
+              ['orders'],
+            )
+            .catch(() => null);
+      }
+    } else if (input.status === 'missed') {
+      await this.extras.tiffinMarks.set({ ...key, status: 'missed' });
+    } else {
+      await this.extras.tiffinMarks.clear(key);
     }
-    if (input.status === 'clear') await this.extras.tiffinMarks.clear(key);
-    else await this.extras.tiffinMarks.set({ ...key, status: input.status });
     if (input.status === 'missed' && !input.makeupFor)
-      await this.events
-        ?.system(
-          order,
-          `${input.meal === 'lunch' ? 'Lunch' : 'Dinner'} on ${input.day} was missed. It can be made up until ${makeupUntil(input.day)}.`,
-        )
-        .catch(() => {});
+      await this.say(
+        order,
+        `${label} on ${input.day} was missed. It can be made up until ${makeupUntil(input.day)}.`,
+        'owner',
+      );
     await this.events?.ping(order);
     return this.tiffinSheet(p, admin, mess.slug, input.day);
+  }
+
+  /** The student's meals to show: today's (with codes), make-ups due, and deliveries to confirm. */
+  private studentMeals(o: MessOrderRecord, mine: TiffinMarkRecord[], today: string, now: Date) {
+    const t = o.tiffin!;
+    const secret = o.chat.handoverSecret;
+    const serves = (meal: TiffinMeal) => t.plan === 'both' || t.plan === meal;
+    const find = (day: string, meal: TiffinMeal, makeupFor: string) =>
+      mine.find((m) => m.day === day && m.meal === meal && m.makeupFor === makeupFor);
+    const fresh = (m: TiffinMarkRecord) =>
+      !m.markedAt || now.getTime() - m.markedAt.getTime() <= HANDOVER.answerHours * 3600_000;
+    const out: TiffinMealDto[] = [];
+    const add = (day: string, meal: TiffinMeal, makeupFor: string) => {
+      const m = find(day, meal, makeupFor);
+      const open = !m;
+      out.push({
+        day,
+        meal,
+        makeupFor,
+        code: open && secret ? handoverCode(secret, mealScope(day, meal, makeupFor)) : '',
+        mark: m?.status ?? null,
+        how: m?.how ?? '',
+        confirm: m?.confirm ?? '',
+        canAnswer:
+          (open && day === today) ||
+          (!!m && m.status === 'delivered' && m.how === 'owner' && !m.decided && fresh(m)),
+      });
+    };
+    if (t.startsOn <= today && today <= t.endsOn)
+      for (const meal of TIFFIN_MEALS) if (serves(meal)) add(today, meal, '');
+    // A missed meal that can still be made up: today's make-up gets its own code.
+    for (const m of mine)
+      if (
+        !m.makeupFor &&
+        m.status === 'missed' &&
+        m.day < today &&
+        makeupUntil(m.day) >= today &&
+        !mine.some(
+          (x) => x.makeupFor === m.day && x.meal === m.meal && x.status === 'delivered' && x.day !== today,
+        )
+      )
+        add(today, m.meal, m.day);
+    // Earlier deliveries marked without a code that still wait for "Did you get it?".
+    for (const m of mine)
+      if (
+        m.status === 'delivered' &&
+        m.how === 'owner' &&
+        !m.decided &&
+        fresh(m) &&
+        !out.some((x) => x.day === m.day && x.meal === m.meal && x.makeupFor === m.makeupFor)
+      )
+        add(m.day, m.meal, m.makeupFor);
+    return out;
+  }
+
+  /**
+   * The student about one tiffin meal: "I got it" (today's meal, or one marked delivered without
+   * their code), or "I didn't get it" (only on one marked delivered without their code, within
+   * HANDOVER.answerHours). A "no" goes to the admin.
+   */
+  async confirmTiffin(p: Principal, input: TiffinConfirmInput): Promise<MessOrderDto[]> {
+    const order = await this.orders.find(input.orderId);
+    if (!order || order.userId !== p.userId || !order.tiffin) throw fail.notFound('That tiffin plan');
+    if (!this.extras.tiffinMarks) throw fail.badRequest('Tiffin marks are not set up.');
+    if (order.status !== 'done') throw fail.badRequest("This tiffin plan isn't running.");
+    const mess = await this.messes.find(order.messSlug);
+    const now = this.clock.now();
+    const today = campusClock(now).date;
+    const key = { orderId: order.id, day: input.day, meal: input.meal, makeupFor: input.makeupFor };
+    const label = input.meal === 'lunch' ? 'Lunch' : 'Dinner';
+    const m = await this.markOn(key);
+    const answerable =
+      !!m &&
+      m.status === 'delivered' &&
+      m.how === 'owner' &&
+      !m.decided &&
+      (!m.markedAt || now.getTime() - m.markedAt.getTime() <= HANDOVER.answerHours * 3600_000);
+    if (input.answer === 'yes') {
+      if (!m) {
+        if (input.day !== today) throw fail.badRequest("You can only say so for today's meal.");
+        await this.checkMeal(order, input, true);
+        await this.extras.tiffinMarks.set({ ...key, status: 'delivered', how: 'student' });
+        await this.say(order, `${label} on ${input.day}: the student says they got it.`, 'student');
+      } else if (answerable) {
+        if (m.confirm !== 'yes') {
+          await this.extras.tiffinMarks.set({ ...m, confirm: 'yes' });
+          await this.say(order, `${label} on ${input.day}: the student confirmed they got it.`, 'student');
+        }
+      } else throw fail.badRequest('There is nothing to confirm for this meal.');
+    } else {
+      if (!answerable)
+        throw fail.badRequest(
+          `You can say a meal didn't come only when it was marked delivered without your code, within ${HANDOVER.answerHours} hours.`,
+        );
+      if (m!.confirm !== 'no') {
+        await this.extras.tiffinMarks.set({ ...m!, confirm: 'no' });
+        await this.say(
+          order,
+          `${label} on ${input.day}: the student says it never came. The admin will look at it.`,
+          'student',
+        );
+        if (mess)
+          await this.events
+            ?.toOwners(
+              mess,
+              {
+                title: `⚠️ ${order.name}: ${input.meal} not received`,
+                body: `${order.name} says their ${input.meal} on ${input.day} never came. If it did, type their code for it on the tiffin sheet.`,
+                tag: `tiffin-${order.id}-${input.day}-${input.meal}`,
+                url: '/orders',
+              },
+              24 * 3600,
+            )
+            .catch(() => null);
+      }
+    }
+    await this.events?.ping(order);
+    return this.mine(p);
+  }
+
+  // ── Handover from the student's side, and contests ──
+
+  /** The student says they got the food: the order is done (or a handover without code is confirmed). */
+  async confirmReceived(p: Principal, id: string): Promise<MessOrderDto> {
+    const order = await this.orders.find(id);
+    if (!order || order.userId !== p.userId) throw fail.notFound('That order');
+    const mess = await this.messes.find(order.messSlug);
+    const now = this.clock.now();
+    if (!studentOptions(order, now).canConfirm)
+      throw fail.badRequest('There is nothing to confirm on this order.');
+    let saved: MessOrderRecord | null;
+    if (order.status === 'accepted' || order.status === 'ready') {
+      saved = await this.orders.patch(
+        id,
+        { status: 'done', handoverHow: 'student', handedOverAt: now },
+        order.status,
+      );
+      if (!saved) throw fail.badRequest('This order just changed. Look again.');
+      await this.say(saved, 'The student says they got it.', 'student');
+    } else {
+      const withdrawn = order.chat.dispute === 'not_received' && order.chat.disputeState === 'open';
+      saved = await this.orders.patch(id, {
+        handoverHow: 'student',
+        ...(withdrawn ? { disputeState: 'settled' as const } : {}),
+      });
+      await this.say(
+        saved ?? order,
+        withdrawn ? 'The student says it reached them after all.' : 'The student confirmed they got it.',
+        'student',
+      );
+    }
+    await this.events?.ping(order);
+    const after = (await this.orders.find(id)) ?? saved ?? order;
+    return toDto(after, mess ?? '', 'student', await this.topic(after), now);
+  }
+
+  /** The student contests: food that never came, or a "didn't collect" they say is wrong. */
+  async dispute(p: Principal, id: string, kind: 'not_received' | 'no_show', note: string) {
+    const order = await this.orders.find(id);
+    if (!order || order.userId !== p.userId) throw fail.notFound('That order');
+    const mess = await this.messes.find(order.messSlug);
+    const now = this.clock.now();
+    if (studentOptions(order, now).canDispute !== kind)
+      throw fail.badRequest(
+        kind === 'no_show'
+          ? `A "didn't collect" can be contested within ${HANDOVER.answerHours} hours.`
+          : 'You can say this once the restaurant marks it handed over, or when it is very late.',
+      );
+    const saved =
+      (await this.orders.patch(id, {
+        dispute: kind,
+        disputeState: 'open',
+        disputedAt: now,
+        disputeNote: note.slice(0, 300),
+      })) ?? order;
+    const quoted = note ? ` “${note.slice(0, 300)}”` : '';
+    await this.say(
+      saved,
+      kind === 'no_show'
+        ? `The student says they did collect it (or weren't given the chance).${quoted} The admin will look at it; until then it doesn't count against them.`
+        : `The student says they didn't get this order.${quoted} The admin will look at it.`,
+      'student',
+    );
+    if (mess)
+      await this.events
+        ?.toOwners(
+          mess,
+          {
+            title: `⚠️ Order ${order.code}: ${kind === 'no_show' ? '"didn\'t collect" contested' : 'not received'}`,
+            body:
+              kind === 'no_show'
+                ? `${order.name} says they did collect it. The admin will decide.`
+                : `${order.name} says it never reached them. If it did, type their code on the order.`,
+            tag: `order-${order.id}`,
+            url: '/orders',
+          },
+          24 * 3600,
+          [`board:${order.messSlug}`, `chat:${order.id}`],
+        )
+        .catch(() => null);
+    await this.events?.ping(order);
+    const after = (await this.orders.find(id)) ?? saved;
+    return toDto(after, mess ?? '', 'student', await this.topic(after), now);
+  }
+
+  // ── The admin decides contests ──
+
+  /** Everything contested in the last 90 days, open ones first. */
+  async disputes(): Promise<AdminDisputeDto[]> {
+    const now = this.clock.now();
+    const since = new Date(now.getTime() - 90 * DAY_MS);
+    const [orders, messes, marks] = await Promise.all([
+      this.orders.listSince(since, 10000),
+      this.messes.list(),
+      this.extras.tiffinMarks
+        ? this.extras.tiffinMarks.listDisputed(campusClock(since).date)
+        : Promise.resolve([]),
+    ]);
+    const names = new Map(messes.map((m) => [m.slug, m.name]));
+    const byId = new Map(orders.map((o) => [o.id, o]));
+    const rows: Omit<AdminDisputeDto, 'studentDisputes' | 'messDisputes'>[] = [];
+    const base = (o: MessOrderRecord) => ({
+      orderId: o.id,
+      code: o.code,
+      messSlug: o.messSlug,
+      messName: names.get(o.messSlug) ?? o.messSlug,
+      name: o.name,
+      email: o.email,
+      phone: o.phone,
+      total: o.total,
+    });
+    for (const o of orders)
+      if (o.chat.dispute)
+        rows.push({
+          ...base(o),
+          kind: o.chat.dispute,
+          state: o.chat.disputeState,
+          note: o.chat.disputeNote,
+          at: (o.chat.disputedAt ?? o.updatedAt).toISOString(),
+          meal: null,
+        });
+    for (const m of marks) {
+      const o = byId.get(m.orderId) ?? (await this.orders.find(m.orderId));
+      if (!o) continue;
+      rows.push({
+        ...base(o),
+        kind: 'tiffin',
+        state: m.decided || 'open',
+        note: '',
+        at: (m.markedAt ?? new Date(`${m.day}T12:00:00+05:30`)).toISOString(),
+        meal: { day: m.day, meal: m.meal, makeupFor: m.makeupFor },
+      });
+    }
+    const count = (f: (r: (typeof rows)[number]) => boolean) => rows.filter(f).length;
+    return rows
+      .map((r) => ({
+        ...r,
+        studentDisputes: count((x) => x.email === r.email),
+        messDisputes: count((x) => x.messSlug === r.messSlug),
+      }))
+      .sort((a, b) => Number(b.state === 'open') - Number(a.state === 'open') || b.at.localeCompare(a.at));
+  }
+
+  /** The admin sides with the student or the restaurant on a contested order. */
+  async decideDispute(orderId: string, decision: 'student' | 'owner') {
+    const order = await this.orders.find(orderId);
+    if (!order || !order.chat.dispute) throw fail.notFound('That contest');
+    if (order.chat.disputeState === 'settled')
+      throw fail.badRequest("The student's code was entered on this one: it's settled.");
+    const saved = (await this.orders.patch(orderId, { disputeState: decision })) ?? order;
+    // Food that never reached the student isn't charged to the restaurant (and is again if the
+    // admin changes their mind). A no-show was the restaurant's order either way.
+    if (order.chat.dispute === 'not_received' && this.extras.fees)
+      await this.extras.fees
+        .waive(
+          orderId,
+          decision === 'student',
+          decision === 'student'
+            ? 'The admin decided it never reached the student'
+            : 'The admin decided it reached the student',
+          'admin',
+        )
+        .catch(() => false);
+    const noShow = order.chat.dispute === 'no_show';
+    await this.say(
+      saved,
+      decision === 'student'
+        ? noShow
+          ? "The admin looked at it: this order doesn't count as not collected."
+          : 'The admin looked at it and sided with the student.'
+        : noShow
+          ? 'The admin looked at it: the "not collected" stands.'
+          : 'The admin looked at it and sided with the restaurant.',
+      'admin',
+    );
+    await this.events?.ping(order);
+    return this.disputes();
+  }
+
+  /** The admin decides a tiffin meal the student says never came (for the student: it counts as missed). */
+  async decideTiffin(
+    key: { orderId: string; day: string; meal: TiffinMeal; makeupFor: string },
+    decision: 'student' | 'owner',
+  ) {
+    const order = await this.orders.find(key.orderId);
+    if (!order || !order.tiffin || !this.extras.tiffinMarks) throw fail.notFound('That tiffin plan');
+    const m = await this.markOn(key);
+    if (!m || m.confirm !== 'no') throw fail.notFound('That contest');
+    await this.extras.tiffinMarks.set({
+      ...m,
+      decided: decision,
+      status: decision === 'student' ? 'missed' : 'delivered',
+    });
+    const label = key.meal === 'lunch' ? 'Lunch' : 'Dinner';
+    await this.say(
+      order,
+      decision === 'student'
+        ? `${label} on ${key.day}: the admin sided with the student, so it counts as missed.`
+        : `${label} on ${key.day}: the admin sided with the restaurant, so it counts as delivered.`,
+      'admin',
+    );
+    await this.events?.ping(order);
+    return this.disputes();
+  }
+
+  // ── Who is looking (no notification for what's already on their screen) ──
+
+  async here(scope: string, email: string) {
+    await this.events?.here(scope, email);
+  }
+
+  async left(scopes: string[], email: string) {
+    await this.events?.left(scopes, email);
   }
 
   /**
@@ -915,6 +1471,7 @@ export class OrderService {
         `After ${standing.noShows} orders you didn't collect, orders are paid first, and ${mess.name} doesn't take UPI on the site. Call them instead.`,
       );
     let order = await this.orders.add({
+      handoverSecret: newHandoverSecret(),
       code: newCode(),
       messSlug: slug,
       userId: p.userId,
@@ -933,7 +1490,7 @@ export class OrderService {
     });
     if (payFirst && mess.upiId) order = (await this.orders.patch(order.id, { payment: 'due' })) ?? order;
     await this.events?.placed(order, mess);
-    return toDto(order, mess, 'student', await this.topic(order));
+    return toDto(order, mess, 'student', await this.topic(order), this.clock.now());
   }
 
   private async checkLimits(userId: string, ipHash: string, slug: string) {
@@ -959,7 +1516,9 @@ export class OrderService {
     const messes = new Map((await this.messes.list()).map((m) => [m.slug, m]));
     const list = await this.swept(await this.orders.listForUser(p.userId, 20));
     const dtos = await Promise.all(
-      list.map(async (o) => toDto(o, messes.get(o.messSlug) ?? '', 'student', await this.topic(o))),
+      list.map(async (o) =>
+        toDto(o, messes.get(o.messSlug) ?? '', 'student', await this.topic(o), this.clock.now()),
+      ),
     );
     // A running tiffin plan: meals delivered and missed, and missed meals still to come.
     const plans = list.filter((o) => o.tiffin && o.status === 'done');
@@ -987,6 +1546,7 @@ export class OrderService {
                 !mine.some((x) => x.makeupFor === m.day && x.meal === m.meal && x.status === 'delivered'),
             )
             .map((m) => ({ day: m.day, meal: m.meal, until: makeupUntil(m.day) })),
+          meals: this.studentMeals(plans.find((o) => o.id === d.id)!, mine, today, this.clock.now()),
         };
       }
     }
@@ -1006,7 +1566,7 @@ export class OrderService {
     const saved = (await this.orders.patch(id, { endedBy: 'student' }))!;
     const mess = await this.messes.find(order.messSlug);
     if (mess) await this.events?.statusChanged(saved, mess, 'student');
-    return toDto(saved, mess ?? '', 'student', await this.topic(saved));
+    return toDto(saved, mess ?? '', 'student', await this.topic(saved), this.clock.now());
   }
 
   /** The student says they paid by UPI: the restaurant is told to check and accept. */
@@ -1022,6 +1582,6 @@ export class OrderService {
         (await this.orders.patch(id, { payment: 'claimed', paidAt: this.clock.now() }, 'placed')) ?? order;
       await this.events?.paymentClaimed(saved, mess);
     }
-    return toDto(saved, mess, 'student', await this.topic(saved));
+    return toDto(saved, mess, 'student', await this.topic(saved), this.clock.now());
   }
 }

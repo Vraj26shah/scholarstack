@@ -17,6 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
+import { useLeaveWhenHidden } from '../../lib/presence';
 import { Button } from '../../shared/ui/button';
 import { Page } from '../../shared/ui/chrome';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
@@ -25,6 +26,7 @@ import { useSectionSwipe } from '../../shared/ui/swipe';
 import { useAccountAlerts } from '../chat/alerts';
 import { useLive, usePushWhileOpen } from '../chat/live';
 import { ChatButton, OrderChat } from '../chat/order-chat';
+import { OwnerFees } from '../fees/fee-statement';
 import { DetailsEditor } from '../restaurant/details-editor';
 import { InsightsTab } from '../restaurant/insights-tab';
 import { MenuCardEditor, menuCardProblems } from '../restaurant/menu-card-editor';
@@ -32,6 +34,7 @@ import { OffersEditor } from '../restaurant/offers-editor';
 import { rupees } from '../restaurant/shared';
 import { WeekChartEditor } from '../restaurant/week-chart-editor';
 import { RestaurantLink } from '../tools/mess/components/share-link';
+import { CodeEntry, HANDOVER_EN, ownerHandoverText } from './handover';
 import { trustText } from './pay-first';
 
 const clock = (iso: string) =>
@@ -94,6 +97,10 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
     onSuccess: () => qc.invalidateQueries({ queryKey: ['owner-orders', order.messSlug] }),
   });
   const [askMissed, setAskMissed] = useState(false);
+  const handover = useMutation({
+    mutationFn: (h: { code?: string; withoutCode?: boolean }) => api.ownerHandover(order.id, h),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['owner-orders', order.messSlug] }),
+  });
   const waitingPay = order.status === 'placed' && (order.payment === 'due' || order.payment === 'claimed');
   const trust = trustText(order.trust);
   const late = order.status === 'placed' && !waitingPay && minsAgo(order.createdAt) >= 3;
@@ -187,19 +194,27 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
             </p>
           )}
           {order.mode === 'delivery' && <p className="m-0">{order.address}</p>}
-          <a href={`tel:+91${order.phone}`} className="font-semibold text-ink tabular-nums no-underline">
-            {formatMobile(order.phone)}
-          </a>
+          {order.phone ? (
+            <a href={`tel:+91${order.phone}`} className="font-semibold text-ink tabular-nums no-underline">
+              {formatMobile(order.phone)}
+            </a>
+          ) : (
+            order.status === 'placed' && (
+              <p className="m-0 text-[13px] text-ink2">Their number shows once you accept. Chat meanwhile.</p>
+            )
+          )}
         </div>
         <div className="flex items-center gap-3">
           <ChatButton unread={order.unread} onClick={onChat} />
-          <a
-            href={`tel:+91${order.phone}`}
-            aria-label={`Call ${order.name}`}
-            className="grid place-items-center w-10 h-10 rounded-full border-[1.5px] border-line text-ink no-underline hover:border-ink2"
-          >
-            <Phone size={17} />
-          </a>
+          {order.phone && (
+            <a
+              href={`tel:+91${order.phone}`}
+              aria-label={`Call ${order.name}`}
+              className="grid place-items-center w-10 h-10 rounded-full border-[1.5px] border-line text-ink no-underline hover:border-ink2"
+            >
+              <Phone size={17} />
+            </a>
+          )}
         </div>
       </div>
       {order.last && order.last.sender !== 'system' && (
@@ -212,9 +227,14 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
         </button>
       )}
 
-      {(move.error || paid.error || missed.error) && (
+      {(move.error || paid.error || missed.error || handover.error) && (
         <p role="alert" className="m-0 text-[13px] text-blush-text">
-          {friendly(move.error ?? paid.error ?? missed.error)}
+          {friendly(move.error ?? paid.error ?? missed.error ?? handover.error)}
+        </p>
+      )}
+      {order.dispute && (
+        <p className="m-0 rounded-lg bg-blush px-3 py-2 text-[13.5px] font-semibold text-blush-text">
+          {ownerHandoverText(order)?.text}
         </p>
       )}
       {order.status === 'placed' && !declining && (
@@ -302,13 +322,19 @@ function Ticket({ order, fresh, onChat }: { order: MessOrderDto; fresh: boolean;
         </Button>
       )}
       {order.status === 'ready' && !declining && (
-        <Button
-          variant="ink"
-          disabled={move.isPending}
-          onClick={() => move.mutate({ status: 'done', note: order.ownerNote })}
-        >
-          {order.mode === 'delivery' ? 'Delivered' : 'Picked up'}
-        </Button>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-semibold text-ink2">
+            {order.mode === 'delivery' ? 'Delivered?' : 'Picked up?'} Type the code on {order.name}'s phone.
+          </span>
+          <CodeEntry
+            labels={HANDOVER_EN}
+            busy={handover.isPending}
+            onCode={(code) => handover.mutate({ code })}
+            onWithout={() => handover.mutate({ withoutCode: true })}
+            buttonClass="press inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-ink px-4 text-[14.5px] font-semibold text-bg cursor-pointer"
+            quietClass="border-0 bg-transparent p-0 text-[13.5px] font-semibold text-ink2 underline underline-offset-4 cursor-pointer"
+          />
+        </div>
       )}
       {(order.status === 'accepted' || order.status === 'ready') && !declining && !askMissed && (
         <div className="flex flex-wrap gap-x-5 gap-y-2">
@@ -592,23 +618,81 @@ function Board({
                 <span className="font-bold text-ink w-14">{o.code}</span>
                 <span className="text-ink2 tabular-nums">{clock(o.createdAt)}</span>
                 <span className="flex-1 min-w-[160px] text-ink">
-                  {o.name} · {formatMobile(o.phone)} · {o.lines.reduce((n, l) => n + l.qty, 0)} items
+                  {o.name}
+                  {o.phone ? ` · ${formatMobile(o.phone)}` : ''} · {o.lines.reduce((n, l) => n + l.qty, 0)}{' '}
+                  items
                 </span>
                 <span className={o.status === 'done' ? 'text-teal-text font-semibold' : 'text-blush-text'}>
                   {o.status === 'done'
                     ? 'Delivered'
                     : o.status === 'rejected'
                       ? `Declined: ${o.ownerNote}`
-                      : o.endedBy === 'auto'
-                        ? 'Cancelled: not answered in 10 min'
-                        : 'Cancelled by student'}
+                      : o.noShow
+                        ? 'Not collected'
+                        : o.endedBy === 'auto'
+                          ? 'Cancelled: not answered in 10 min'
+                          : o.endedBy === 'owner'
+                            ? `Cancelled: ${o.ownerNote}`
+                            : 'Cancelled by student'}
                 </span>
                 <span className="font-semibold tabular-nums text-ink">{rupees(o.total)}</span>
                 <ChatButton unread={o.unread} onClick={() => onChat(o.id)} className="h-8 px-3 text-[13px]" />
+                <FinishedHandover order={o} />
               </li>
             ))}
           </ul>
         </section>
+      )}
+    </div>
+  );
+}
+
+/** Under a finished order: how it was handed over, and a place for the code typed late. */
+function FinishedHandover({ order }: { order: MessOrderDto }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const late = useMutation({
+    mutationFn: (code: string) => api.ownerHandover(order.id, { code }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['owner-orders', order.messSlug] }),
+  });
+  const note = ownerHandoverText(order);
+  const canType =
+    order.status === 'done' &&
+    order.handoverHow === 'owner' &&
+    (!order.dispute || order.dispute.state === 'open');
+  if (!note) return null;
+  return (
+    <div className="basis-full flex flex-col gap-1.5 pl-[72px]">
+      <p className={`m-0 text-[13px] ${note.bad ? 'font-semibold text-blush-text' : 'text-ink2'}`}>
+        {note.text}
+        {canType && !open && (
+          <>
+            {' '}
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="border-0 bg-transparent p-0 font-semibold text-ink underline underline-offset-4 cursor-pointer"
+            >
+              Type their code
+            </button>
+          </>
+        )}
+      </p>
+      {canType && open && (
+        <div className="max-w-[320px]">
+          <CodeEntry
+            labels={HANDOVER_EN}
+            busy={late.isPending}
+            onCode={(code) => late.mutate(code)}
+            buttonClass="press inline-flex h-11 items-center justify-center rounded-xl bg-ink px-4 text-[14px] font-semibold text-bg cursor-pointer"
+            quietClass=""
+          />
+        </div>
+      )}
+      {late.error && (
+        <p role="alert" className="m-0 text-[13px] text-blush-text">
+          {friendly(late.error)}
+        </p>
       )}
     </div>
   );
@@ -622,6 +706,7 @@ function useOwnerOrders(slug: string, topic = '') {
   };
   const live = useLive(topic, refresh);
   usePushWhileOpen(refresh);
+  useLeaveWhenHidden([`board:${slug}`]);
   return useQuery({
     queryKey: ['owner-orders', slug],
     queryFn: () => api.ownerOrders(slug),
@@ -695,10 +780,26 @@ function TiffinRow({
   r: TiffinRowDto;
   date: string;
   onChat: (id: string) => void;
-  onMark: (r: TiffinRowDto, status: 'delivered' | 'missed' | 'clear') => void;
+  onMark: (r: TiffinRowDto, status: 'delivered' | 'missed' | 'clear', code?: string) => void;
   busy: boolean;
 }) {
   const makeup = !!r.makeupFor;
+  const [typing, setTyping] = useState(false);
+  const disputed = r.mark === 'delivered' && r.confirm === 'no';
+  const proof =
+    r.mark !== 'delivered'
+      ? ''
+      : disputed
+        ? '⚠ The student says it never came. Type their code for it if it did; otherwise the admin decides.'
+        : r.how === 'code'
+          ? "✓ Student's code matched"
+          : r.how === 'student'
+            ? '✓ The student said they got it'
+            : r.how === 'owner'
+              ? r.confirm === 'yes'
+                ? '✓ The student confirmed'
+                : 'Without the code · waiting for the student to confirm'
+              : '';
   return (
     <li
       className={`flex flex-col gap-2.5 py-3.5 ${r.mark === 'delivered' ? 'opacity-70' : ''}`}
@@ -734,12 +835,39 @@ function TiffinRow({
           className="h-10 px-3 text-[13px] shrink-0"
         />
       </div>
+      {proof && (
+        <p className={`m-0 text-[13px] ${disputed ? 'font-semibold text-blush-text' : 'text-ink2'}`}>
+          {proof}
+        </p>
+      )}
+      {(typing || disputed) && (
+        <div className="print:hidden">
+          <CodeEntry
+            labels={{ ...HANDOVER_EN, submit: 'Delivered', without: 'No code? Mark it without one' }}
+            busy={busy}
+            onCode={(code) => {
+              onMark(r, 'delivered', code);
+              setTyping(false);
+            }}
+            onWithout={
+              disputed
+                ? undefined
+                : () => {
+                    onMark(r, 'delivered');
+                    setTyping(false);
+                  }
+            }
+            buttonClass="press inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-teal px-4 text-[14.5px] font-semibold text-white cursor-pointer"
+            quietClass="border-0 bg-transparent p-0 text-[13.5px] font-semibold text-ink2 underline underline-offset-4 cursor-pointer"
+          />
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2 print:hidden">
         <button
           type="button"
-          disabled={busy || date > todayIso()}
+          disabled={busy || date > todayIso() || disputed}
           aria-pressed={r.mark === 'delivered'}
-          onClick={() => onMark(r, r.mark === 'delivered' ? 'clear' : 'delivered')}
+          onClick={() => (r.mark === 'delivered' ? onMark(r, 'clear') : setTyping((v) => !v))}
           className={`press h-11 rounded-xl border-[1.5px] text-[14.5px] font-semibold cursor-pointer disabled:opacity-40 ${
             r.mark === 'delivered' ? 'border-teal bg-teal text-white' : 'border-line bg-surface text-ink'
           }`}
@@ -787,13 +915,18 @@ function TiffinSheet({ mess, onChat }: { mess: OwnedMessDto; onChat: (id: string
     refetchInterval: 60_000,
   });
   const mark = useMutation({
-    mutationFn: ({ r, status }: { r: TiffinRowDto; status: 'delivered' | 'missed' | 'clear' }) =>
+    mutationFn: ({
+      r,
+      status,
+      code = '',
+    }: { r: TiffinRowDto; status: 'delivered' | 'missed' | 'clear'; code?: string }) =>
       api.ownerMarkTiffin({
         orderId: r.orderId,
         day: q.data!.date,
         meal: r.meal,
         status,
         makeupFor: r.makeupFor,
+        code,
       }),
     onSuccess: (sheet) => qc.setQueryData(key, sheet),
   });
@@ -824,7 +957,7 @@ function TiffinSheet({ mess, onChat }: { mess: OwnedMessDto; onChat: (id: string
               date={s.date}
               onChat={onChat}
               busy={mark.isPending}
-              onMark={(row, status) => mark.mutate({ r: row, status })}
+              onMark={(row, status, code) => mark.mutate({ r: row, status, code })}
             />
           ))}
         </ul>
@@ -921,7 +1054,7 @@ function TiffinSheet({ mess, onChat }: { mess: OwnedMessDto; onChat: (id: string
                 date={s.date}
                 onChat={onChat}
                 busy={mark.isPending}
-                onMark={(row, status) => mark.mutate({ r: row, status })}
+                onMark={(row, status, code) => mark.mutate({ r: row, status, code })}
               />
             ))}
           </ul>
@@ -1018,18 +1151,21 @@ function Customers({ mess, onChat }: { mess: OwnedMessDto; onChat: (id: string) 
                   )}
                 </p>
                 <p className="m-0 text-[13.5px] text-ink2">
-                  <span className="tabular-nums">{formatMobile(c.phone)}</span> · {c.orders} order
+                  {c.phone && <span className="tabular-nums">{formatMobile(c.phone)} · </span>}
+                  {c.orders} order
                   {c.orders === 1 ? '' : 's'} · {rupees(c.spent)} · last {clock(c.lastOrderAt)},{' '}
                   {new Date(c.lastOrderAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                 </p>
               </div>
-              <a
-                href={`tel:+91${c.phone}`}
-                aria-label={`Call ${c.name}`}
-                className="grid place-items-center w-9 h-9 rounded-full border-[1.5px] border-line text-ink no-underline hover:border-ink2"
-              >
-                <Phone size={16} />
-              </a>
+              {c.phone && (
+                <a
+                  href={`tel:+91${c.phone}`}
+                  aria-label={`Call ${c.name}`}
+                  className="grid place-items-center w-9 h-9 rounded-full border-[1.5px] border-line text-ink no-underline hover:border-ink2"
+                >
+                  <Phone size={16} />
+                </a>
+              )}
               <ChatButton unread={0} onClick={() => onChat(c.lastOrderId)} className="h-9 px-3 text-[13px]" />
             </li>
           ))}
@@ -1142,7 +1278,8 @@ type Tab =
   | 'offers'
   | 'week'
   | 'details'
-  | 'blocked';
+  | 'blocked'
+  | 'fees';
 /** The tabs that share one unsaved draft (Editors). */
 const EDITOR_TABS: Tab[] = ['menu', 'offers', 'week', 'details'];
 /** Whether that draft has changes not saved yet (read when leaving those tabs). */
@@ -1157,6 +1294,7 @@ const TABS: [Tab, string][] = [
   ['week', 'Weekly menu'],
   ['details', 'Details & timings'],
   ['blocked', 'Blocked'],
+  ['fees', 'Fees'],
 ];
 
 const toForm = (m: MessDto): OwnerMessInput => ({
@@ -1466,6 +1604,8 @@ export function OrdersPage() {
                 <TiffinSheet key={mess.slug} mess={mess} onChat={(id) => go({ chat: id })} />
               ) : tab === 'customers' ? (
                 <Customers key={mess.slug} mess={mess} onChat={(id) => go({ chat: id })} />
+              ) : tab === 'fees' ? (
+                <OwnerFees key={mess.slug} mess={mess} />
               ) : (
                 <Editors key={mess.slug} tab={tab} mess={mess} />
               )}

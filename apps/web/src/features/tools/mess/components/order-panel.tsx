@@ -24,6 +24,7 @@ import { createPortal } from 'react-dom';
 import { signal, track } from '../../../../lib/analytics';
 import { ApiError, api } from '../../../../lib/api';
 import { mobileHint, tidyMobile } from '../../../../lib/mobile';
+import { useLeaveWhenHidden } from '../../../../lib/presence';
 import { useSession } from '../../../../lib/session';
 import { Button, buttonClass } from '../../../../shared/ui/button';
 import { Minus, Phone, Plus, SearchIcon } from '../../../../shared/ui/icons';
@@ -32,6 +33,7 @@ import { askToSignIn } from '../../../auth/sign-in-prompt';
 import { useLive } from '../../../chat/live';
 import { ChatButton, OrderChat } from '../../../chat/order-chat';
 import { PayFirstBox, StandingNote, orderStatusText, useOrderStanding } from '../../../orders/pay-first';
+import { StudentHandover, TiffinMeals } from '../../../orders/student-handover';
 import { rupees } from '../../../restaurant/shared';
 import { useToolState } from '../../core/storage';
 import { field } from '../../core/ui';
@@ -294,6 +296,7 @@ function Tracker({
               chat.
             </p>
           ))}
+          <TiffinMeals order={order} />
         </div>
       )}
       {tiffinOn ? null : stopped ? (
@@ -336,6 +339,7 @@ function Tracker({
         </p>
       )}
       <PayFirstBox order={order} />
+      <StudentHandover order={order} />
       <ul className="m-0 p-0 list-none text-[14px] leading-relaxed text-ink2">
         {order.lines.map((l) => (
           <li key={`${l.name}${l.detail}`}>
@@ -501,6 +505,7 @@ export function OrderPanel({
       o.id !== dismissed &&
       (OPEN_MESS_ORDER.includes(o.status) || Date.now() - Date.parse(o.updatedAt) < 3 * 3600_000),
   );
+  useLeaveWhenHidden([signedIn && 'orders']);
   useLive(current?.topic, () => void qc.invalidateQueries({ queryKey: ['my-mess-orders'] }));
   const reply = useQuery({
     queryKey: ['reply-time', mess.slug],

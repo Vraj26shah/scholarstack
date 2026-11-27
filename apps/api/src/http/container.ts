@@ -16,6 +16,7 @@ import type { ContributorStatsService } from '../application/contributions/contr
 import type { ContributionFilingService } from '../application/contributions/filing';
 import type { DiscountReportService } from '../application/discount-report';
 import type { EarningsService } from '../application/earnings/earnings-service';
+import type { FeeService } from '../application/fee-service';
 import type { InsightsService } from '../application/insights-service';
 import type { OfferService } from '../application/offer-service';
 import type { ChatService } from '../application/order-chat';
@@ -73,6 +74,8 @@ export interface Container {
   reminders: ReminderService;
   /** Orders to restaurants for day scholars, and the owners' board. */
   orders: OrderService;
+  /** Restaurant fees and settlements. */
+  fees: FeeService;
   /** Students' mobile numbers, checked once with an SMS code. */
   phones: PhoneService;
   partnerLogin: PartnerLoginService;

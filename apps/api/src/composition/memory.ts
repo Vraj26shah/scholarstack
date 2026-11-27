@@ -7,6 +7,7 @@ import type { Container } from '../http/container';
 import { DemoAuth } from '../infrastructure/auth';
 import {
   MemoryChatReports,
+  MemoryFees,
   MemoryLiveSignal,
   MemoryMessBlocks,
   MemoryMessOrders,
@@ -16,6 +17,7 @@ import {
   MemoryOrderChat,
   MemoryOwnerLogins,
   MemoryPhones,
+  MemoryPresence,
   MemoryPush,
   MemoryTiffinMarks,
 } from '../infrastructure/campus-memory';
@@ -144,7 +146,9 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
     phones: new MemoryPhones(),
     ownerLogins: new MemoryOwnerLogins(),
     messViews: new MemoryMessViews(),
-    tiffinMarks: new MemoryTiffinMarks(),
+    tiffinMarks: new MemoryTiffinMarks(() => clock.now()),
+    presence: new MemoryPresence(() => clock.now()),
+    fees: new MemoryFees(() => clock.now()),
     sms: options.sms ?? new NoSms(),
   };
   if (options.seed !== false)

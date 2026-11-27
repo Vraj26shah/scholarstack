@@ -4,12 +4,14 @@ import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { useFoodLive } from '../../lib/food-live';
+import { useLeaveWhenHidden } from '../../lib/presence';
 import { Page } from '../../shared/ui/chrome';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { useLive, usePushWhileOpen } from '../chat/live';
 import { ChatButton, OrderChat } from '../chat/order-chat';
 import { rupees } from '../restaurant/shared';
 import { PayFirstBox, orderStatusText } from './pay-first';
+import { StudentHandover, TiffinMeals } from './student-handover';
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString('en-IN', {
@@ -45,6 +47,7 @@ export function MyOrdersPage() {
   const chatId = params.get('chat');
   const refresh = () => void qc.invalidateQueries({ queryKey: ['my-mess-orders'] });
   usePushWhileOpen(refresh);
+  useLeaveWhenHidden(['orders']);
   const unread = q.data?.reduce((n, o) => n + o.unread, 0) ?? 0;
   const food = useFoodLive();
   useEffect(() => {
@@ -128,6 +131,10 @@ export function MyOrdersPage() {
                       <PayFirstBox order={o} />
                     </div>
                   )}
+                  <div className="basis-full empty:hidden flex flex-col gap-2">
+                    <StudentHandover order={o} />
+                    {o.tiffin && o.status === 'done' && <TiffinMeals order={o} />}
+                  </div>
                   <ChatButton
                     unread={o.unread}
                     onClick={() => setParams({ chat: o.id }, { replace: true })}

@@ -3,6 +3,8 @@ import {
   type MessOrderStatus,
   ORDER_TIMERS,
   PAY_FIRST_WINDOW_MS,
+  PRESENCE_MS,
+  normaliseEmail,
 } from '@ss/contracts';
 import type {
   LiveSignal,
@@ -10,6 +12,7 @@ import type {
   MessOrderRepository,
   MessRecord,
   OrderChatRepository,
+  PresenceRepository,
   PushMessage,
   PushRepository,
   PushSender,
@@ -42,7 +45,14 @@ export const MAX_FANOUT = 30;
 export interface Delivery {
   devices: number;
   sent: number;
+  /** Devices skipped because their person had this screen open (they saw it live). */
+  skipped?: number;
 }
+
+/** What a student is looking at when they'd see news about this order live. */
+export const studentScopes = (o: { id: string }) => ['orders', `chat:${o.id}`];
+/** What an owner is looking at when they'd see news about this order live. */
+export const ownerScopes = (o: { id: string; messSlug: string }) => [`board:${o.messSlug}`, `chat:${o.id}`];
 
 /**
  * Everything that happens around an order besides the order itself: notifications to the owner's
@@ -57,7 +67,44 @@ export class OrderEvents {
     private readonly sender: PushSender,
     private readonly live: LiveSignal,
     private readonly clock: Clock,
+    /** Who has an order screen open: no notification for what they're already looking at. */
+    private readonly presence?: PresenceRepository,
   ) {}
+
+  /** Writes are skipped when the same person touched the same screen moments ago. */
+  private touched = new Map<string, number>();
+
+  /** This person has this screen open now (called by the pages' regular refreshes). */
+  async here(scope: string, email: string) {
+    if (!this.presence || !email) return;
+    const who = normaliseEmail(email);
+    const key = `${scope}|${who}`;
+    const now = this.clock.now().getTime();
+    if (now - (this.touched.get(key) ?? 0) < 10_000) return;
+    this.touched.set(key, now);
+    if (this.touched.size > 2000) this.touched.clear();
+    await this.presence.touch(scope, who).catch(() => {});
+  }
+
+  /** They left these screens (tab hidden, app in the background, page closed). */
+  async left(scopes: string[], email: string) {
+    if (!this.presence || !email || !scopes.length) return;
+    const who = normaliseEmail(email);
+    for (const s of scopes) this.touched.delete(`${s}|${who}`);
+    await this.presence.leave(scopes, who).catch(() => {});
+  }
+
+  /** Forget old presence rows (the cron). */
+  async prunePresence() {
+    await this.presence?.prune(new Date(this.clock.now().getTime() - 3600_000)).catch(() => {});
+  }
+
+  /** Emails of people looking at any of these screens right now. */
+  private async lookingAt(scopes: string[] | undefined): Promise<Set<string>> {
+    if (!this.presence || !scopes?.length) return new Set();
+    const since = new Date(this.clock.now().getTime() - PRESENCE_MS);
+    return this.presence.here(scopes, since).catch(() => new Set<string>());
+  }
 
   get pushConfigured() {
     return !!this.sender.publicKey;
@@ -110,11 +157,34 @@ export class OrderEvents {
     return { devices: subs.length - gone.length, sent };
   }
 
-  async toOwners(mess: Pick<MessRecord, 'ownerEmails'>, message: PushMessage, ttl = 600) {
-    return this.deliver(await this.ownerDevices(mess), message, ttl);
+  /**
+   * To every owner device. With `quiet` (the screens where this shows up live), owners who have one
+   * of them open are skipped: their page already shows it, so the notification would only cost a
+   * send and buzz a phone that's in their hand.
+   */
+  async toOwners(
+    mess: Pick<MessRecord, 'ownerEmails'>,
+    message: PushMessage,
+    ttl = 600,
+    quiet?: string[],
+  ): Promise<Delivery> {
+    const [all, here] = await Promise.all([this.ownerDevices(mess), this.lookingAt(quiet)]);
+    const subs = here.size ? all.filter((s) => !here.has(normaliseEmail(s.email))) : all;
+    const d = await this.deliver(subs, message, ttl);
+    return quiet ? { ...d, skipped: all.length - subs.length } : d;
   }
 
-  async toStudent(order: Pick<MessOrderRecord, 'userId'>, message: PushMessage, ttl = 3600) {
+  /** To the student's devices; with `quiet`, nothing when they have one of those screens open. */
+  async toStudent(
+    order: Pick<MessOrderRecord, 'userId'> & { email?: string },
+    message: PushMessage,
+    ttl = 3600,
+    quiet?: string[],
+  ): Promise<Delivery> {
+    if (order.email && quiet?.length) {
+      const here = await this.lookingAt(quiet);
+      if (here.has(normaliseEmail(order.email))) return { devices: 0, sent: 0, skipped: 1 };
+    }
     return this.deliver(await this.push.listForUser(order.userId), message, ttl);
   }
 
@@ -179,10 +249,13 @@ export class OrderEvents {
     by: 'owner' | 'student' | 'auto' | 'admin',
     /** The step it was at before (a restaurant cancelling after accepting says so). */
     from?: MessOrderStatus,
+    /** Says what happened in words of its own (a handover with or without the code). */
+    said?: string,
   ) {
     const note = order.ownerNote ? ` “${order.ownerNote}”` : '';
     const line =
-      by === 'student' && order.status === 'cancelled'
+      said ??
+      (by === 'student' && order.status === 'cancelled'
         ? 'The student cancelled this order.'
         : order.status === 'rejected' && from && from !== 'placed'
           ? `The restaurant cancelled this order.${note}`
@@ -192,7 +265,7 @@ export class OrderEvents {
               ? 'Cancelled automatically: it was not paid within 20 minutes.'
               : by === 'auto'
                 ? "Cancelled automatically: the restaurant didn't answer within 10 minutes."
-                : `${STATUS_LINE[order.status] ?? MESS_ORDER_STATUS_TEXT[order.status]}${note}`;
+                : `${STATUS_LINE[order.status] ?? MESS_ORDER_STATUS_TEXT[order.status]}${note}`);
     await this.system(order, line).catch(() => {});
     // The student's own cancellation isn't news to them: no unread badge for it.
     if (by === 'student')
@@ -216,13 +289,18 @@ export class OrderEvents {
       ).catch(() => null);
     }
     if (by !== 'student') {
-      await this.toStudent(order, {
-        title: `${mess.name} · ${order.code}`,
-        body: line.slice(0, 160),
-        tag: `order-${order.id}`,
-        url: studentChatUrl(order),
-        quietWhen: `chat=${order.id}`,
-      }).catch(() => null);
+      await this.toStudent(
+        order,
+        {
+          title: `${mess.name} · ${order.code}`,
+          body: line.slice(0, 160),
+          tag: `order-${order.id}`,
+          url: studentChatUrl(order),
+          quietWhen: `chat=${order.id}`,
+        },
+        3600,
+        studentScopes(order),
+      ).catch(() => null);
     }
     await this.ping(order);
   }

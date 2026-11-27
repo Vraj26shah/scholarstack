@@ -10,11 +10,15 @@ import {
   ReminderPrefs,
   type TiffinPlan,
 } from '@ss/contracts';
+import type { HandoverHow } from '@ss/contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ChatMessageRecord,
   ChatReportRecord,
   ChatReportRepository,
+  FeeRepository,
+  FeeRuleRecord,
+  LedgerRecord,
   LiveSignal,
   MessBlockRecord,
   MessBlockRepository,
@@ -31,9 +35,12 @@ import type {
   OwnerLoginRepository,
   PhoneRecord,
   PhoneRepository,
+  PresenceRepository,
   PushCounter,
   PushRepository,
   PushSubscriptionRecord,
+  SettlementRecord,
+  TiffinMarkKey,
   TiffinMarkRecord,
   TiffinMarkRepository,
 } from '../domain/campus-ports';
@@ -356,7 +363,7 @@ export class SupabasePush implements PushRepository {
 const PAGE = 1000;
 
 const ORDER_COLS =
-  'id, code, mess_slug, user_id, email, lines, total, mode, address, name, phone, note, status, owner_note, ip_hash, created_at, updated_at, student_unread, owner_unread, student_read_at, owner_read_at, student_cleared_at, owner_cleared_at, last_body, last_sender, last_at, responded_at, nudged_at, ended_by, alert_note, payment, paid_at, no_show_at, tiffin_plan, tiffin_starts, tiffin_ends, discount, offer_label';
+  'id, code, mess_slug, user_id, email, lines, total, mode, address, name, phone, note, status, owner_note, ip_hash, created_at, updated_at, student_unread, owner_unread, student_read_at, owner_read_at, student_cleared_at, owner_cleared_at, last_body, last_sender, last_at, responded_at, nudged_at, ended_by, alert_note, payment, paid_at, no_show_at, accepted_at, handover_secret, handover_tries, handover_tries_on, handed_over_at, handover_how, dispute, dispute_state, disputed_at, dispute_note, tiffin_plan, tiffin_starts, tiffin_ends, discount, offer_label';
 
 const when = (v: unknown) => (v ? new Date(v as string) : null);
 
@@ -377,6 +384,16 @@ const toChatState = (r: Row): OrderChatState => ({
   payment: ((r.payment as string) ?? '') as OrderChatState['payment'],
   paidAt: when(r.paid_at),
   noShowAt: when(r.no_show_at),
+  acceptedAt: when(r.accepted_at),
+  handoverSecret: (r.handover_secret as string) ?? '',
+  handoverTries: Number(r.handover_tries ?? 0),
+  handoverTriesOn: (r.handover_tries_on as string) ?? '',
+  handedOverAt: when(r.handed_over_at),
+  handoverHow: ((r.handover_how as string) ?? '') as OrderChatState['handoverHow'],
+  dispute: ((r.dispute as string) ?? '') as OrderChatState['dispute'],
+  disputeState: ((r.dispute_state as string) ?? '') as OrderChatState['disputeState'],
+  disputedAt: when(r.disputed_at),
+  disputeNote: (r.dispute_note as string) ?? '',
 });
 
 const CHAT_COLUMNS: Record<keyof OrderChatState, string> = {
@@ -396,6 +413,16 @@ const CHAT_COLUMNS: Record<keyof OrderChatState, string> = {
   payment: 'payment',
   paidAt: 'paid_at',
   noShowAt: 'no_show_at',
+  acceptedAt: 'accepted_at',
+  handoverSecret: 'handover_secret',
+  handoverTries: 'handover_tries',
+  handoverTriesOn: 'handover_tries_on',
+  handedOverAt: 'handed_over_at',
+  handoverHow: 'handover_how',
+  dispute: 'dispute',
+  disputeState: 'dispute_state',
+  disputedAt: 'disputed_at',
+  disputeNote: 'dispute_note',
 };
 
 const toOrder = (r: Row): MessOrderRecord => ({
@@ -435,7 +462,11 @@ const count = (res: { count: number | null; error: { message: string } | null })
 
 export class SupabaseMessOrders implements MessOrderRepository {
   constructor(private readonly db: SupabaseClient) {}
-  async add(o: Omit<MessOrderRecord, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'ownerNote' | 'chat'>) {
+  async add(
+    o: Omit<MessOrderRecord, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'ownerNote' | 'chat'> & {
+      handoverSecret?: string;
+    },
+  ) {
     return toOrder(
       must(
         await this.db
@@ -458,6 +489,7 @@ export class SupabaseMessOrders implements MessOrderRepository {
             tiffin_ends: o.tiffin?.endsOn ?? null,
             discount: o.discount ?? 0,
             offer_label: o.offer ?? '',
+            handover_secret: o.handoverSecret ?? '',
           })
           .select(ORDER_COLS)
           .single(),
@@ -873,6 +905,19 @@ export class SupabaseMessViews implements MessViewRepository {
   }
 }
 
+const toMark = (r: Row): TiffinMarkRecord => ({
+  orderId: r.order_id as string,
+  day: String(r.day).slice(0, 10),
+  meal: r.meal as TiffinMarkRecord['meal'],
+  makeupFor: (r.makeup_for as string) ?? '',
+  status: r.status as TiffinMarkRecord['status'],
+  how: ((r.how as string) ?? '') as HandoverHow,
+  confirm: ((r.confirm as string) ?? '') as TiffinMarkRecord['confirm'],
+  decided: ((r.decided as string) ?? '') as TiffinMarkRecord['decided'],
+  markedAt: r.marked_at ? new Date(r.marked_at as string) : undefined,
+});
+const MARK_COLS = 'order_id, day, meal, makeup_for, status, how, confirm, decided, marked_at';
+
 export class SupabaseTiffinMarks implements TiffinMarkRepository {
   constructor(private readonly db: SupabaseClient) {}
   async list(orderIds: string[], fromDay: string, toDay: string) {
@@ -881,19 +926,13 @@ export class SupabaseTiffinMarks implements TiffinMarkRepository {
     const rows = must(
       await this.db
         .from('tiffin_marks')
-        .select('order_id, day, meal, makeup_for, status')
+        .select(MARK_COLS)
         .in('order_id', ids)
         .gte('day', fromDay)
         .lte('day', toDay)
         .limit(20000),
     ) as Row[];
-    return rows.map((r) => ({
-      orderId: r.order_id as string,
-      day: String(r.day).slice(0, 10),
-      meal: r.meal as TiffinMarkRecord['meal'],
-      makeupFor: (r.makeup_for as string) ?? '',
-      status: r.status as TiffinMarkRecord['status'],
-    }));
+    return rows.map(toMark);
   }
   async set(m: TiffinMarkRecord) {
     if (!isUuid(m.orderId)) return;
@@ -905,13 +944,16 @@ export class SupabaseTiffinMarks implements TiffinMarkRepository {
           meal: m.meal,
           makeup_for: m.makeupFor,
           status: m.status,
-          marked_at: new Date().toISOString(),
+          how: m.how ?? '',
+          confirm: m.confirm ?? '',
+          decided: m.decided ?? '',
+          marked_at: (m.markedAt ?? new Date()).toISOString(),
         },
         { onConflict: 'order_id,day,meal,makeup_for' },
       ),
     );
   }
-  async clear(m: Omit<TiffinMarkRecord, 'status'>) {
+  async clear(m: TiffinMarkKey) {
     if (!isUuid(m.orderId)) return;
     must(
       await this.db
@@ -922,6 +964,49 @@ export class SupabaseTiffinMarks implements TiffinMarkRepository {
         .eq('meal', m.meal)
         .eq('makeup_for', m.makeupFor),
     );
+  }
+  async listDisputed(sinceDay: string) {
+    const rows = must(
+      await this.db
+        .from('tiffin_marks')
+        .select(MARK_COLS)
+        .eq('confirm', 'no')
+        .gte('day', sinceDay)
+        .order('day', { ascending: false })
+        .limit(500),
+    ) as Row[];
+    return rows.map(toMark);
+  }
+}
+
+/** Who is looking at an order screen right now (rows older than a minute mean nothing). */
+export class SupabasePresence implements PresenceRepository {
+  constructor(private readonly db: SupabaseClient) {}
+  async touch(scope: string, who: string) {
+    must(
+      await this.db
+        .from('app_presence')
+        .upsert({ scope, who, seen_at: new Date().toISOString() }, { onConflict: 'scope,who' }),
+    );
+  }
+  async leave(scopes: string[], who: string) {
+    if (!scopes.length) return;
+    must(await this.db.from('app_presence').delete().eq('who', who).in('scope', scopes));
+  }
+  async here(scopes: string[], since: Date) {
+    if (!scopes.length) return new Set<string>();
+    const rows = must(
+      await this.db
+        .from('app_presence')
+        .select('who')
+        .in('scope', scopes)
+        .gte('seen_at', since.toISOString())
+        .limit(200),
+    ) as Row[];
+    return new Set(rows.map((r) => r.who as string));
+  }
+  async prune(before: Date) {
+    must(await this.db.from('app_presence').delete().lt('seen_at', before.toISOString()));
   }
 }
 
@@ -972,5 +1057,158 @@ export class SupabaseOwnerLogins implements OwnerLoginRepository {
   }
   async remove(phone: string) {
     must(await this.db.from('owner_logins').delete().eq('phone', phone));
+  }
+}
+
+const toRule = (r: Row): FeeRuleRecord => ({
+  id: r.id as string,
+  messSlug: r.mess_slug as string,
+  startsOn: String(r.starts_on).slice(0, 10),
+  mode: r.mode as FeeRuleRecord['mode'],
+  perOrder: Number(r.per_order ?? 0),
+  percentBp: Number(r.percent_bp ?? 0),
+  tiffinFee: Number(r.tiffin_fee ?? 0),
+  monthly: Number(r.monthly ?? 0),
+  freeUntil: r.free_until ? String(r.free_until).slice(0, 10) : '',
+  note: (r.note as string) ?? '',
+  createdAt: new Date(r.created_at as string),
+  createdBy: (r.created_by as string) ?? '',
+});
+const toLedger = (r: Row): LedgerRecord => ({
+  id: r.id as string,
+  messSlug: r.mess_slug as string,
+  day: String(r.day).slice(0, 10),
+  kind: r.kind as LedgerRecord['kind'],
+  orderId: (r.order_id as string) ?? '',
+  period: (r.period as string) ?? '',
+  amount: Number(r.amount),
+  note: (r.note as string) ?? '',
+  method: (r.method as string) ?? '',
+  createdAt: new Date(r.created_at as string),
+  createdBy: (r.created_by as string) ?? '',
+});
+const toSettlement = (r: Row): SettlementRecord => ({
+  messSlug: r.mess_slug as string,
+  period: r.period as string,
+  opening: Number(r.opening),
+  charges: Number(r.charges),
+  credits: Number(r.credits),
+  payments: Number(r.payments),
+  closing: Number(r.closing),
+  orders: Number(r.orders ?? 0),
+  sales: Number(r.sales ?? 0),
+  note: (r.note as string) ?? '',
+  closedAt: new Date(r.closed_at as string),
+  closedBy: (r.closed_by as string) ?? '',
+});
+
+/** Paged read: a restaurant's ledger can pass the 1000-row page size. */
+async function allPages(
+  fetch: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+) {
+  const out: Row[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const rows = must(await fetch(from, from + PAGE - 1)) as Row[];
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+  }
+}
+
+export class SupabaseFees implements FeeRepository {
+  constructor(private readonly db: SupabaseClient) {}
+  async rules(slug: string) {
+    return (
+      must(
+        await this.db.from('mess_fee_rules').select('*').eq('mess_slug', slug).order('created_at'),
+      ) as Row[]
+    ).map(toRule);
+  }
+  async allRules() {
+    return (must(await this.db.from('mess_fee_rules').select('*').order('created_at')) as Row[]).map(toRule);
+  }
+  async addRule(r: Omit<FeeRuleRecord, 'id' | 'createdAt'>) {
+    return toRule(
+      must(
+        await this.db
+          .from('mess_fee_rules')
+          .insert({
+            mess_slug: r.messSlug,
+            starts_on: r.startsOn,
+            mode: r.mode,
+            per_order: r.perOrder,
+            percent_bp: r.percentBp,
+            tiffin_fee: r.tiffinFee,
+            monthly: r.monthly,
+            free_until: r.freeUntil || null,
+            note: r.note,
+            created_by: r.createdBy,
+          })
+          .select('*')
+          .single(),
+      ) as Row,
+    );
+  }
+  async entries(slug: string) {
+    return (
+      await allPages((from, to) =>
+        this.db.from('mess_ledger').select('*').eq('mess_slug', slug).order('created_at').range(from, to),
+      )
+    ).map(toLedger);
+  }
+  async entriesSince(day: string) {
+    return (
+      await allPages((from, to) =>
+        this.db.from('mess_ledger').select('*').gte('day', day).order('created_at').range(from, to),
+      )
+    ).map(toLedger);
+  }
+  async add(e: Omit<LedgerRecord, 'id' | 'createdAt'>) {
+    const res = await this.db
+      .from('mess_ledger')
+      .insert({
+        mess_slug: e.messSlug,
+        day: e.day,
+        kind: e.kind,
+        order_id: e.orderId || null,
+        period: e.period || null,
+        amount: e.amount,
+        note: e.note,
+        method: e.method,
+        created_by: e.createdBy,
+      })
+      .select('*')
+      .single();
+    // The unique indexes refuse a second fee for one order or a second charge for one month.
+    if (res.error && (res.error as { code?: string }).code === '23505') return null;
+    return toLedger(must(res) as Row);
+  }
+  async settlements(slug: string) {
+    return (
+      must(await this.db.from('mess_settlements').select('*').eq('mess_slug', slug).order('period')) as Row[]
+    ).map(toSettlement);
+  }
+  async allSettlements() {
+    return (must(await this.db.from('mess_settlements').select('*').order('period')) as Row[]).map(
+      toSettlement,
+    );
+  }
+  async close(s: SettlementRecord) {
+    const res = await this.db.from('mess_settlements').insert({
+      mess_slug: s.messSlug,
+      period: s.period,
+      opening: s.opening,
+      charges: s.charges,
+      credits: s.credits,
+      payments: s.payments,
+      closing: s.closing,
+      orders: s.orders,
+      sales: s.sales,
+      note: s.note,
+      closed_at: s.closedAt.toISOString(),
+      closed_by: s.closedBy,
+    });
+    if (res.error && (res.error as { code?: string }).code === '23505') return false;
+    must(res);
+    return true;
   }
 }
