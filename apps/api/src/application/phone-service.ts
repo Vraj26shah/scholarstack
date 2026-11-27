@@ -26,22 +26,46 @@ export class PhoneService {
     private readonly sms: SmsVerifier,
     private readonly clock: Clock,
     private readonly profiles?: Pick<ProfileRepository, 'findByEmails'>,
+    /** The site's WhatsApp Business number (country code + number, digits only), or '' when off. */
+    private readonly whatsappNumber = '',
+    private readonly makeCode: () => string = () =>
+      String(crypto.getRandomValues(new Uint32Array(1))[0]! % 1_000_000).padStart(6, '0'),
   ) {}
+
+  /** Free checks through WhatsApp are set up. */
+  get whatsapp() {
+    return /^\d{11,15}$/.test(this.whatsappNumber);
+  }
 
   /** Codes can be sent (an SMS service is set up). Without one, ordering falls back to a tick box. */
   get available() {
-    return this.sms.configured;
+    return this.sms.configured || this.whatsapp;
   }
 
   async status(userId: string): Promise<PhoneStatusDto> {
     const r = await this.repo.find(userId);
     const now = this.clock.now().getTime();
     const age = r?.pendingAt ? (now - r.pendingAt.getTime()) / 1000 : Number.POSITIVE_INFINITY;
+    const wa =
+      r && !r.phone && r.pendingRef.startsWith('wa:') && age < PHONE_OTP.ttlSeconds
+        ? r.pendingRef.slice(3)
+        : null;
     return {
       available: this.available,
       phone: r?.phone || null,
+      whatsapp: this.whatsapp
+        ? {
+            waiting: wa
+              ? {
+                  code: wa,
+                  link: `https://wa.me/${this.whatsappNumber}?text=${encodeURIComponent(`VERIFY ${wa}`)}`,
+                  expiresInSeconds: Math.max(0, Math.floor(PHONE_OTP.ttlSeconds - age)),
+                }
+              : null,
+          }
+        : null,
       pending:
-        r && !r.phone && r.pendingPhone && age < PHONE_OTP.ttlSeconds
+        r && !r.phone && r.pendingPhone && !r.pendingRef.startsWith('wa:') && age < PHONE_OTP.ttlSeconds
           ? {
               phone: r.pendingPhone,
               resendInSeconds: Math.max(0, Math.ceil(PHONE_OTP.resendSeconds - age)),
@@ -89,6 +113,63 @@ export class PhoneService {
       sends: sends + 1,
     });
     return this.status(userId);
+  }
+
+  /**
+   * Free check through WhatsApp: a one-time code for this account. The student sends
+   * "VERIFY <code>" from their WhatsApp; the number it comes from is the one kept.
+   */
+  async startWhatsApp(userId: string): Promise<PhoneStatusDto> {
+    if (!this.whatsapp) throw fail.badRequest("WhatsApp checks aren't set up yet. Try again later.");
+    const r = (await this.repo.find(userId)) ?? blank(userId);
+    if (r.phone) throw fail.badRequest('Your number is already checked.');
+    const now = this.clock.now();
+    const day = campusClock(now).date;
+    const sends = r.sendsDay === day ? r.sends : 0;
+    // A code still running is shown again, not replaced (the student may be switching apps).
+    if (
+      r.pendingRef.startsWith('wa:') &&
+      r.pendingAt &&
+      now.getTime() - r.pendingAt.getTime() < PHONE_OTP.ttlSeconds * 1000 - 60_000
+    )
+      return this.status(userId);
+    if (sends >= PHONE_OTP.perDay * 2)
+      throw fail.badRequest("That's the most tries for today. Try again tomorrow.");
+    let code = this.makeCode();
+    for (let i = 0; i < 5 && (await this.repo.findByRef(`wa:${code}`)); i++) code = this.makeCode();
+    await this.repo.save({
+      ...r,
+      pendingPhone: '',
+      pendingRef: `wa:${code}`,
+      pendingAt: now,
+      attempts: 0,
+      sendsDay: day,
+      sends: sends + 1,
+    });
+    return this.status(userId);
+  }
+
+  /**
+   * A message reached the site's WhatsApp number. "VERIFY 123456" from a sender whose code is still
+   * running keeps the sender's number on that account. Anything else is ignored (never answered).
+   */
+  async receiveWhatsApp(from: string, body: string): Promise<boolean> {
+    const code = /\bVERIFY\s*(\d{6})\b/i.exec(body)?.[1];
+    const phone = normaliseMobile(from);
+    if (!code || !phone) return false;
+    const r = await this.repo.findByRef(`wa:${code}`);
+    if (!r || r.phone || !r.pendingAt) return false;
+    if (this.clock.now().getTime() - r.pendingAt.getTime() > PHONE_OTP.ttlSeconds * 1000) return false;
+    await this.repo.save({
+      ...r,
+      phone,
+      verifiedAt: this.clock.now(),
+      pendingPhone: '',
+      pendingRef: '',
+      pendingAt: null,
+      attempts: 0,
+    });
+    return true;
   }
 
   /** Checks the code; on a match the number is kept on the account for good. */

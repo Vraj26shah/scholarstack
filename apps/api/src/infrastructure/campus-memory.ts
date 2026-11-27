@@ -361,6 +361,10 @@ export class MemoryPhones implements PhoneRepository {
   async save(r: PhoneRecord) {
     this.rows.set(r.userId, structuredClone(r));
   }
+  async findByRef(ref: string) {
+    for (const r of this.rows.values()) if (r.pendingRef === ref) return structuredClone(r);
+    return null;
+  }
   async sendsTo(phone: string, day: string) {
     let n = 0;
     for (const r of this.rows.values()) if (r.pendingPhone === phone && r.sendsDay === day) n += r.sends;

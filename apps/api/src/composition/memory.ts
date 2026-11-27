@@ -85,6 +85,8 @@ export const DEMO_SECRETS = {
 export interface MemoryContainerOptions {
   /** PIN sign-in pepper ('' turns PIN sign-in off, to test that state). */
   ownerPinPepper?: string;
+  /** The demo's WhatsApp number for phone checks ('' turns them off). */
+  whatsappNumber?: string;
   /**
    * Demo only: when set, queued files convert in the background one at a time, walking the
    * real stages with per-page progress (ms per page), so the admin progress bars can be seen.
@@ -271,6 +273,8 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
       sessionMinter: new DemoSessionMinter(auth, () => ids.next()),
       // Demo and tests only: a fixed pepper, so PIN sign-in works without setup.
       ownerPinPepper: options.ownerPinPepper ?? 'demo-owner-pin-pepper-not-secret',
+      // Off unless asked (tests, DEMO_WHATSAPP=1); /dev/whatsapp stands in for Meta's webhook.
+      whatsappNumber: options.whatsappNumber ?? '',
       courseUpdates: new MemoryCourseUpdates(db),
       signInStrikes: new MemorySignInStrikes(() => clock.now().getTime()),
       admins: new MemoryAdmins(db),

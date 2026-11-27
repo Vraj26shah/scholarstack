@@ -35,6 +35,10 @@ const SECRETS = [
   'FCM_PROJECT_ID',
   'FCM_SERVICE_ACCOUNT',
   'OWNER_PIN_PEPPER',
+  // free phone checks through WhatsApp (students send VERIFY <code> to the site's number)
+  'WHATSAPP_NUMBER',
+  'WHATSAPP_VERIFY_TOKEN',
+  'WHATSAPP_APP_SECRET',
   // SMS codes for students' mobile numbers (fill one of the two services)
   'TWOFACTOR_API_KEY',
   'TWOFACTOR_TEMPLATE',

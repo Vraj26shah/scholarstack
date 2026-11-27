@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { isNativeApp } from '../../lib/app-mode';
 import { signInPath } from '../../lib/return-to';
 import { useSession } from '../../lib/session';
 import { useTheme } from '../../lib/theme';
@@ -10,6 +11,7 @@ import {
   Bowl,
   Cross,
   Devices,
+  DownloadIcon,
   Lock,
   Mail,
   Moon,
@@ -112,6 +114,17 @@ export default function MePage() {
             </>
           )}
         </RowGroup>
+
+        {!isNativeApp() && (
+          <RowGroup>
+            <Row
+              to="/get-app"
+              icon={<DownloadIcon size={21} />}
+              title="Get the Android app"
+              hint="Reminders that ring even when closed"
+            />
+          </RowGroup>
+        )}
 
         <RowGroup title="Help">
           <Row to="/help" icon={<AskBubble size={21} />} title="Help & suggestions" />

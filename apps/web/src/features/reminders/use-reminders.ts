@@ -15,6 +15,7 @@ import {
   subscribeBrowser,
   unsubscribeBrowser,
   waitForShown,
+  warmPush,
 } from './push-client';
 import {
   type LocalReminders,
@@ -25,6 +26,19 @@ import {
 } from './settings-store';
 
 const WEEK = 7 * 24 * 3600 * 1000;
+
+const STATUS_KEY = 'ss_push_status';
+type PushStatus = Awaited<ReturnType<typeof api.pushStatus>>;
+/** The push status this device saw last time (read field by field: old saved shapes are ignored). */
+function savedStatus(): PushStatus | undefined {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STATUS_KEY) ?? 'null') as Partial<PushStatus> | null;
+    if (!raw || typeof raw.configured !== 'boolean' || typeof raw.open !== 'boolean') return undefined;
+    return raw as PushStatus;
+  } catch {
+    return undefined;
+  }
+}
 
 /** What a device that keeps order alerts but wants no reminders asks for. */
 const NO_REMINDERS = ReminderPrefs.parse({
@@ -55,10 +69,28 @@ export function useReminders(kind?: ReminderKind) {
   const local = useLocalReminders();
   const session = useSession();
   const signedIn = session.status === 'ready' && !!session.me;
-  const status = useQuery({ queryKey: ['push-status'], queryFn: api.pushStatus, staleTime: 5 * 60_000 });
+  // The last answer is kept on this device, so the switches show at once instead of popping in.
+  const status = useQuery({
+    queryKey: ['push-status'],
+    queryFn: async () => {
+      const s = await api.pushStatus();
+      try {
+        localStorage.setItem(STATUS_KEY, JSON.stringify(s));
+      } catch {
+        // storage blocked: fine, just not cached
+      }
+      return s;
+    },
+    placeholderData: savedStatus,
+    staleTime: 5 * 60_000,
+  });
   const [support, setSupport] = useState<PushSupport>(() => pushSupport());
   const [busy, setBusy] = useState<null | 'on' | 'save' | 'test' | 'off'>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (status.data?.configured) warmPush();
+  }, [status.data?.configured]);
 
   // The browser may have dropped the subscription (site data cleared, permission reset).
   useEffect(() => {

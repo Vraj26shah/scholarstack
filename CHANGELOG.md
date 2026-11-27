@@ -4,6 +4,13 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Free WhatsApp number check, tiffin records, app downloads (27 Nov)
+- **Verify with WhatsApp** on the order form (free, no SMS): one tap opens WhatsApp with `VERIFY <code>` typed; the student taps Send and the number it came from is kept on the account. The page ticks itself (checks every 2 s and on return). Meta's webhook `/api/whatsapp/webhook` is checked with the app secret's signature; anything but a waiting code is ignored and never answered. Codes last 10 minutes and work once. On only when `WHATSAPP_NUMBER` and `WHATSAPP_APP_SECRET` are both set (`WHATSAPP_VERIFY_TOKEN` for Meta's handshake); migration `20261127000300_phone_whatsapp_codes` adds the lookup index. Demo: `DEMO_WHATSAPP=1`, message stand-in at `/api/dev/whatsapp`.
+- **Each student's tiffin record** on the owner's tiffin sheet (website and Partner app): meals given of the whole plan, delivered, missed, made up, lapsed (missed and not made up in time), not marked and left.
+- **Get the app** page (`/get-app`) with both APKs to download (`/download/ScholarsStack.apk`, `/download/SSPartner.apk`, 1.0.1), install steps, a footer link, a row on Me and a closable line on Today for Android phone browsers.
+- **Notification switches show at once and never hang**: the last push status is kept on the device, the service worker is warmed up while idle, the switch turns on the moment it's tapped, and a browser that never answers gives up after 15 s with a clear message.
+- Apps 1.0.1 (versionCode 2), same signing key.
+
 ### The Android apps: Scholars Stack and SS Partner (27 Nov)
 - **Two signed APKs** (`apps/app-student`, `apps/app-partner`, Capacitor 8, ~1.6 MB each after code and resource shrinking): native shells around the live site (`/app`, `/partner`), so every deploy reaches them at once. Their own icons (navy for students, marigold for owners), splash screens, a bundled offline screen with Try again (Hindi + English for owners), app backups off so sessions never leave the phone.
 - **Notifications through Firebase**: the site's push code asks the app for its Firebase token (`fcm:<token>`) instead of Web Push, so order alerts, chat messages and class / meal reminders all reach the apps. Arrivals refresh open pages at once; a tap opens the right screen; deliveries and taps are counted. The Partner app turns order alerts on by itself when an owner signs in.

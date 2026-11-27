@@ -48,7 +48,12 @@ async function openDhaba() {
 describe('checking a mobile number with an SMS code', () => {
   it('sends a code, refuses a wrong one, keeps the number once the right one is entered', async () => {
     const s = await signedIn('student1@vitbhopal.ac.in');
-    expect((await s.call('GET', '/me/phone')).json).toEqual({ available: true, phone: null, pending: null });
+    expect((await s.call('GET', '/me/phone')).json).toEqual({
+      available: true,
+      phone: null,
+      pending: null,
+      whatsapp: null,
+    });
     expect((await s.call('POST', '/me/phone/start', { phone: '12345' })).status).toBe(400);
 
     const sent = await s.call('POST', '/me/phone/start', { phone: '+91 98765 43210' });
@@ -68,7 +73,7 @@ describe('checking a mobile number with an SMS code', () => {
     ).toBe(400);
 
     const ok = await s.call('POST', '/me/phone/check', { phone: '9876543210', code: DEMO_OTP_CODE });
-    expect(ok.json).toEqual({ available: true, phone: '9876543210', pending: null });
+    expect(ok.json).toEqual({ available: true, phone: '9876543210', pending: null, whatsapp: null });
     // Checked once: no new codes, the number can't be swapped.
     expect((await s.call('POST', '/me/phone/start', { phone: '9123456780' })).status).toBe(400);
     expect(sms.sent).toHaveLength(1);

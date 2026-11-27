@@ -30,6 +30,7 @@ import {
 import { type Context, Hono } from 'hono';
 import { fail } from '../../application/errors';
 import type { Principal } from '../../domain/entities';
+import { whatsappSignatureOk, whatsappTexts } from '../../infrastructure/whatsapp';
 import { type AppEnv, authenticate, requestMeta, requireLive, throttle } from '../helpers';
 
 /**
@@ -607,4 +608,39 @@ campusRoutes.post('/partner/set-pin', async (c) => {
   await throttle(c, 'partner-login', (await requestMeta(c)).ipHash);
   const body = partnerSetPinSchema.parse(await c.req.json());
   return c.json(await c.get('container').partnerLogin.setPin(body));
+});
+
+// ── Free phone checks through WhatsApp ──
+
+/** A one-time code for this account; the student sends "VERIFY <code>" from their WhatsApp. */
+campusRoutes.post('/me/phone/whatsapp', async (c) => {
+  const { principal } = await requireLive(c);
+  await throttle(c, 'phone-whatsapp', principal.userId);
+  return c.json(await c.get('container').phones.startWhatsApp(principal.userId));
+});
+
+/** Meta's one-time handshake when the webhook is set up (echo the challenge if the token matches). */
+campusRoutes.get('/whatsapp/webhook', (c) => {
+  const token = c.get('container').config.whatsappVerifyToken ?? '';
+  const ok = c.req.query('hub.mode') === 'subscribe' && !!token && c.req.query('hub.verify_token') === token;
+  return ok ? c.text(c.req.query('hub.challenge') ?? '') : c.text('Forbidden', 403);
+});
+
+/** Messages to the site's WhatsApp number. Signed by Meta; only "VERIFY <code>" does anything. */
+campusRoutes.post('/whatsapp/webhook', async (c) => {
+  const k = c.get('container');
+  const raw = await c.req.text();
+  if (
+    !(await whatsappSignatureOk(k.config.whatsappAppSecret ?? '', raw, c.req.header('x-hub-signature-256')))
+  )
+    return c.text('Bad signature', 401);
+  let body: unknown = null;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return c.text('ok');
+  }
+  for (const m of whatsappTexts(body)) await k.phones.receiveWhatsApp(m.from, m.text).catch(() => false);
+  // Always 200: Meta retries anything else, and a sender learns nothing either way.
+  return c.text('ok');
 });

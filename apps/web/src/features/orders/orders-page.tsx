@@ -577,6 +577,44 @@ const shiftDay = (iso: string, n: number) => {
 
 /** One person on the delivery sheet: where it goes, who, their number, chat. */
 /** One tiffin meal on the day's sheet: who, where, and Delivered / Missed in one tap. */
+/** One student's tiffin plan so far, at a glance: what was given, missed, made up, and what's left. */
+function TiffinRecord({ rec }: { rec: TiffinRowDto['record'] }) {
+  const items: [string, number, string][] = [
+    ['Delivered', rec.delivered, 'bg-mist/50 text-on-mist'],
+    ['Missed', rec.missed, rec.missed ? 'bg-blush text-blush-text' : 'bg-sunk text-ink2'],
+    ['Made up', rec.madeUp, 'bg-sunk text-ink2'],
+    ['Lapsed', rec.lapsed, rec.lapsed ? 'bg-blush text-blush-text' : 'bg-sunk text-ink2'],
+    ['Not marked', rec.unmarked, rec.unmarked ? 'bg-marigold-soft text-marigold-text' : 'bg-sunk text-ink2'],
+    ['Left', rec.left, 'bg-sunk text-ink2'],
+  ];
+  const given = rec.delivered + rec.madeUp;
+  return (
+    <div className="mt-1.5 flex flex-col gap-1.5" aria-label="Plan so far">
+      <div className="h-1.5 w-full max-w-[320px] overflow-hidden rounded-full bg-sunk" aria-hidden="true">
+        <div
+          className="h-full rounded-full bg-teal"
+          style={{ width: `${rec.total ? Math.round((given / rec.total) * 100) : 0}%` }}
+        />
+      </div>
+      <p className="m-0 text-[12px] text-ink2 tabular-nums">
+        {given} of {rec.total} meals given
+      </p>
+      <ul className="m-0 p-0 list-none flex flex-wrap gap-1.5">
+        {items
+          .filter(([label, n]) => n > 0 || label === 'Delivered' || label === 'Missed')
+          .map(([label, n, tone]) => (
+            <li
+              key={label}
+              className={`rounded-full px-2 py-0.5 text-[11.5px] font-semibold tabular-nums ${tone}`}
+            >
+              {label} {n}
+            </li>
+          ))}
+      </ul>
+    </div>
+  );
+}
+
 function TiffinRow({
   r,
   date,
@@ -611,6 +649,7 @@ function TiffinRow({
             {makeup ? `give by ${dayLabel(r.makeupUntil)}` : `plan till ${dayLabel(r.endsOn)}`}
             {r.note ? ` · “${r.note}”` : ''}
           </p>
+          {r.record && <TiffinRecord rec={r.record} />}
         </div>
         <a
           href={`tel:+91${r.phone}`}

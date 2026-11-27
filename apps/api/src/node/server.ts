@@ -55,6 +55,8 @@ const { container, db, seeder, sources } = memoryContainer({
   config: { signinLinkBudgets: false },
   // Past orders and visits for the demo restaurant, so its Insights have something to show.
   demoHistory: true,
+  // DEMO_WHATSAPP=1: try the free WhatsApp phone check (simulate the message at /api/dev/whatsapp).
+  whatsappNumber: process.env.DEMO_WHATSAPP === '1' ? '919000000000' : '',
 });
 dbRef = db;
 seederRef = seeder;

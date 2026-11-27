@@ -28,7 +28,8 @@ export function ReminderSwitch({
 }) {
   const r = useReminders(kind);
   if (r.state === 'hidden' || r.state === 'unconfigured' || r.state === 'unsupported') return null;
-  const on = r.state === 'on' && isOn(r.local);
+  // Shown as on the moment it's tapped; the browser's part finishes behind it.
+  const on = (r.state === 'on' && isOn(r.local)) || r.busy === 'on';
   const blocked = r.state === 'blocked' || r.state === 'ios-install';
   const busy = !!r.busy;
 
@@ -62,7 +63,8 @@ export function ReminderSwitch({
         disabled={busy}
         onClick={flip}
         title={blocked ? 'Notifications are blocked: see how to allow them' : undefined}
-        className={`relative w-12 h-7 shrink-0 rounded-full border-0 cursor-pointer transition-colors disabled:opacity-60 ${on ? 'bg-teal' : 'bg-line'}`}
+        aria-busy={busy || undefined}
+        className={`relative w-12 h-7 shrink-0 rounded-full border-0 cursor-pointer transition-colors disabled:cursor-wait ${on ? 'bg-teal' : 'bg-line'} ${busy ? 'opacity-80' : ''}`}
       >
         <span
           className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-[left] ${on ? 'left-6' : 'left-1'}`}

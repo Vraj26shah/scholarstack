@@ -51,3 +51,10 @@ demoRoutes.get('/dev/outbox', (c) => {
       .map((m) => ({ to: m.to.email, subject: m.subject, html: m.html })),
   );
 });
+
+/** Demo only: stands in for a WhatsApp message reaching the site's number. */
+demoRoutes.post('/dev/whatsapp', async (c) => {
+  if (!c.get('container').demo) throw fail.notFound('That endpoint');
+  const body = z.object({ from: z.string().max(20), text: z.string().max(200) }).parse(await c.req.json());
+  return c.json({ verified: await c.get('container').phones.receiveWhatsApp(body.from, body.text) });
+});

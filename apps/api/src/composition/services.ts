@@ -147,6 +147,8 @@ export interface Ports {
   ownerLogins: OwnerLoginRepository;
   sessionMinter: SessionMinter;
   ownerPinPepper: string;
+  /** The site's WhatsApp number for free phone checks ('' = off). */
+  whatsappNumber?: string;
   /** Opens of each restaurant page per day (owner insights). */
   messViews: MessViewRepository;
   /** Tiffin meals marked delivered or missed. */
@@ -237,7 +239,7 @@ export function buildServices(p: Ports, config: AppConfig) {
   );
   const admins = new AdminAccess(p.admins, config.adminEmails);
   const orderEvents = new OrderEvents(p.messOrders, p.orderChat, p.push, p.pushSender, p.live, p.clock);
-  const phones = new PhoneService(p.phones, p.sms, p.clock, p.profiles);
+  const phones = new PhoneService(p.phones, p.sms, p.clock, p.profiles, p.whatsappNumber ?? '');
   const orders = new OrderService(p.messes, p.messOrders, p.features, p.clock, p.uploads, {
     events: orderEvents,
     phones,

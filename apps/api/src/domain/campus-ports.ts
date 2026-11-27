@@ -323,6 +323,8 @@ export interface PhoneRepository {
   save(r: PhoneRecord): Promise<void>;
   /** Codes sent to this number on this day, by any account. */
   sendsTo(phone: string, day: string): Promise<number>;
+  /** The account waiting with this code (WhatsApp checks keep "wa:<code>" as the pending handle). */
+  findByRef(ref: string): Promise<PhoneRecord | null>;
 }
 
 /**

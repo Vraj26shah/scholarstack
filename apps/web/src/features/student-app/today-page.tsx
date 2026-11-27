@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { isNativeApp } from '../../lib/app-mode';
 import { useSession } from '../../lib/session';
 import { Page } from '../../shared/ui/chrome';
 import { Bowl, Calculator, Calendar, Check, ShelfIcon, Upload } from '../../shared/ui/icons';
@@ -211,6 +212,8 @@ export default function TodayPage() {
             ]}
           />
         </TodayCard>
+
+        <GetAppNudge />
 
         {active.map((o) => (
           <OrderTracker key={o.id} order={o} />
@@ -544,6 +547,44 @@ function Glance({ items }: { items: { label: string; value: string; detail: stri
           <span className="text-[12px] text-mist truncate">{x.detail}</span>
         </Link>
       ))}
+    </div>
+  );
+}
+
+/** On a phone's browser (not in the app): one quiet line pointing to the Android app, until closed. */
+function GetAppNudge() {
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return (
+        isNativeApp() ||
+        !/Android/i.test(navigator.userAgent) ||
+        localStorage.getItem('ss_getapp_hidden') === '1'
+      );
+    } catch {
+      return true;
+    }
+  });
+  if (hidden) return null;
+  return (
+    <div className="flex items-center gap-3 -mt-3 px-1">
+      <Link to="/get-app" className="flex-1 min-w-0 text-[14px] font-semibold text-teal-text no-underline">
+        Get the Android app: reminders that ring even when it's closed →
+      </Link>
+      <button
+        type="button"
+        aria-label="Hide"
+        onClick={() => {
+          try {
+            localStorage.setItem('ss_getapp_hidden', '1');
+          } catch {
+            // storage blocked: hidden for now
+          }
+          setHidden(true);
+        }}
+        className="grid place-items-center size-8 flex-none rounded-full text-ink2 bg-transparent border-0 cursor-pointer"
+      >
+        ×
+      </button>
     </div>
   );
 }

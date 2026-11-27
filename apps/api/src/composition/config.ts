@@ -43,6 +43,13 @@ export interface WorkerEnv {
   FCM_SERVICE_ACCOUNT?: string;
   /** Server secret mixed into restaurant owners' PIN hashes. Without it, PIN sign-in is off. */
   OWNER_PIN_PEPPER?: string;
+  /**
+   * Free phone checks through WhatsApp (students send "VERIFY <code>" to the site's number):
+   * the number (country code + digits), the webhook's verify token, and the Meta app secret.
+   */
+  WHATSAPP_NUMBER?: string;
+  WHATSAPP_VERIFY_TOKEN?: string;
+  WHATSAPP_APP_SECRET?: string;
   PUSH_PER_RUN?: string;
   PUSH_PER_BATCH?: string;
   /** SMS codes for mobile numbers: 2Factor.in, or Twilio Verify. Optional. */
@@ -102,6 +109,8 @@ export function buildConfig(env: Partial<Record<keyof WorkerEnv, unknown>>, now 
     signinLinkBudgets: true,
     pushPerRun: num(s('PUSH_PER_RUN'), 35),
     pushPerBatch: num(s('PUSH_PER_BATCH'), 5),
+    whatsappVerifyToken: s('WHATSAPP_VERIFY_TOKEN')?.trim() ?? '',
+    whatsappAppSecret: s('WHATSAPP_APP_SECRET')?.trim() ?? '',
   };
 }
 

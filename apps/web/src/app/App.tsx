@@ -71,6 +71,7 @@ const AppMePage = lazy(loadScreen(() => import('../features/student-app/me-page'
 const MyOrdersPage = lazy(
   loadScreen(() => import('../features/orders/my-orders-page').then((m) => ({ default: m.MyOrdersPage }))),
 );
+const GetAppPage = lazy(loadScreen(() => import('../features/get-app/get-app-page')));
 const HelpPage = lazy(
   loadScreen(() => import('../features/help/help-page').then((m) => ({ default: m.HelpPage }))),
 );
@@ -431,6 +432,7 @@ function Shell() {
             <Route path="/m/:slug" element={<MessShortLink />} />
             <Route path="/contribute" element={<ContributePage />} />
             <Route path="/help" element={<HelpPage />} />
+            <Route path="/get-app" element={<GetAppPage />} />
             <Route path="/unsubscribe" element={<UnsubscribePage />} />
             <Route path="/sign-in" element={<SignInPage />} />
             <Route path="/admin/login" element={<SignInPage />} />

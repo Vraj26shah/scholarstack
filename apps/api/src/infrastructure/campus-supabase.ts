@@ -813,6 +813,11 @@ export class SupabasePhones implements PhoneRepository {
       ),
     );
   }
+  async findByRef(ref: string) {
+    if (!/^wa:\d{6}$/.test(ref)) return null;
+    const rows = must(await this.db.from('user_phones').select('*').eq('pending_ref', ref).limit(1)) as Row[];
+    return rows[0] ? toPhone(rows[0]) : null;
+  }
   async sendsTo(phone: string, day: string) {
     if (!/^\d{10}$/.test(phone) || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return 0;
     const rows = must(

@@ -519,10 +519,15 @@ export class OrderService {
     const since = new Date(this.clock.now().getTime() - 75 * DAY_MS);
     const all = (await this.orders.listSince(since, 3000, slug)).filter((o) => o.tiffin);
     const plans = all.filter((o) => o.status === 'done');
+    // Marks over the plans' whole lives (for each student's record), not just around this day.
+    const firstDay = plans.reduce(
+      (m, o) => (o.tiffin!.startsOn < m ? o.tiffin!.startsOn : m),
+      addDays(day, -TIFFIN_MAKEUP_DAYS),
+    );
     const marks = this.extras.tiffinMarks
       ? await this.extras.tiffinMarks.list(
           plans.map((o) => o.id),
-          addDays(day, -TIFFIN_MAKEUP_DAYS),
+          firstDay,
           addDays(day, TIFFIN_MAKEUP_DAYS),
         )
       : [];
@@ -532,6 +537,38 @@ export class OrderService {
     const serves = (o: MessOrderRecord, meal: TiffinMeal) =>
       o.tiffin!.plan === 'both' || o.tiffin!.plan === meal;
     const soonDay = addDays(day, 3);
+    const today = campusClock(this.clock.now()).date;
+    // One student's plan so far, up to the sheet's day.
+    const recordOf = (o: MessOrderRecord): TiffinRowDto['record'] => {
+      const t = o.tiffin!;
+      const perDay = t.plan === 'both' ? 2 : 1;
+      const days = Math.round((Date.parse(t.endsOn) - Date.parse(t.startsOn)) / DAY_MS) + 1;
+      const mine = marks.filter((m) => m.orderId === o.id);
+      const regular = mine.filter((m) => m.makeupFor === '' && m.day <= day);
+      const delivered = regular.filter((m) => m.status === 'delivered').length;
+      const missedMarks = regular.filter((m) => m.status === 'missed');
+      const madeUp = mine.filter(
+        (m) => m.makeupFor !== '' && m.status === 'delivered' && m.day <= day,
+      ).length;
+      const lapsed = missedMarks.filter(
+        (m) =>
+          addDays(m.day, TIFFIN_MAKEUP_DAYS) < today &&
+          !mine.some((x) => x.makeupFor === m.day && x.meal === m.meal && x.status === 'delivered'),
+      ).length;
+      const upTo = day < t.endsOn ? day : t.endsOn;
+      const daysSoFar =
+        upTo < t.startsOn ? 0 : Math.round((Date.parse(upTo) - Date.parse(t.startsOn)) / DAY_MS) + 1;
+      const scheduled = daysSoFar * perDay;
+      return {
+        total: days * perDay,
+        delivered,
+        missed: missedMarks.length,
+        madeUp,
+        lapsed,
+        unmarked: Math.max(0, scheduled - delivered - missedMarks.length),
+        left: Math.max(0, days * perDay - scheduled),
+      };
+    };
     const row = (
       o: MessOrderRecord,
       meal: TiffinMeal,
@@ -553,6 +590,7 @@ export class OrderService {
       mark,
       makeupFor,
       makeupUntil: makeupFor ? makeupUntil(makeupFor) : '',
+      record: recordOf(o),
     });
     const on = plans.filter((o) => o.tiffin!.startsOn <= day && o.tiffin!.endsOn >= day);
     const byPlace = (x: TiffinRowDto, y: TiffinRowDto) =>

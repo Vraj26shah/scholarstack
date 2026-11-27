@@ -411,6 +411,12 @@ export interface PhoneStatusDto {
   phone: string | null;
   /** A code sent and not yet used. */
   pending: { phone: string; resendInSeconds: number; expiresInSeconds: number } | null;
+  /**
+   * Free check through WhatsApp (null when it isn't set up): the student sends "VERIFY <code>" to
+   * the site's WhatsApp number and the number they sent from is the one kept. `waiting` is the code
+   * they were given and the link that opens WhatsApp with the message typed.
+   */
+  whatsapp: { waiting: { code: string; link: string; expiresInSeconds: number } | null } | null;
 }
 
 // ── Tiffin (monthly meal plans) ──────────────────────────────────────────────
@@ -488,6 +494,19 @@ export interface TiffinRowDto {
   /** A make-up row: the missed day it makes up for, and the last day it can be given. */
   makeupFor: string;
   makeupUntil: string;
+  /**
+   * This student's whole plan so far: meals delivered, missed, made up later, missed and too late
+   * to make up, not marked yet (days gone by), and still to come after the sheet's day.
+   */
+  record: {
+    total: number;
+    delivered: number;
+    missed: number;
+    madeUp: number;
+    lapsed: number;
+    unmarked: number;
+    left: number;
+  };
 }
 
 /** The owner's tiffin sheet for a day: who gets lunch, who gets dinner, and plans ending soon. */

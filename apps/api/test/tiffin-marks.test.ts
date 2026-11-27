@@ -51,6 +51,37 @@ async function runningPlan() {
 }
 
 describe('tiffin deliveries', () => {
+  it("each row carries the student's whole record: delivered, missed, made up, lapsed, left", async () => {
+    const { owner, id } = await runningPlan();
+    const day1 = today();
+    const mark = (body: Record<string, unknown>) =>
+      owner.call('PUT', '/owner/tiffin/marks', { orderId: id, ...body });
+    const fresh = (await owner.call('GET', `/owner/messes/${SLUG}/tiffin`)).json.lunch[0].record;
+    expect(fresh).toEqual({
+      total: 60,
+      delivered: 0,
+      missed: 0,
+      madeUp: 0,
+      lapsed: 0,
+      unmarked: 2,
+      left: 58,
+    });
+
+    await mark({ day: day1, meal: 'lunch', status: 'delivered' });
+    await mark({ day: day1, meal: 'dinner', status: 'missed' });
+    clock.advance(DAY);
+    await mark({ day: addDays(day1, 1), meal: 'lunch', status: 'missed' });
+    await mark({ day: addDays(day1, 1), meal: 'dinner', status: 'delivered', makeupFor: day1 });
+    let rec = (await owner.call('GET', `/owner/messes/${SLUG}/tiffin`)).json.lunch[0].record;
+    // Day 2's own dinner isn't marked yet.
+    expect(rec).toMatchObject({ delivered: 1, missed: 2, madeUp: 1, lapsed: 0, unmarked: 1, left: 56 });
+
+    // Six days later nobody made up day 2's lunch: it lapsed. Days 3–8 were never marked.
+    clock.advance(6 * DAY);
+    rec = (await owner.call('GET', `/owner/messes/${SLUG}/tiffin`)).json.lunch[0].record;
+    expect(rec).toMatchObject({ delivered: 1, missed: 2, madeUp: 1, lapsed: 1, unmarked: 13, left: 44 });
+  });
+
   it('marks meals, carries a missed meal for 4 days, then it lapses', async () => {
     const { owner, s, id } = await runningPlan();
     const day1 = today();

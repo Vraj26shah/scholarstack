@@ -137,6 +137,9 @@ export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): C
       ownerLogins: new SupabaseOwnerLogins(db),
       sessionMinter: new SupabaseSessionMinter(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY),
       ownerPinPepper: env.OWNER_PIN_PEPPER?.trim() ?? '',
+      // On only with Meta's app secret too: without it no message could be accepted, and students
+      // would be stuck at the check.
+      whatsappNumber: env.WHATSAPP_APP_SECRET?.trim() ? (env.WHATSAPP_NUMBER ?? '').replace(/\D/g, '') : '',
       messViews: new SupabaseMessViews(db),
       tiffinMarks: new SupabaseTiffinMarks(db),
       // One SMS service: 2Factor (India) when its key is set, else Twilio Verify, else none (then

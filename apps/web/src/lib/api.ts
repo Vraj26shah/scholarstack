@@ -283,6 +283,8 @@ export class ApiClient {
   // The student's mobile number, checked once with an SMS code
   myPhone = () => this.request<PhoneStatusDto>('GET', '/me/phone');
   sendPhoneCode = (phone: string) => this.request<PhoneStatusDto>('POST', '/me/phone/start', { phone });
+  /** A one-time code to send from WhatsApp ("VERIFY <code>"): free phone check. */
+  startWhatsAppCheck = () => this.request<PhoneStatusDto>('POST', '/me/phone/whatsapp');
   checkPhoneCode = (phone: string, code: string) =>
     this.request<PhoneStatusDto>('POST', '/me/phone/check', { phone, code });
   adminResetPhone = (email: string) =>

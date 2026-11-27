@@ -36,11 +36,42 @@ const keyBytes = (b64url: string) => {
   return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 };
 
+/** Some browsers never answer (a push service that's blocked): give up instead of spinning forever. */
+function inTime<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`AbortError: ${what} took too long`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
 async function registration(): Promise<ServiceWorkerRegistration> {
   // The live site registers /sw.js on load; the demo and first visits may not have it yet.
   if (!(await navigator.serviceWorker.getRegistration('/')))
     await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-  return navigator.serviceWorker.ready;
+  return inTime(navigator.serviceWorker.ready, 10_000, 'the service worker');
+}
+
+/**
+ * Gets the service worker ready ahead of time (once, quietly), so turning notifications on is
+ * quick instead of waiting for it on the tap.
+ */
+let warmed = false;
+export function warmPush() {
+  if (warmed || nativePush() || pushSupport() !== 'ok') return;
+  warmed = true;
+  const go = () => void registration().catch(() => {});
+  const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback;
+  if (idle) idle(go);
+  else setTimeout(go, 1500);
 }
 
 /** This browser's current push subscription, if any (never asks for anything). */
@@ -86,7 +117,12 @@ export async function subscribeBrowser(publicKey: string) {
     sub = null;
   }
   if (!sub) {
-    const ask = () => reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    const ask = () =>
+      inTime(
+        reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }),
+        15_000,
+        'the push service',
+      );
     try {
       sub = await ask();
     } catch (first) {

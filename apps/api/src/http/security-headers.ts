@@ -52,5 +52,8 @@ export function headersFile(): string {
     .map(([k, v]) => `  ${k}: ${v}`)
     .join('\n');
   const caching = STATIC_CACHE.map(([path, value]) => `${path}\n  Cache-Control: ${value}`).join('\n\n');
-  return `/*\n${security}\n\n${caching}\n`;
+  // The Android apps (/get-app): saved as a file and opened by the phone's installer.
+  const apps =
+    '/download/*\n  Content-Type: application/vnd.android.package-archive\n  Content-Disposition: attachment\n  Cache-Control: public, max-age=3600';
+  return `/*\n${security}\n\n${caching}\n\n${apps}\n`;
 }

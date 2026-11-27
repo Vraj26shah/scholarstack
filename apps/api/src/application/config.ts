@@ -1,5 +1,8 @@
 /** Plain settings the use cases need. Built once from env in the composition root. */
 export interface AppConfig {
+  /** WhatsApp webhook: Meta's verify token (the handshake) and app secret (signatures). '' = off. */
+  whatsappVerifyToken?: string;
+  whatsappAppSecret?: string;
   allowedDomain: string;
   adminEmails: string[];
   currentIntakeYear: number;

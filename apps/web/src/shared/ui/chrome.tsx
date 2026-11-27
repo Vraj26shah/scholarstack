@@ -138,6 +138,7 @@ function appTitle(pathname: string): string {
   const exact: Record<string, string> = {
     '/tools/mess-menu': 'Food',
     '/app/notes': 'Notes',
+    '/get-app': 'Android app',
     '/app/tools': 'Tools',
     '/app/me': 'Me',
     '/tools/timetable': 'Timetable',
@@ -377,6 +378,9 @@ export function Footer() {
           </Link>
           <Link to="/help" className="text-ink no-underline">
             {LABEL.help}
+          </Link>
+          <Link to="/get-app" className="text-ink no-underline">
+            Android app
           </Link>
           <Link to="/terms" className="text-ink no-underline">
             {LABEL.terms}

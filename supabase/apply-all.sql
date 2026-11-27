@@ -5846,3 +5846,25 @@ alter table public.push_subscriptions add constraint push_subscriptions_endpoint
 $m$;
   insert into supabase_migrations.schema_migrations (version, name) values ('20261127000200', 'push_app_devices');
 end $migration$;
+
+-- ═══ 20261127000300_phone_whatsapp_codes ═══
+do $migration$ begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version = '20261127000300') then
+    raise notice 'skip 20261127000300';
+    return;
+  end if;
+  execute $m$-- ════════════════════════════════════════════════════════════════════════════
+-- Free phone checks through WhatsApp
+--
+-- A student gets a one-time code ("wa:123456" in user_phones.pending_ref) and sends
+-- "VERIFY 123456" to the site's WhatsApp number; the webhook finds the account by its code.
+-- This index makes that lookup instant.
+--
+-- Safe to run more than once. Rollback:
+--   drop index if exists public.user_phones_pending_ref;
+-- ════════════════════════════════════════════════════════════════════════════
+
+create index if not exists user_phones_pending_ref on public.user_phones (pending_ref) where pending_ref like 'wa:%';
+$m$;
+  insert into supabase_migrations.schema_migrations (version, name) values ('20261127000300', 'phone_whatsapp_codes');
+end $migration$;
