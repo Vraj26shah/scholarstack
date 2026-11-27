@@ -96,8 +96,7 @@ export default function MePage() {
             title="Dark mode"
             end={
               <span
-                role="switch"
-                aria-checked={theme === 'dark'}
+                aria-hidden="true"
                 className={`relative h-[30px] w-[50px] flex-none rounded-full transition-colors ${theme === 'dark' ? 'bg-teal' : 'bg-line'}`}
               >
                 <span

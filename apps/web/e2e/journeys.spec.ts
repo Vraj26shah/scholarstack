@@ -54,9 +54,8 @@ test.describe('browsing (signed out)', () => {
       await catalogue.getByRole('button', { name: /^Branch:/ }).click();
       await page
         .getByRole('dialog', { name: 'Branch' })
-        .getByRole('option', { name: /Computer Science and Engineering/ })
+        .getByRole('button', { name: /Computer Science and Engineering/ })
         .first()
-        .getByRole('button')
         .click();
     } else await catalogue.getByRole('tab', { name: /Computer Science and Engineering/ }).click();
     const card = catalogue.getByRole('link', { name: /Database Management Systems/ });

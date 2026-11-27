@@ -92,9 +92,9 @@ test('phone: year buttons and the branch sheet (search, pick, fits the screen)',
   await search.fill('zzzz');
   await expect(sheet.getByText(/Nothing matches/)).toBeVisible();
   await search.fill('');
-  const other = sheet.locator('[role="option"][aria-selected="false"]').first();
+  const other = sheet.locator('ul button[aria-pressed="false"]').first();
   const name = (await other.innerText()).split('\n')[0]!.trim();
-  await other.getByRole('button').click();
+  await other.click();
   await expect(sheet).toHaveCount(0);
   await expect(picker).not.toHaveAttribute('aria-label', before);
   expect(await picker.getAttribute('aria-label')).toContain(name);

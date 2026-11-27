@@ -120,20 +120,17 @@ export function SearchSelect({
             </label>
             {hint && <p className="m-0 mt-2 px-1 text-[12.5px] text-ink2">{hint}</p>}
           </div>
-          <ul
-            role="listbox"
-            aria-label={label}
-            className="m-0 px-3 pb-4 list-none overflow-y-auto overscroll-contain"
-          >
+          <ul aria-label={label} className="m-0 px-3 pb-4 list-none overflow-y-auto overscroll-contain">
             {shown.length === 0 && (
               <li className="px-3 py-6 text-center text-[15px] text-ink2">Nothing matches “{q}”.</li>
             )}
             {shown.map((o) => {
               const on = o.value === value;
               return (
-                <li key={o.value} role="option" aria-selected={on}>
+                <li key={o.value}>
                   <button
                     type="button"
+                    aria-pressed={on}
                     onClick={() => choose(o.value)}
                     className={`w-full flex items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors ${on ? 'bg-brand/[0.07] dark:bg-white/[0.07]' : 'hover:bg-sunk active:bg-sunk'}`}
                   >

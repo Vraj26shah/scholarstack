@@ -152,7 +152,7 @@ export function startNativeApp() {
   }) => {
     const data = a.notification?.data ?? {};
     void receipt(savedToken(), data.tag ?? '', 'opened');
-    const url = data.url && data.url.startsWith('/') ? data.url : null;
+    const url = data.url?.startsWith('/') ? data.url : null;
     if (url && url !== window.location.pathname + window.location.search) window.location.assign(url);
   }) as (e: never) => void);
 }

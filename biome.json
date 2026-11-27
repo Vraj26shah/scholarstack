@@ -9,7 +9,11 @@
       "**/test-results",
       "apps/api/fixtures/pages",
       "**/*.gen.ts",
-      "apps/mobile-config"
+      "apps/mobile-config",
+      "apps/app-*/android/**/build",
+      "apps/app-*/android/.gradle",
+      "apps/app-*/android/app/src/main/assets",
+      "**/google-services.json"
     ]
   },
   "formatter": {
