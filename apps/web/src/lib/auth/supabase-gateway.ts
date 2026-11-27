@@ -167,6 +167,14 @@ export class SupabaseAuthGateway implements AuthGateway {
     return this.completingRedirect;
   }
 
+  async adoptSession(s: { accessToken: string; refreshToken: string | null; email: string }) {
+    const { error } = await (await this.client).auth.setSession({
+      access_token: s.accessToken,
+      refresh_token: s.refreshToken ?? '',
+    });
+    if (error) throw new Error('Could not sign in on this phone. Please try again.');
+  }
+
   async signOut() {
     if (!this.configured) return;
     await (await this.client).auth.signOut({ scope: 'local' });

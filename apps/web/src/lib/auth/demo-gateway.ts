@@ -40,6 +40,11 @@ export class DemoAuthGateway implements AuthGateway {
     return (await this.token()) !== null;
   }
 
+  async adoptSession(s: { accessToken: string; email: string }) {
+    localStorage.setItem(KEY, JSON.stringify({ token: s.accessToken, email: s.email.toLowerCase() }));
+    for (const l of this.listeners) l(true);
+  }
+
   async signOut() {
     localStorage.removeItem(KEY);
     for (const l of this.listeners) l(false);

@@ -4,6 +4,13 @@ Status as of 23 Oct 2026 (v0.7.0). **Me** = built here. **You** = an account ste
 Everything marked done is covered by an automated test (see QA_REPORT.md).
 
 ## Done
+- [x] 0.44.0 · Student app on phones (Today, Notes with year buttons + searchable branch picker, Tools, Me), Partner app for restaurant owners (Hindi/English, orders, sales by day/week/month/year with per-dish trends, sold-out switches, every dashboard section inside the app, customer records), owner mobile + PIN sign-in, app notifications through Firebase, Attendance calculator 2.0 (CAT 1, CAT 2, Term End)
+- [x] 0.44.0 · GitHub Actions secrets FCM_PROJECT_ID, FCM_SERVICE_ACCOUNT, OWNER_PIN_PEPPER set (27 Nov; only these three, nothing else overwritten)
+- [ ] 0.44.0 · **You:** deploy so migrations `20261127000100_owner_logins` and `20261127000200_push_app_devices` apply
+- [x] 0.44.0 · Admin › Campus › Owner logins: add an owner's mobile number, give a 6-digit setup code, unlock, remove
+- [x] 0.44.0 · Android APKs built and signed: apps/mobile-config/apk/ScholarsStack-1.0.0.apk and SSPartner-1.0.0.apk (Firebase notifications, order ring channel, phone setup, no screenshots of notes)
+- [ ] 0.44.0 · **You:** back up apps/mobile-config/scholarstack-release.jks + keystore.properties (every future update must be signed with them); deploy before sharing the APKs (they load the live site)
+- [ ] 0.44.0 · Next: app installs and alert health in admin, Hindi for the forms inside Partner › More, the two Android apps (Capacitor, loud order ring, battery setup screen, APKs)
 - [x] 0.43.0 · Class reminders launch with the Timetable maker: sign-in required, 3 devices per account, max 9 a day, soonest-first sending through a Cloudflare Queue (free plan), paged reads past 1,000, delivery tracking in Admin › Reminders, launch email copy
 - [x] 0.43.0 · Queue `scholarstack-push` created on Cloudflare (26 Nov)
 - [ ] 0.43.0 · **You:** after the deploy: Admin › Emails › Tools › Timetable maker › **Launch & draft the email** → Preview → Send me a test → Send to students; then turn reminders on on your own phone and press Send a test

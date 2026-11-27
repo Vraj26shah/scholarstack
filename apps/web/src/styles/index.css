@@ -1177,3 +1177,29 @@ html[data-swiping] .stack-word {
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
+
+/* Pick-one sheets (shared/ui/search-select.tsx). Tailwind's centring uses the `translate`
+   property, so this `transform` slide adds to it instead of fighting it. */
+@keyframes sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-state="open"] {
+    animation: none !important;
+  }
+}

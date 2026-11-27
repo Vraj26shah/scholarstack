@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { appMode } from '../../lib/app-mode';
 import { signInPath } from '../../lib/return-to';
 import { useSession } from '../../lib/session';
 import { LABEL } from '../copy';
-import { StackWord, Wordmark } from './brand';
+import { LogoMark, StackWord, Wordmark } from './brand';
 import { LinkButton } from './button';
-import { Catalogue, ShelfIcon, Toolbox, Upload } from './icons';
+import { Bowl, Calendar, Catalogue, ChevronLeft, ShelfIcon, Toolbox, Upload, User } from './icons';
 import { ThemeToggle } from './theme-toggle';
 
 function initials(email: string, name: string | null) {
@@ -16,10 +17,50 @@ function initials(email: string, name: string | null) {
 }
 
 /** Top bar. `onDark` renders inside the Ink Blue hero panel. */
-/** Restaurant owners get an "Orders" link. Asked once per signed-in account per visit. */
+/**
+ * What the header knows about this account (runs a restaurant; food orders and unread chat),
+ * remembered on the device so the buttons are there the moment a page opens, then refreshed in
+ * the background. Without this they popped in late and pushed the header around.
+ */
+const HEADER_KEY = 'ss_header_facts';
+type HeaderFacts = { owner?: boolean; orders?: { has: boolean; unread: number } };
+function readFacts(accountId: string): HeaderFacts {
+  try {
+    const all = JSON.parse(localStorage.getItem(HEADER_KEY) ?? '{}') as Record<string, unknown>;
+    const mine = all[accountId];
+    if (!mine || typeof mine !== 'object') return {};
+    const m = mine as Record<string, unknown>;
+    const o = m.orders as Record<string, unknown> | undefined;
+    return {
+      owner: m.owner === true,
+      orders:
+        o && typeof o === 'object'
+          ? {
+              has: o.has === true,
+              unread: typeof o.unread === 'number' && o.unread > 0 ? Math.floor(o.unread) : 0,
+            }
+          : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+function saveFacts(accountId: string, patch: HeaderFacts) {
+  try {
+    const all = JSON.parse(localStorage.getItem(HEADER_KEY) ?? '{}') as Record<string, HeaderFacts>;
+    all[accountId] = { ...(all[accountId] ?? {}), ...patch };
+    localStorage.setItem(HEADER_KEY, JSON.stringify(all));
+  } catch {
+    // storage blocked: the buttons just wait for the server
+  }
+}
+
+/** Restaurant owners get a "My restaurant" link. Asked once per account per visit. */
 const ownerAnswer = new Map<string, boolean>();
 function useRunsRestaurant(accountId: string | null) {
-  const [owner, setOwner] = useState(() => (accountId ? (ownerAnswer.get(accountId) ?? false) : false));
+  const [owner, setOwner] = useState(() =>
+    accountId ? (ownerAnswer.get(accountId) ?? readFacts(accountId).owner ?? false) : false,
+  );
   useEffect(() => {
     if (!accountId) return setOwner(false);
     if (ownerAnswer.has(accountId)) return setOwner(ownerAnswer.get(accountId)!);
@@ -28,6 +69,7 @@ function useRunsRestaurant(accountId: string | null) {
       .ownedMesses()
       .then((list) => {
         ownerAnswer.set(accountId, list.length > 0);
+        saveFacts(accountId, { owner: list.length > 0 });
         if (live) setOwner(list.length > 0);
       })
       .catch(() => {});
@@ -38,42 +80,186 @@ function useRunsRestaurant(accountId: string | null) {
   return owner;
 }
 
-/** A signed-in student with restaurant orders: a "My orders" link with their unread messages. */
-function useMyOrderCount(enabled: boolean) {
-  const [state, setState] = useState({ has: false, unread: 0 });
+/**
+ * A signed-in student with restaurant orders: a "My orders" link with their unread messages.
+ * Shown at once from the last answer; refreshed when a notification arrives, when the tab comes
+ * back into view, and every 10 seconds while an order is still going.
+ */
+function useMyOrderCount(enabled: boolean, accountId = '') {
+  const [state, setState] = useState(
+    () => (enabled && accountId ? readFacts(accountId).orders : undefined) ?? { has: false, unread: 0 },
+  );
   useEffect(() => {
     if (!enabled) return setState({ has: false, unread: 0 });
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const load = () =>
-      api
+    const load = () => {
+      clearTimeout(timer);
+      return api
         .myMessOrders()
         .then((list) => {
           if (!live) return;
-          setState({ has: list.length > 0, unread: list.reduce((n, o) => n + o.unread, 0) });
-          // Check again while an order is still going (new replies show up on the badge).
+          const next = { has: list.length > 0, unread: list.reduce((n, o) => n + o.unread, 0) };
+          setState(next);
+          if (accountId) saveFacts(accountId, { orders: next });
           if (list.some((o) => ['placed', 'accepted', 'ready'].includes(o.status)))
-            timer = setTimeout(load, 20_000);
+            timer = setTimeout(load, 10_000);
         })
         .catch(() => {});
+    };
     void load();
+    const onPush = (e: MessageEvent) => {
+      if (e.data?.type === 'push' || e.data?.type === 'shown') void load();
+    };
+    const onShow = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    navigator.serviceWorker?.addEventListener('message', onPush);
+    document.addEventListener('visibilitychange', onShow);
     return () => {
       live = false;
       clearTimeout(timer);
+      navigator.serviceWorker?.removeEventListener('message', onPush);
+      document.removeEventListener('visibilitychange', onShow);
     };
-  }, [enabled]);
+  }, [enabled, accountId]);
   return state;
 }
 
+/** The site's header; inside the student app, a compact app bar instead. */
 export function Header({ onDark = false }: { onDark?: boolean }) {
+  return appMode() === 'student' ? <AppBar /> : <SiteHeader onDark={onDark} />;
+}
+
+/** Tab roots of the student app (no back arrow there) and each screen's title. */
+const APP_ROOTS = ['/app', '/tools/mess-menu', '/app/notes', '/app/tools', '/app/me'];
+function appTitle(pathname: string): string {
+  if (pathname === '/app') return '';
+  const exact: Record<string, string> = {
+    '/tools/mess-menu': 'Food',
+    '/app/notes': 'Notes',
+    '/app/tools': 'Tools',
+    '/app/me': 'Me',
+    '/tools/timetable': 'Timetable',
+    '/tools/attendance': 'Attendance',
+    '/tools/cgpa': 'CGPA',
+    '/shelf': 'My shelf',
+    '/my-orders': 'My orders',
+    '/account': 'Account',
+    '/contribute': 'Contribute',
+    '/help': 'Help',
+    '/terms': 'Terms',
+    '/privacy': 'Privacy',
+    '/contact': 'Contact',
+    '/orders': 'My restaurant',
+    '/admin': 'Admin',
+  };
+  if (exact[pathname]) return exact[pathname]!;
+  if (pathname.startsWith('/c/')) return 'Course';
+  if (pathname.startsWith('/b/')) return 'Bundle';
+  if (pathname.startsWith('/m/')) return 'Food';
+  return '';
+}
+
+/** The student app's top bar: back (inside a tab), the screen's name, your orders and you. */
+function AppBar() {
+  const { status, me } = useSession();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const myOrders = useMyOrderCount(status === 'ready' && !!me, me?.id ?? '');
+  const title = appTitle(pathname) || 'Today';
+  const root = APP_ROOTS.includes(pathname);
+  const sub =
+    pathname === '/app'
+      ? new Date().toLocaleDateString('en-IN', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'short',
+          timeZone: 'Asia/Kolkata',
+        })
+      : 'Scholars Stack';
+  return (
+    <header className="sticky top-0 z-30 bg-card/95 backdrop-blur-xl text-ink pt-[env(safe-area-inset-top)] shadow-[0_1px_0_var(--line)]">
+      <div className="mx-auto max-w-[720px] h-16 px-4 flex items-center gap-3">
+        {root ? (
+          <span className="grid place-items-center size-10 flex-none rounded-[14px] bg-brand shadow-[0_6px_14px_-8px_rgba(47,60,126,0.9)]">
+            <LogoMark size={24} onDark />
+          </span>
+        ) : (
+          <button
+            type="button"
+            aria-label="Back"
+            onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/app'))}
+            className="grid place-items-center size-10 flex-none rounded-[14px] bg-sunk text-ink active:scale-95 transition-transform"
+          >
+            <ChevronLeft size={21} />
+          </button>
+        )}
+        <span className="min-w-0 flex flex-col">
+          <span className="font-brand text-[18px] font-bold leading-tight tracking-[-0.02em] truncate">
+            {title}
+          </span>
+          <span className="text-[12px] font-medium leading-tight text-ink2 truncate">{sub}</span>
+        </span>
+        <span className="ml-auto flex items-center gap-1 rounded-full bg-sunk p-1 ring-1 ring-line/60">
+          {myOrders.has && (
+            <Link
+              to="/my-orders"
+              aria-label={myOrders.unread ? `My orders, ${myOrders.unread} unread` : 'My orders'}
+              className="relative size-9 grid place-items-center rounded-full text-ink hover:bg-card no-underline"
+            >
+              <Bowl size={18} />
+              {myOrders.unread > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[17px] h-[17px] grid place-items-center rounded-full bg-marigold px-1 text-[10px] font-bold text-on-marigold ring-2 ring-sunk">
+                  {myOrders.unread}
+                </span>
+              )}
+            </Link>
+          )}
+          {status === 'ready' && me ? (
+            <Link
+              to="/app/me"
+              aria-label="You"
+              className="size-9 rounded-full grid place-items-center text-[13px] font-bold no-underline bg-brand text-white active:scale-95 transition-transform"
+            >
+              {initials(me.email, me.fullName)}
+            </Link>
+          ) : status === 'signed-out' || status === 'unavailable' ? (
+            <Link
+              to={signInPath(pathname)}
+              className="inline-flex items-center h-9 px-4 rounded-full bg-brand text-white text-[13.5px] font-bold no-underline"
+            >
+              Sign in
+            </Link>
+          ) : (
+            <span className="size-9 rounded-full bg-line/60" aria-hidden="true" />
+          )}
+        </span>
+      </div>
+    </header>
+  );
+}
+
+function SiteHeader({ onDark = false }: { onDark?: boolean }) {
   const { status, me } = useSession();
   const location = useLocation();
   const owner = useRunsRestaurant(status === 'ready' && me && !me.isAdmin ? me.id : null);
-  const myOrders = useMyOrderCount(status === 'ready' && !!me && !owner);
+  const myOrders = useMyOrderCount(status === 'ready' && !!me && !owner, me?.id ?? '');
   const link = `no-underline font-medium ${onDark ? 'text-white' : 'text-ink'} hover:opacity-80`;
+  // With extra buttons (My restaurant, My orders, Admin) the full name needs a wide screen;
+  // below that the logo mark stands in, so nothing ever runs into the name.
+  const crowded = owner || myOrders.has || !!me?.isAdmin;
+  const full = crowded ? 'hidden lg:inline-flex' : 'hidden min-[440px]:inline-flex';
+  const mark = crowded ? 'lg:hidden' : 'min-[440px]:hidden';
   return (
     <header className="mx-auto max-w-[1280px] px-4 sm:px-9 py-5 flex items-center justify-between gap-3">
-      <Wordmark onDark={onDark} />
+      {/* Narrow phones: just the mark, so the buttons never run into the name. */}
+      <span className={`${full} flex-none`}>
+        <Wordmark onDark={onDark} />
+      </span>
+      <Link to="/" aria-label="Scholars Stack home" className={`${mark} flex-none`}>
+        <LogoMark size={34} onDark={onDark} />
+      </Link>
       <nav
         aria-label="Main"
         className="min-w-0 flex-none flex items-center gap-2 sm:gap-4 lg:gap-6 text-[15px]"
@@ -106,7 +292,8 @@ export function Header({ onDark = false }: { onDark?: boolean }) {
               onDark ? 'bg-white text-ink' : 'bg-ink text-bg'
             }`}
           >
-            My restaurant
+            <span className="sm:hidden">Restaurant</span>
+            <span className="hidden sm:inline">My restaurant</span>
           </NavLink>
         )}
         {myOrders.has && (
@@ -117,8 +304,8 @@ export function Header({ onDark = false }: { onDark?: boolean }) {
               onDark ? 'border-white/40 text-white' : 'border-line text-ink'
             }`}
           >
-            <span aria-hidden="true" className="sm:hidden text-[16px]">
-              🧾
+            <span aria-hidden="true" className="sm:hidden">
+              <Bowl size={18} />
             </span>
             <span className="hidden sm:inline">My orders</span>
             {myOrders.unread > 0 && (
@@ -172,6 +359,8 @@ export function Header({ onDark = false }: { onDark?: boolean }) {
 }
 
 export function Footer() {
+  // Inside the app there is no website footer: just room above the tab bar.
+  if (appMode()) return <div className="h-[calc(88px+env(safe-area-inset-bottom))]" />;
   return (
     <footer className="mx-auto max-w-[1280px] px-5 sm:px-9 pt-14 pb-[calc(88px+env(safe-area-inset-bottom))] md:pb-10">
       <div className="grid grid-cols-1 md:grid-cols-[auto_minmax(0,1fr)] items-end gap-5 md:gap-10 pb-8 border-b border-line">
@@ -214,14 +403,57 @@ export function TabBar() {
   const { pathname, hash } = useLocation();
   // Visitors get it too (Shelf asks them to sign in). The reader has its own controls at the
   // bottom; sign-in is a full-screen card.
+  const mode = appMode();
   if (
     (status !== 'ready' && status !== 'signed-out') ||
     pathname.startsWith('/read/') ||
-    pathname === '/sign-in'
+    pathname === '/sign-in' ||
+    pathname.startsWith('/partner') ||
+    mode === 'partner'
   )
     return null;
   const onToolbox = (pathname === '/' && hash === '#toolbox') || pathname.startsWith('/tools/');
-  const tabs = [
+  // The student app: its own five tabs (Today first), on every screen size.
+  const appTabs = [
+    { to: '/app', label: 'Today', icon: <Calendar size={20} />, active: pathname === '/app' },
+    {
+      to: '/tools/mess-menu',
+      label: 'Food',
+      icon: <Bowl size={20} />,
+      active:
+        pathname.startsWith('/tools/mess-menu') ||
+        pathname.startsWith('/m/') ||
+        pathname.startsWith('/my-orders'),
+    },
+    {
+      to: '/app/notes',
+      label: 'Notes',
+      icon: <ShelfIcon size={20} />,
+      active:
+        pathname.startsWith('/app/notes') ||
+        pathname.startsWith('/shelf') ||
+        pathname.startsWith('/c/') ||
+        pathname.startsWith('/b/') ||
+        pathname.startsWith('/checkout'),
+    },
+    {
+      to: '/app/tools',
+      label: 'Tools',
+      icon: <Toolbox size={20} />,
+      active:
+        pathname.startsWith('/app/tools') ||
+        (pathname.startsWith('/tools/') && !pathname.startsWith('/tools/mess-menu')),
+    },
+    {
+      to: '/app/me',
+      label: 'Me',
+      icon: <User size={20} />,
+      active: ['/app/me', '/account', '/contribute', '/help', '/terms', '/privacy', '/contact'].some((x) =>
+        pathname.startsWith(x),
+      ),
+    },
+  ];
+  const siteTabs = [
     {
       to: '/#catalogue',
       label: 'Catalogue',
@@ -239,14 +471,17 @@ export function TabBar() {
     },
     { to: '/#toolbox', label: 'Toolbox', icon: <Toolbox size={20} />, active: onToolbox },
   ];
+  const tabs = mode === 'student' ? appTabs : siteTabs;
   return (
     <nav
       aria-label="App"
       // The deep blue bar with white labels reads clearly in light and dark, in bright sun, and
       // when a phone browser darkens pages by itself. It sits above the phone's own gesture area.
-      className="md:hidden fixed inset-x-0 bottom-0 z-30 bg-[#2F3C7E] text-white border-t border-white/15 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-12px_rgba(16,22,58,0.45)] [color-scheme:dark]"
+      className={`${mode === 'student' ? '' : 'md:hidden '}fixed inset-x-0 bottom-0 z-30 bg-[#2F3C7E] text-white border-t border-white/15 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_-12px_rgba(16,22,58,0.45)] [color-scheme:dark]`}
     >
-      <ul className="m-0 p-0 list-none grid grid-cols-4 h-16">
+      <ul
+        className={`m-0 p-0 list-none grid h-16 max-w-[720px] mx-auto ${tabs.length === 5 ? 'grid-cols-5' : 'grid-cols-4'}`}
+      >
         {tabs.map((t) => (
           <li key={t.label} className="h-full">
             <Link
@@ -286,7 +521,7 @@ export function Page({ children, wide = false }: { children: React.ReactNode; wi
       >
         {children}
       </main>
-      <Footer />
+      {appMode() ? <div className="h-[calc(88px+env(safe-area-inset-bottom))]" /> : <Footer />}
     </>
   );
 }

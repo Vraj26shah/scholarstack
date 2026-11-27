@@ -19,9 +19,11 @@ import { ShelfPage } from '../features/shelf/shelf-page';
 import { MessShortLink } from '../features/tools/mess/components/share-link';
 import { setMonitoringUser, track, trackPageView } from '../lib/analytics';
 import { ApiError } from '../lib/api';
+import { appMode, appPathFor } from '../lib/app-mode';
 import { authGateway } from '../lib/auth';
 import { env } from '../lib/env';
 import { decidesLanding, homeFor, isPhone, jumpTo, landing } from '../lib/landing';
+import { isNotesScreen, protectScreen, startNativeApp } from '../lib/native-push';
 import { recordVisit } from '../lib/nav-history';
 import { usePageActivity } from '../lib/page-views';
 import { persistQueries, restoreQueries } from '../lib/persist-queries';
@@ -61,6 +63,11 @@ const ContributePage = lazy(
 const OrdersPage = lazy(
   loadScreen(() => import('../features/orders/orders-page').then((m) => ({ default: m.OrdersPage }))),
 );
+const PartnerApp = lazy(loadScreen(() => import('../features/partner/partner-app')));
+const TodayPage = lazy(loadScreen(() => import('../features/student-app/today-page')));
+const AppNotesPage = lazy(loadScreen(() => import('../features/student-app/notes-page')));
+const AppToolsPage = lazy(loadScreen(() => import('../features/student-app/tools-page')));
+const AppMePage = lazy(loadScreen(() => import('../features/student-app/me-page')));
 const MyOrdersPage = lazy(
   loadScreen(() => import('../features/orders/my-orders-page').then((m) => ({ default: m.MyOrdersPage }))),
 );
@@ -239,6 +246,8 @@ function LandingManager() {
     if (decided.current) return;
     decided.current = true;
     landing.pending = false;
+    // In the student app the home page sends you to Today or Notes itself.
+    if (appMode() === 'student') return;
     if (!decidesLanding(pathname, hash)) return;
     if (signedIn && isPhone()) {
       jumpTo('catalogue');
@@ -332,6 +341,13 @@ function PageViews() {
   return null;
 }
 
+/** On a phone the website is the student app: its home is Today, its catalogue Notes. */
+function HomeOrApp() {
+  const { pathname, search, hash } = useLocation();
+  const to = appMode() === 'student' ? appPathFor(pathname, search, hash) : null;
+  return to ? <Navigate to={to} replace /> : <HomePage />;
+}
+
 function NotFound() {
   return (
     <Page>
@@ -352,6 +368,10 @@ function Shell() {
   const navigateTo = useNavigate();
   // A notification tapped while this tab is open: go to its page inside the app.
   useNotificationOpener((path) => navigateTo(path));
+  // Inside the Android apps: notification channels, taps and arrivals (no-op in a browser).
+  useEffect(() => startNativeApp(), []);
+  // In the app, notes can't be screenshotted or recorded (reader, course and bundle pages).
+  useEffect(() => protectScreen(isNotesScreen(routeKey)), [routeKey]);
   // A new release went live while this tab was open: move to it between screens, not mid-task.
   const lastRoute = useRef(routeKey);
   useEffect(() => {
@@ -403,7 +423,7 @@ function Shell() {
           }
         >
           <Routes>
-            <Route path="/" element={<HomePage />} />
+            <Route path="/" element={<HomeOrApp />} />
             <Route path="/c/:slug" element={<CoursePage />} />
             <Route path="/b/:slug" element={<BundlePage />} />
             <Route path="/tools" element={<Navigate to="/#toolbox" replace />} />
@@ -422,6 +442,12 @@ function Shell() {
             <Route path="/admin" element={guard(<AdminPage />)} />
             <Route path="/orders" element={guard(<OrdersPage />)} />
             <Route path="/my-orders" element={guard(<MyOrdersPage />)} />
+            {/* The two Android apps open these (they work in a browser too). */}
+            <Route path="/app" element={<TodayPage />} />
+            <Route path="/app/notes" element={<AppNotesPage />} />
+            <Route path="/app/tools" element={<AppToolsPage />} />
+            <Route path="/app/me" element={<AppMePage />} />
+            <Route path="/partner" element={<PartnerApp />} />
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/contact" element={<ContactPage />} />

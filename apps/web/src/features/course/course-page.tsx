@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { track } from '../../lib/analytics';
 import { api, friendly } from '../../lib/api';
+import { appMode } from '../../lib/app-mode';
 import { formatBytes, formatRupees, formatsLabel, offerEnds } from '../../lib/format';
 import { forMyDrawer, useMyDrawer } from '../../lib/my-drawer';
 import { useCountView } from '../../lib/page-views';
@@ -407,12 +408,14 @@ function useCourseSwipe(c: CourseDetailDto | undefined) {
   const list = drawer.data ?? [];
   const at = c ? list.findIndex((x) => x.slug === c.slug) : -1;
   const open = (n: number) => navigate(`/c/${list[n]!.slug}`, { replace: true });
+  // The student app has no sideways swiping: every course is opened from the Notes list.
+  const swipe = at >= 0 && appMode() !== 'student';
   useSectionSwipe({
-    enabled: at >= 0,
-    ...(at >= 0 && at < list.length - 1 ? { onNext: () => open(at + 1) } : {}),
-    ...(at > 0 ? { onPrev: () => open(at - 1) } : {}),
+    enabled: swipe,
+    ...(swipe && at < list.length - 1 ? { onNext: () => open(at + 1) } : {}),
+    ...(swipe && at > 0 ? { onPrev: () => open(at - 1) } : {}),
   });
-  return at >= 0 && list.length > 1;
+  return swipe && list.length > 1;
 }
 
 export function CoursePage() {
@@ -475,68 +478,92 @@ function CourseView({
 }) {
   const buyState = useBuy({ courseId: c.id }, `/c/${c.slug}`);
   const openIndex = open ?? Math.min(2, c.units.length - 1);
+  const inApp = appMode() === 'student';
   return (
     <Page wide>
       {c.preview && <PreviewBar what="course" section="courses" />}
-      <nav
-        aria-label="Breadcrumb"
-        className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[12.5px] sm:text-[13px] text-ink2 mb-4 mt-1"
-      >
-        <Link
-          to={`/?batch=${c.batchYear}&branch=${c.branchSlug}#catalogue`}
-          className="text-ink2 underline decoration-teal underline-offset-4 hover:text-ink"
-        >
-          Drawer {c.batchYear}
-        </Link>
-        <span aria-hidden="true">→</span>
-        <Link
-          to={`/?batch=${c.batchYear}&branch=${c.branchSlug}#catalogue`}
-          className="text-ink2 underline decoration-teal underline-offset-4 hover:text-ink"
-        >
-          {c.branchName}
-        </Link>
-        <span aria-hidden="true">→</span>
-        <span className="text-ink">Card {c.callNo}</span>
-      </nav>
-      {swipeable && (
-        <SwipeHint id="course-next" className="mb-4">
-          Swipe for the next course in this drawer
-        </SwipeHint>
-      )}
+      {inApp ? (
+        // The student app: a plain title block, no index-card box or breadcrumb trail.
+        <header className="flex flex-col gap-2 pt-5 pb-2 max-w-[720px]">
+          <p className="m-0 text-[13px] font-semibold text-teal-text">
+            {[c.courseCode, `${c.batchYear} batch`].filter(Boolean).join(' · ')}
+          </p>
+          <h1 className="m-0 font-display font-extrabold text-[30px] leading-[1.05] tracking-[-0.04em]">
+            {c.title}
+          </h1>
+          <p className="m-0 text-[14px] text-ink2">
+            {c.fileCount} files · {c.pageCount} pages · {formatsLabel(c.formats)}
+          </p>
+          {c.description && <p className="m-0 text-[15px] leading-relaxed text-ink2">{c.description}</p>}
+          {c.wholeCourseContributors.length > 0 && (
+            <p className="m-0 text-[13px] text-ink2">
+              By <span className="font-semibold text-ink">{c.wholeCourseContributors.join(', ')}</span>
+            </p>
+          )}
+        </header>
+      ) : (
+        <>
+          <nav
+            aria-label="Breadcrumb"
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[12.5px] sm:text-[13px] text-ink2 mb-4 mt-1"
+          >
+            <Link
+              to={`/?batch=${c.batchYear}&branch=${c.branchSlug}#catalogue`}
+              className="text-ink2 underline decoration-teal underline-offset-4 hover:text-ink"
+            >
+              Drawer {c.batchYear}
+            </Link>
+            <span aria-hidden="true">→</span>
+            <Link
+              to={`/?batch=${c.batchYear}&branch=${c.branchSlug}#catalogue`}
+              className="text-ink2 underline decoration-teal underline-offset-4 hover:text-ink"
+            >
+              {c.branchName}
+            </Link>
+            <span aria-hidden="true">→</span>
+            <span className="text-ink">Card {c.callNo}</span>
+          </nav>
+          {swipeable && (
+            <SwipeHint id="course-next" className="mb-4">
+              Swipe for the next course in this drawer
+            </SwipeHint>
+          )}
 
-      {/* The card's details, kept small: what it is, at a glance. */}
-      <article
-        className="ruled relative rounded-[18px] px-5 sm:px-7 pt-4 pb-5 shadow-[0_18px_40px_-30px_var(--shadow),0_0_0_1px_var(--line)]"
-        style={{ backgroundPosition: '0 70px' }}
-      >
-        <dl className="m-0 grid grid-cols-3 lg:grid-cols-6 gap-x-5 gap-y-2.5 pb-3 border-b-[3px] border-card-head font-mono">
-          <Field label="Call no." value={c.callNo} />
-          <Field label="Batch" value={String(c.batchYear)} />
-          <Field label="Branch" value={c.branchName} />
-          <Field label="Files" value={String(c.fileCount)} />
-          <Field label="Pages" value={String(c.pageCount)} />
-          <Field
-            label="Formats"
-            value={<FormatsLine formats={c.formats} />}
-            title={formatsLabel(c.formats)}
-          />
-        </dl>
-        <h1 className="mt-4 mb-0 font-display font-extrabold text-[clamp(28px,4.2vw,48px)] leading-[0.98] tracking-[-0.045em] max-w-[980px]">
-          {c.title}
-        </h1>
-        {c.description && (
-          <p className="mt-2 mb-0 text-[15px] leading-relaxed text-ink2 max-w-[760px] line-clamp-2">
-            {c.description}
-          </p>
-        )}
-        {c.wholeCourseContributors.length > 0 && (
-          <p className="mt-3 mb-0 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[13px] text-ink2">
-            <span className="font-mono text-[11px] uppercase tracking-[0.1em]">Course contributors</span>
-            <span aria-hidden="true">·</span>
-            <span className="font-semibold text-ink">{c.wholeCourseContributors.join(', ')}</span>
-          </p>
-        )}
-      </article>
+          {/* The card's details, kept small: what it is, at a glance. */}
+          <article
+            className="ruled relative rounded-[18px] px-5 sm:px-7 pt-4 pb-5 shadow-[0_18px_40px_-30px_var(--shadow),0_0_0_1px_var(--line)]"
+            style={{ backgroundPosition: '0 70px' }}
+          >
+            <dl className="m-0 grid grid-cols-3 lg:grid-cols-6 gap-x-5 gap-y-2.5 pb-3 border-b-[3px] border-card-head font-mono">
+              <Field label="Call no." value={c.callNo} />
+              <Field label="Batch" value={String(c.batchYear)} />
+              <Field label="Branch" value={c.branchName} />
+              <Field label="Files" value={String(c.fileCount)} />
+              <Field label="Pages" value={String(c.pageCount)} />
+              <Field
+                label="Formats"
+                value={<FormatsLine formats={c.formats} />}
+                title={formatsLabel(c.formats)}
+              />
+            </dl>
+            <h1 className="mt-4 mb-0 font-display font-extrabold text-[clamp(28px,4.2vw,48px)] leading-[0.98] tracking-[-0.045em] max-w-[980px]">
+              {c.title}
+            </h1>
+            {c.description && (
+              <p className="mt-2 mb-0 text-[15px] leading-relaxed text-ink2 max-w-[760px] line-clamp-2">
+                {c.description}
+              </p>
+            )}
+            {c.wholeCourseContributors.length > 0 && (
+              <p className="mt-3 mb-0 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[13px] text-ink2">
+                <span className="font-mono text-[11px] uppercase tracking-[0.1em]">Course contributors</span>
+                <span aria-hidden="true">·</span>
+                <span className="font-semibold text-ink">{c.wholeCourseContributors.join(', ')}</span>
+              </p>
+            )}
+          </article>
+        </>
+      )}
 
       {/* The room goes to what students came for: the pages to peek at, then the modules. On a
           phone the free pages come first — see before you scroll the whole syllabus — and on a

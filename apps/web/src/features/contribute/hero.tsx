@@ -1,4 +1,5 @@
 import { DEFAULT_ROYALTY_PERCENT as SHARE, netOfFees } from '@ss/contracts';
+import { appMode } from '../../lib/app-mode';
 import { Ambient } from '../../shared/ui/ambient';
 import { Hl, StackWord } from '../../shared/ui/brand';
 import { LinkButton } from '../../shared/ui/button';
@@ -56,38 +57,45 @@ function StatementSlip() {
 }
 
 export function ContributeHero() {
+  // Inside the app the app bar sits above the page, not inside the navy panel.
+  const inApp = !!appMode();
   return (
-    <div className="p-2 sm:p-4">
-      <section className="page-enter relative bg-brand text-white rounded-[28px] sm:rounded-[36px] overflow-hidden">
-        <Ambient tone="navy" dust={false} />
-        <div className="relative z-10">
-          <Header onDark />
-        </div>
-        <div className="relative z-10 mx-auto max-w-[1280px] px-5 sm:px-9 pt-4 sm:pt-8 pb-12 sm:pb-16 flex flex-wrap items-center justify-between gap-10">
-          <div className="flex-[1_1_560px] min-w-0 flex flex-col gap-6">
-            <h1 className="m-0 font-display font-extrabold text-[clamp(48px,8.5vw,96px)] leading-[0.92] tracking-[-0.055em]">
-              Your notes got you through.
-              <br />
-              <StackWord onDark animate className="mt-2 text-mist">
-                Let them pay you.
-              </StackWord>
-            </h1>
-            <p className="m-0 max-w-[600px] text-[17px] sm:text-[19px] leading-relaxed text-on-brand2">
-              Share original notes, papers or slides. We review them and agree on a reward. Complete courses
-              earn <Hl onDark>{SHARE}% per sale</Hl> while listed.
-            </p>
-            <div className="flex flex-wrap items-center gap-3.5">
-              <LinkButton to="#share" variant="mist" size="lg">
-                Become a contributor <ArrowDown size={18} />
-              </LinkButton>
-              <LinkButton to="#how" variant="outline-light" size="lg">
-                See the numbers
-              </LinkButton>
+    <>
+      {inApp && <Header />}
+      <div className="p-2 sm:p-4">
+        <section className="page-enter relative bg-brand text-white rounded-[28px] sm:rounded-[36px] overflow-hidden">
+          <Ambient tone="navy" dust={false} />
+          {!inApp && (
+            <div className="relative z-10">
+              <Header onDark />
             </div>
+          )}
+          <div className="relative z-10 mx-auto max-w-[1280px] px-5 sm:px-9 pt-4 sm:pt-8 pb-12 sm:pb-16 flex flex-wrap items-center justify-between gap-10">
+            <div className="flex-[1_1_560px] min-w-0 flex flex-col gap-6">
+              <h1 className="m-0 font-display font-extrabold text-[clamp(48px,8.5vw,96px)] leading-[0.92] tracking-[-0.055em]">
+                Your notes got you through.
+                <br />
+                <StackWord onDark animate className="mt-2 text-mist">
+                  Let them pay you.
+                </StackWord>
+              </h1>
+              <p className="m-0 max-w-[600px] text-[17px] sm:text-[19px] leading-relaxed text-on-brand2">
+                Share original notes, papers or slides. We review them and agree on a reward. Complete courses
+                earn <Hl onDark>{SHARE}% per sale</Hl> while listed.
+              </p>
+              <div className="flex flex-wrap items-center gap-3.5">
+                <LinkButton to="#share" variant="mist" size="lg">
+                  Become a contributor <ArrowDown size={18} />
+                </LinkButton>
+                <LinkButton to="#how" variant="outline-light" size="lg">
+                  See the numbers
+                </LinkButton>
+              </div>
+            </div>
+            <StatementSlip />
           </div>
-          <StatementSlip />
-        </div>
-      </section>
-    </div>
+        </section>
+      </div>
+    </>
   );
 }

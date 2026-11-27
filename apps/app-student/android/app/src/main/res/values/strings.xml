@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Scholars Stack</string>
+    <string name="title_activity_main">Scholars Stack</string>
+    <string name="package_name">com.scholarstack.app</string>
+    <string name="custom_url_scheme">com.scholarstack.app</string>
+</resources>

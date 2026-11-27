@@ -92,10 +92,10 @@ function Bubble({
   return (
     <div className={`flex flex-col max-w-[82%] ${mine ? 'self-end items-end' : 'self-start items-start'}`}>
       <div
-        className={`rounded-2xl px-3 py-2 text-[15px] leading-snug whitespace-pre-wrap break-words ${
+        className={`rounded-[20px] px-3.5 py-2 text-[15px] leading-snug whitespace-pre-wrap break-words shadow-[0_1px_1px_rgba(0,0,0,0.06)] ${
           mine
-            ? 'bg-teal text-white rounded-br-md'
-            : 'bg-surface text-ink rounded-bl-md [box-shadow:inset_0_0_0_1px_var(--line)]'
+            ? 'bg-brand text-white rounded-br-[6px]'
+            : 'bg-card text-ink rounded-bl-[6px] ring-1 ring-line/70'
         }`}
       >
         {!mine && <span className="sr-only">{theirName}: </span>}
@@ -117,7 +117,7 @@ function AlertsNudge({ who }: { who: 'student' | 'owner' }) {
   const a = useAccountAlerts();
   if (a.on || !a.configured || a.support === 'unsupported') return null;
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-mist/40 px-4 py-2 text-[13.5px] text-ink">
+    <div className="mx-3 mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl bg-marigold-soft px-3.5 py-2 text-[13px] text-marigold-text">
       <Bell size={16} />
       <span className="flex-1 min-w-[160px]">
         {a.support === 'ios-install'
@@ -308,13 +308,30 @@ export function OrderChat({
           >
             <Cross size={20} />
           </button>
+          <span
+            aria-hidden="true"
+            className="grid place-items-center size-10 flex-none rounded-full bg-brand text-white font-display text-[17px] font-bold"
+          >
+            {(other || 'C').trim().slice(0, 1).toUpperCase()}
+          </span>
           <div className="flex-1 min-w-0">
-            <p className="m-0 truncate text-[16px] font-bold text-ink">
+            <p className="m-0 truncate text-[16px] font-bold leading-tight text-ink">
               {admin && chat ? `${chat.order.messName} ⇄ ${chat.order.name}` : other || 'Chat'}
             </p>
             {chat && (
-              <p className="m-0 truncate text-[12.5px] text-ink2">
-                Order {chat.order.code} · {MESS_ORDER_STATUS_TEXT[chat.order.status]}
+              <p className="m-0 mt-0.5 flex items-center gap-1.5 min-w-0 text-[12.5px] text-ink2">
+                <span className="flex-none font-mono">#{chat.order.code}</span>
+                <span
+                  className={`truncate rounded-full px-2 py-px text-[11.5px] font-semibold ${
+                    chat.order.status === 'rejected' || chat.order.status === 'cancelled'
+                      ? 'bg-blush text-blush-text'
+                      : chat.order.status === 'placed'
+                        ? 'bg-marigold-soft text-marigold-text'
+                        : 'bg-mist/50 text-on-mist'
+                  }`}
+                >
+                  {MESS_ORDER_STATUS_TEXT[chat.order.status]}
+                </span>
               </p>
             )}
           </div>
@@ -560,7 +577,7 @@ export function OrderChat({
                       type="button"
                       disabled={busy}
                       onClick={() => send.mutate({ body: r })}
-                      className="flex-none h-8 rounded-full border border-line bg-bg px-3 text-[13px] font-semibold text-ink2 hover:text-ink hover:border-ink2 cursor-pointer whitespace-nowrap"
+                      className="flex-none h-8 rounded-full border-0 bg-card px-3.5 text-[13px] font-semibold text-ink ring-1 ring-line hover:ring-ink2/50 cursor-pointer whitespace-nowrap active:scale-95 transition-transform"
                     >
                       {r}
                     </button>
@@ -579,37 +596,39 @@ export function OrderChat({
                       if (f) photo.mutate(f);
                     }}
                   />
-                  <button
-                    type="button"
-                    aria-label="Send a photo"
-                    disabled={busy}
-                    onClick={() => fileRef.current?.click()}
-                    className="grid place-items-center w-11 h-11 shrink-0 rounded-full border-0 bg-transparent text-ink2 hover:text-ink hover:bg-sunk cursor-pointer"
-                  >
-                    <PhotoIcon size={21} />
-                  </button>
-                  <textarea
-                    ref={inputRef}
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                        e.preventDefault();
-                        submit();
-                      }
-                    }}
-                    rows={1}
-                    maxLength={CHAT_LIMITS.bodyMax}
-                    placeholder="Message"
-                    aria-label="Message"
-                    aria-invalid={!!problem}
-                    className="flex-1 min-h-11 max-h-32 rounded-3xl border-[1.5px] border-line bg-bg px-4 py-2.5 text-[15px] leading-snug outline-none focus:border-teal resize-none [field-sizing:content]"
-                  />
+                  <span className="flex-1 min-w-0 flex items-end gap-1 rounded-[24px] bg-sunk pl-1 pr-1 ring-1 ring-line/70 focus-within:ring-2 focus-within:ring-teal">
+                    <button
+                      type="button"
+                      aria-label="Send a photo"
+                      disabled={busy}
+                      onClick={() => fileRef.current?.click()}
+                      className="grid place-items-center w-10 h-11 shrink-0 rounded-full border-0 bg-transparent text-ink2 hover:text-ink cursor-pointer"
+                    >
+                      <PhotoIcon size={20} />
+                    </button>
+                    <textarea
+                      ref={inputRef}
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                          e.preventDefault();
+                          submit();
+                        }
+                      }}
+                      rows={1}
+                      maxLength={CHAT_LIMITS.bodyMax}
+                      placeholder="Message"
+                      aria-label="Message"
+                      aria-invalid={!!problem}
+                      className="flex-1 min-w-0 min-h-11 max-h-32 bg-transparent pr-3 py-2.5 text-[15px] leading-snug outline-none focus:outline-none focus-visible:outline-none focus-visible:shadow-none resize-none [field-sizing:content] placeholder:text-ink2/70"
+                    />
+                  </span>
                   <button
                     type="submit"
                     aria-label="Send"
                     disabled={!text.trim() || !!problem || busy}
-                    className="grid place-items-center w-11 h-11 shrink-0 rounded-full border-0 bg-teal text-white disabled:opacity-40 cursor-pointer"
+                    className="grid place-items-center w-11 h-11 shrink-0 rounded-full border-0 bg-brand text-white shadow-[0_6px_14px_-8px_rgba(47,60,126,0.9)] disabled:opacity-35 disabled:shadow-none cursor-pointer active:scale-95 transition-transform"
                   >
                     <ArrowUp size={20} />
                   </button>

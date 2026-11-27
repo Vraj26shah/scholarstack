@@ -1366,3 +1366,7 @@ export function OrdersPage() {
     </Page>
   );
 }
+
+/** The dashboard's sections, for the Partner app (/partner), which shows them inside the app. */
+export type EditorTab = 'menu' | 'offers' | 'week' | 'details';
+export { AlertsCard, BlockedList, Customers, Editors, TiffinSheet };

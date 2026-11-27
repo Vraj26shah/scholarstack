@@ -1,0 +1,18 @@
+{
+  "appId": "com.scholarstack.app",
+  "appName": "Scholars Stack",
+  "webDir": "www",
+  "server": {
+    "url": "https://scholarstack.campusnotes.workers.dev/app",
+    "androidScheme": "https",
+    "allowNavigation": ["scholarstack.campusnotes.workers.dev"],
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "appendUserAgent": "ScholarsStackApp/student",
+    "backgroundColor": "#2F3C7E"
+  },
+  "plugins": {
+    "PushNotifications": { "presentationOptions": ["badge", "sound", "alert"] }
+  }
+}

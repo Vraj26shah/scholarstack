@@ -12,8 +12,10 @@ import { ErrorState, Skeleton } from '../../shared/ui/feedback';
 import { ChevronLeft, ChevronRight } from '../../shared/ui/icons';
 import { BundleGrid, BundleGridSkeleton } from '../../shared/ui/index-card';
 import { Reveal } from '../../shared/ui/motion';
+import { SearchSelect } from '../../shared/ui/search-select';
 import { slideTo, useSectionSwipe, useTrackpadSwipe } from '../../shared/ui/swipe';
 import { SwipeHint } from '../../shared/ui/swipe-hint';
+import { YearPicker } from '../../shared/ui/year-picker';
 import { CatalogueSearchBox, CatalogueSearchResults } from './catalogue-search';
 import { OfferBanner } from './offer-banner';
 import { StudyYearCourseGroups } from './study-year-course-groups';
@@ -93,7 +95,8 @@ function BranchTabs({
   useEffect(() => {
     const r = row.current;
     const tab = r?.querySelector<HTMLElement>('[aria-selected="true"]');
-    if (!r || !tab) return;
+    // Hidden (phones use the branch picker instead): never scroll the page for it.
+    if (!r || !tab || r.offsetParent === null) return;
     if (placed.current && window.matchMedia?.('(max-width: 767px)').matches) {
       tab.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
       return;
@@ -376,9 +379,15 @@ export function CatalogueSection() {
             <CatalogueSearchResults query={query} batches={batches} onPick={setDraft} />
           ) : (
             <>
+              {/* Phones: the year as four buttons (laptops keep the drawer cards below). */}
+              {!matchedStudent && !index.isLoading && (
+                <div className="md:hidden pt-6" data-no-swipe>
+                  <YearPicker batches={batches} value={batch} onChange={(y) => pick({ batch: y })} />
+                </div>
+              )}
               {!matchedStudent && (
                 <div
-                  className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 pt-8"
+                  className="hidden md:grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 pt-8"
                   role="group"
                   aria-label="Batch year"
                   data-no-swipe
@@ -404,14 +413,37 @@ export function CatalogueSection() {
                 {index.isLoading ? (
                   <Skeleton className="h-12" />
                 ) : matchedStudent ? null : (
-                  <BranchTabs
-                    branches={branches}
-                    selected={branch}
-                    onPick={(s, dir) =>
-                      dir ? slideTo('drawer-cards', dir, () => pick({ branch: s })) : pick({ branch: s })
-                    }
-                    onWarm={warm}
-                  />
+                  <>
+                    {/* Phones: one searchable branch picker; swiping the courses still changes
+                        branch, and the picker follows. Laptops: the tab row, as before. */}
+                    <div className="md:hidden" data-no-swipe>
+                      <SearchSelect
+                        label="Branch"
+                        value={branch}
+                        onChange={(s) => {
+                          warm(s);
+                          pick({ branch: s });
+                        }}
+                        searchPlaceholder="Search branch, e.g. CSE or AI"
+                        options={branches.map((b) => ({
+                          value: b.slug,
+                          label: b.name,
+                          tag: b.code,
+                          keywords: `${b.shortName} ${b.code}`,
+                        }))}
+                      />
+                    </div>
+                    <div className="hidden md:block">
+                      <BranchTabs
+                        branches={branches}
+                        selected={branch}
+                        onPick={(s, dir) =>
+                          dir ? slideTo('drawer-cards', dir, () => pick({ branch: s })) : pick({ branch: s })
+                        }
+                        onWarm={warm}
+                      />
+                    </div>
+                  </>
                 )}
                 {!matchedStudent && (
                   <>

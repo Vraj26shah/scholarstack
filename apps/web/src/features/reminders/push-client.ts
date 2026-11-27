@@ -1,3 +1,4 @@
+import { nativePush, nativeShown, nativeToken } from '../../lib/native-push';
 // The browser's side of reminders: can this device get them, ask permission, and subscribe
 // through the site's service worker (which shows them, even with the site and browser closed).
 
@@ -20,6 +21,8 @@ export const isStandalone = () =>
   (navigator as Navigator & { standalone?: boolean }).standalone === true;
 
 export function pushSupport(): PushSupport {
+  // Inside the Android apps notifications come through Firebase, always available.
+  if (nativePush()) return 'ok';
   if (typeof window === 'undefined' || !window.isSecureContext) return 'unsupported';
   const capable = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   if (isIos() && !isStandalone()) return 'ios-install';
@@ -41,7 +44,11 @@ async function registration(): Promise<ServiceWorkerRegistration> {
 }
 
 /** This browser's current push subscription, if any (never asks for anything). */
-export async function browserSubscription(): Promise<PushSubscription | null> {
+export async function browserSubscription(): Promise<{ endpoint: string } | null> {
+  if (nativePush()) {
+    const token = await nativeToken(false).catch(() => null);
+    return token ? { endpoint: `fcm:${token}` } : null;
+  }
   if (pushSupport() !== 'ok' || Notification.permission !== 'granted') return null;
   const reg = await navigator.serviceWorker.getRegistration('/');
   return (await reg?.pushManager.getSubscription()) ?? null;
@@ -55,6 +62,18 @@ export class PermissionRefused extends Error {
 
 /** Shows the browser's own "Allow notifications?" and subscribes. */
 export async function subscribeBrowser(publicKey: string) {
+  // The Android apps: the phone's Firebase token is the address (no Web Push keys).
+  if (nativePush()) {
+    try {
+      const token = await nativeToken(true);
+      if (!token) throw new PushUnavailable(new Error('No notification token'));
+      return { endpoint: `fcm:${token}`, keys: { p256dh: '', auth: '' } };
+    } catch (e) {
+      const permission = (e as { permission?: string }).permission;
+      if (permission) throw new PermissionRefused(permission === 'denied' ? 'denied' : 'default');
+      throw e instanceof PushUnavailable ? e : new PushUnavailable(e);
+    }
+  }
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') throw new PermissionRefused(permission);
   const reg = await registration();
@@ -110,6 +129,7 @@ export class PushUnavailable extends Error {
  * 'failed' (the browser refused to show it), or 'timeout' (it never arrived).
  */
 export function waitForShown(tag: string, ms = 15_000): Promise<'shown' | 'failed' | 'timeout'> {
+  if (nativePush()) return nativeShown(tag, ms);
   return new Promise((resolve) => {
     if (!('serviceWorker' in navigator)) return resolve('timeout');
     const done = (r: 'shown' | 'failed' | 'timeout') => {
@@ -128,6 +148,9 @@ export function waitForShown(tag: string, ms = 15_000): Promise<'shown' | 'faile
 }
 
 export async function unsubscribeBrowser() {
-  const sub = await browserSubscription().catch(() => null);
+  // The app keeps its Firebase token; the server forgets the device instead.
+  if (nativePush()) return;
+  const reg = await navigator.serviceWorker?.getRegistration('/').catch(() => undefined);
+  const sub = await reg?.pushManager.getSubscription().catch(() => null);
   await sub?.unsubscribe().catch(() => {});
 }

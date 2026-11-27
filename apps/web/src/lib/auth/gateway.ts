@@ -9,6 +9,8 @@ export interface AuthGateway {
   /** Called on /auth/callback after Supabase redirects back. */
   completeRedirect(): Promise<boolean>;
   signOut(): Promise<void>;
+  /** Use a session the server made (the Partner app's mobile + PIN sign-in). */
+  adoptSession(s: { accessToken: string; refreshToken: string | null; email: string }): Promise<void>;
   /** Fires when the session appears or disappears (e.g. token refresh fails). */
   subscribe(listener: (signedIn: boolean) => void): () => void;
   /**

@@ -46,8 +46,19 @@ test.describe('browsing (signed out)', () => {
     await page.getByRole('link', { name: /Find your notes/ }).click();
     const catalogue = page.locator('#catalogue');
     await catalogue.scrollIntoViewIfNeeded();
-    await catalogue.getByRole('button', { name: /2nd year/ }).click();
-    await catalogue.getByRole('tab', { name: /Computer Science and Engineering/ }).click();
+    // Phones pick the year from four buttons; laptops from the drawer cards.
+    if (info.project.name === 'phone') await catalogue.getByRole('radio', { name: /^2nd year/ }).click();
+    else await catalogue.getByRole('button', { name: /2nd year/ }).click();
+    // Phones pick the branch from a sheet; laptops click its tab.
+    if (info.project.name === 'phone') {
+      await catalogue.getByRole('button', { name: /^Branch:/ }).click();
+      await page
+        .getByRole('dialog', { name: 'Branch' })
+        .getByRole('option', { name: /Computer Science and Engineering/ })
+        .first()
+        .getByRole('button')
+        .click();
+    } else await catalogue.getByRole('tab', { name: /Computer Science and Engineering/ }).click();
     const card = catalogue.getByRole('link', { name: /Database Management Systems/ });
     await expect(card).toBeVisible();
     await card.click();

@@ -1,5 +1,6 @@
 import type { TodayKey } from '@ss/contracts';
 import type { ReactNode } from 'react';
+import { AppsOverviewPanel } from './apps-overview-panel';
 import { BundlesPanel } from './bundles-panel';
 import { MessMenusPanel, MessReportsPanel, RemindersAdminPanel } from './campus-panel';
 import { ContributionsPanel } from './contributions-panel';
@@ -13,6 +14,7 @@ import { InsightsPanel } from './insights-panel';
 import { MailPanel } from './mail-panel';
 import { OffersPanel } from './offers-panel';
 import { OrdersAdminPanel } from './orders-admin-panel';
+import { OwnerLoginsPanel } from './owner-logins-panel';
 import { PageJobsPanel } from './page-jobs-panel';
 import { ProblemsPanel } from './problems-panel';
 import { PromoCodesPanel } from './promo-codes-panel';
@@ -219,6 +221,17 @@ export const GROUPS: Group[] = [
     label: 'Campus',
     views: [
       {
+        key: 'apps',
+        label: 'Apps & restaurants',
+        note: (
+          <>
+            The student app, the Partner app and every restaurant:{' '}
+            <U>takings today, this month and this year</U>, owners and devices.
+          </>
+        ),
+        render: () => <AppsOverviewPanel />,
+      },
+      {
         key: 'mess',
         label: 'Mess menus',
         note: (
@@ -238,6 +251,16 @@ export const GROUPS: Group[] = [
           </>
         ),
         render: () => <OrdersAdminPanel />,
+      },
+      {
+        key: 'owner-logins',
+        label: 'Owner logins',
+        note: (
+          <>
+            Restaurant owners' <U>Partner app sign-in</U>: add a mobile number, give a setup code, unlock.
+          </>
+        ),
+        render: () => <OwnerLoginsPanel />,
       },
       {
         key: 'mess-reports',

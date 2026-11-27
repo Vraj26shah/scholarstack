@@ -3,6 +3,7 @@ import type {
   AdminOrdersOverviewDto,
   AdminPushDeviceDto,
   AdminPushStatsDto,
+  AppsSummaryDto,
   ChatMessageDto,
   ChatMessageInput,
   ChatReportDto,
@@ -18,8 +19,12 @@ import type {
   MessSummaryDto,
   OrderChatDto,
   OwnedMessDto,
+  OwnerCustomerDetailDto,
   OwnerCustomerDto,
+  OwnerLoginDto,
   OwnerMessInput,
+  OwnerSetupCodeDto,
+  PartnerSessionDto,
   PlaceMessOrderInput,
   PushAccountInput,
   PushDeviceDto,
@@ -285,6 +290,24 @@ export class ApiClient {
   cancelMessOrder = (id: string) =>
     this.request<MessOrderDto>('POST', `/me/mess-orders/${encodeURIComponent(id)}/cancel`);
   ownedMesses = () => this.request<OwnedMessDto[]>('GET', '/owner/messes');
+  /** Partner app: owners sign in with mobile number + PIN (first time: the admin's setup code). */
+  partnerStatus = () => this.request<{ available: boolean }>('GET', '/partner/status');
+  partnerLogin = (phone: string, pin: string) =>
+    this.request<PartnerSessionDto>('POST', '/partner/login', { phone, pin });
+  partnerSetPin = (phone: string, code: string, pin: string) =>
+    this.request<PartnerSessionDto>('POST', '/partner/set-pin', { phone, code, pin });
+  /** Admin › Apps: owners' mobile + PIN sign-ins. */
+  adminAppsSummary = () => this.request<AppsSummaryDto>('GET', '/admin/apps-summary');
+  adminOwnerLogins = () =>
+    this.request<{ available: boolean; owners: OwnerLoginDto[] }>('GET', '/admin/owner-logins');
+  adminAddOwnerLogin = (m: { phone: string; name: string; messSlug: string; email?: string }) =>
+    this.request<OwnerSetupCodeDto>('POST', '/admin/owner-logins', m);
+  adminOwnerSetupCode = (phone: string) =>
+    this.request<OwnerSetupCodeDto>('POST', `/admin/owner-logins/${encodeURIComponent(phone)}/setup-code`);
+  adminOwnerUnlock = (phone: string) =>
+    this.request<{ ok: true }>('POST', `/admin/owner-logins/${encodeURIComponent(phone)}/unlock`);
+  adminOwnerRemove = (phone: string) =>
+    this.request<{ ok: true }>('DELETE', `/admin/owner-logins/${encodeURIComponent(phone)}`);
   ownerOrders = (slug: string) =>
     this.request<MessOrderDto[]>('GET', `/owner/messes/${encodeURIComponent(slug)}/orders`);
   ownerSetOpen = (slug: string, open: boolean) =>
@@ -379,6 +402,11 @@ export class ApiClient {
     if (!res.ok) throw new ApiError(res.status, 'INTERNAL', 'Could not load that photo.');
     return URL.createObjectURL(await res.blob());
   }
+  ownerCustomer = (slug: string, userId: string) =>
+    this.request<OwnerCustomerDetailDto>(
+      'GET',
+      `/owner/messes/${encodeURIComponent(slug)}/customers/${encodeURIComponent(userId)}`,
+    );
   ownerCustomers = (slug: string) =>
     this.request<OwnerCustomerDto[]>('GET', `/owner/messes/${encodeURIComponent(slug)}/customers`);
   ownerMarkTiffin = (m: TiffinMarkInput) => this.request<TiffinSheetDto>('PUT', '/owner/tiffin/marks', m);

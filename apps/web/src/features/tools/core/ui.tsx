@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { appMode } from '../../../lib/app-mode';
 import { BackLink } from '../../../shared/ui/back-link';
 import { PageTitle } from '../../../shared/ui/page-title';
 
@@ -36,6 +37,15 @@ export function ToolHeader({
   footnote?: ReactNode;
 }) {
   const { pathname } = useLocation();
+  // Inside the student app the top bar already has the back arrow and the name: just the lead.
+  if (appMode() === 'student')
+    return (
+      <header data-tool-header="" className="flex flex-col gap-2 pt-4 pb-6">
+        <PageTitle>{title}</PageTitle>
+        <p className="m-0 text-[15px] leading-relaxed text-ink2">{lead}</p>
+        {aside}
+      </header>
+    );
   return (
     <header data-tool-header="" className="flex flex-col pt-4 pb-10">
       <BackLink fallback="/#toolbox" className="mb-5 print:hidden" />
