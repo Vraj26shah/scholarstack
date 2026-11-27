@@ -9,9 +9,10 @@ checking and finding a fake number undoes all the trust.
 - **Name:** Scholars Stack · VIT Bhopal (Instagram allows only 2 name changes per 14 days)
 - **Bio** (lowercase on purpose: reads as a young team, not a corporate page):
   ```
-  your sem, sorted ✦
-  seniors' notes · class reminders · bunk calc
-  built by vitians. tools free ↓
+  vit bhopal's study plug 🔌
+  📚 seniors' notes · ⏰ class reminders
+  🧮 bunk calc + cgpa · all free
+  👇 your sem, sorted
   ```
 - **Profile photo:** `profile-photo.png`
 - **Website** (added; edit only in the phone app). Better, tagged version to switch to:
