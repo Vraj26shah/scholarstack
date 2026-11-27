@@ -3,7 +3,11 @@ import { Labelled, ToolCard, field } from '../../core/ui';
 import type { SubjectDraft } from '../use-subject-draft';
 
 /** The inputs for one subject. Shows the draft; saving is the parent's decision. */
-export function SubjectForm({ draft, onSave }: { draft: SubjectDraft; onSave: () => void }) {
+export function SubjectForm({
+  draft,
+  onSave,
+  saveLabel = 'Save this subject',
+}: { draft: SubjectDraft; onSave: () => void; saveLabel?: string }) {
   return (
     <ToolCard title="One subject">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -43,7 +47,7 @@ export function SubjectForm({ draft, onSave }: { draft: SubjectDraft; onSave: ()
       )}
       <div className="flex flex-wrap gap-2.5">
         <Button variant="brand" disabled={!draft.result} onClick={onSave}>
-          Save this subject
+          {saveLabel}
         </Button>
         <Button variant="ghost" onClick={draft.clear}>
           Clear
