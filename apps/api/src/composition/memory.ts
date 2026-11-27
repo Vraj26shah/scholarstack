@@ -14,6 +14,7 @@ import {
   MemoryMessViews,
   MemoryMesses,
   MemoryOrderChat,
+  MemoryOwnerLogins,
   MemoryPhones,
   MemoryPush,
   MemoryTiffinMarks,
@@ -63,6 +64,7 @@ import {
   MemorySupport,
 } from '../infrastructure/memory-ledgers';
 import { DemoGateway } from '../infrastructure/payments';
+import { DemoSessionMinter } from '../infrastructure/session-minter';
 import { NoSms } from '../infrastructure/sms-verifier';
 import { MemoryPushSender } from '../infrastructure/web-push';
 import { buildConfig } from './config';
@@ -81,6 +83,8 @@ export const DEMO_SECRETS = {
 };
 
 export interface MemoryContainerOptions {
+  /** PIN sign-in pepper ('' turns PIN sign-in off, to test that state). */
+  ownerPinPepper?: string;
   /**
    * Demo only: when set, queued files convert in the background one at a time, walking the
    * real stages with per-page progress (ms per page), so the admin progress bars can be seen.
@@ -136,6 +140,7 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
     // SMS codes are on hold (25 Nov): like the live site, the demo takes a ticked number. Tests
     // of the code flow pass the demo SMS service (code 123456) in options.sms.
     phones: new MemoryPhones(),
+    ownerLogins: new MemoryOwnerLogins(),
     messViews: new MemoryMessViews(),
     tiffinMarks: new MemoryTiffinMarks(),
     sms: options.sms ?? new NoSms(),
@@ -263,6 +268,9 @@ export function memoryContainer(options: MemoryContainerOptions = {}) {
       deliveries: new MemoryDeliveries(db),
       books: new MemoryCourseBooks(db),
       ...campus,
+      sessionMinter: new DemoSessionMinter(auth, () => ids.next()),
+      // Demo and tests only: a fixed pepper, so PIN sign-in works without setup.
+      ownerPinPepper: options.ownerPinPepper ?? 'demo-owner-pin-pepper-not-secret',
       courseUpdates: new MemoryCourseUpdates(db),
       signInStrikes: new MemorySignInStrikes(() => clock.now().getTime()),
       admins: new MemoryAdmins(db),

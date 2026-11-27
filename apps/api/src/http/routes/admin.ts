@@ -51,6 +51,8 @@ import {
   UpdateCourseBody,
   YearBody,
   YearVisibleBody,
+  normaliseMobile,
+  ownerLoginAddSchema,
 } from '@ss/contracts';
 import { type Context, Hono } from 'hono';
 import { z } from 'zod';
@@ -929,4 +931,45 @@ adminRoutes.post('/internal/conversion', async (c) => {
   const report = ConversionReport.parse(await c.req.json());
   await c.get('container').admin.applyConversion(report);
   return c.json({ ok: true });
+});
+
+// ── Partner app: restaurant owners' mobile + PIN sign-ins ──
+
+adminRoutes.get('/admin/owner-logins', async (c) => {
+  await requireAdmin(c);
+  const k = c.get('container').partnerLogin;
+  return c.json({ available: k.available, owners: await k.list() });
+});
+
+adminRoutes.post('/admin/owner-logins', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').partnerLogin.add(ownerLoginAddSchema.parse(await c.req.json())));
+});
+
+const phoneParam = (c: Context<AppEnv>) => {
+  const phone = normaliseMobile(c.req.param('phone') ?? '');
+  if (!phone) throw fail.badRequest('Use a 10-digit Indian mobile number.');
+  return phone;
+};
+
+adminRoutes.post('/admin/owner-logins/:phone/setup-code', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').partnerLogin.setupCode(phoneParam(c)));
+});
+
+adminRoutes.post('/admin/owner-logins/:phone/unlock', async (c) => {
+  await requireAdmin(c);
+  await c.get('container').partnerLogin.unlock(phoneParam(c));
+  return c.json({ ok: true });
+});
+
+adminRoutes.delete('/admin/owner-logins/:phone', async (c) => {
+  await requireAdmin(c);
+  await c.get('container').partnerLogin.remove(phoneParam(c));
+  return c.json({ ok: true });
+});
+
+adminRoutes.get('/admin/apps-summary', async (c) => {
+  await requireAdmin(c);
+  return c.json(await c.get('container').appsSummary());
 });

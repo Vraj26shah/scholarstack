@@ -4,6 +4,7 @@ import { AccountService } from '../application/account-service';
 import { AdminAccess } from '../application/admin-access';
 import { AdminService } from '../application/admin-service';
 import { AnnouncementService } from '../application/announcement-service';
+import { appsSummary } from '../application/apps-summary';
 import { BookService } from '../application/book-service';
 import { cachedBundles, cachedCatalogue } from '../application/cached-catalogue';
 import { MessService, ReminderService } from '../application/campus-service';
@@ -24,6 +25,7 @@ import { ChatService } from '../application/order-chat';
 import { OrderEvents } from '../application/order-events';
 import { OrderService } from '../application/order-service';
 import { PackService } from '../application/packs';
+import { PartnerLoginService } from '../application/partner-login';
 import { PhoneService } from '../application/phone-service';
 import { PreviewService } from '../application/preview-service';
 import { PriceBook } from '../application/price-book';
@@ -46,10 +48,12 @@ import type {
   MessRepository,
   MessViewRepository,
   OrderChatRepository,
+  OwnerLoginRepository,
   PhoneRepository,
   PushQueue,
   PushRepository,
   PushSender,
+  SessionMinter,
   SmsVerifier,
   TiffinMarkRepository,
 } from '../domain/campus-ports';
@@ -139,6 +143,10 @@ export interface Ports {
   /** Students' checked mobile numbers, and the SMS service that sends the codes. */
   phones: PhoneRepository;
   sms: SmsVerifier;
+  /** Restaurant owners' mobile + PIN sign-in, the session maker it uses, and the PIN pepper ('' = off). */
+  ownerLogins: OwnerLoginRepository;
+  sessionMinter: SessionMinter;
+  ownerPinPepper: string;
   /** Opens of each restaurant page per day (owner insights). */
   messViews: MessViewRepository;
   /** Tiffin meals marked delivered or missed. */
@@ -326,6 +334,23 @@ export function buildServices(p: Ports, config: AppConfig) {
     mess: new MessService(p.messes, p.messReports, p.features),
     orders,
     phones,
+    partnerLogin: new PartnerLoginService(
+      p.ownerLogins,
+      p.messes,
+      p.sessionMinter,
+      p.clock,
+      p.ownerPinPepper,
+      undefined,
+      () => orders.forgetOwners(),
+    ),
+    appsSummary: () =>
+      appsSummary({
+        messes: p.messes,
+        orders: p.messOrders,
+        owners: p.ownerLogins,
+        push: p.push,
+        clock: p.clock,
+      }),
     chats,
     outsideAllowed,
     reminders: new ReminderService(

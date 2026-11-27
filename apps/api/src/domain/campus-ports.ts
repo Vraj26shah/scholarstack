@@ -372,3 +372,35 @@ export interface TiffinMarkRepository {
   set(m: TiffinMarkRecord): Promise<void>;
   clear(m: Omit<TiffinMarkRecord, 'status'>): Promise<void>;
 }
+
+// ── Partner app sign-in (restaurant owners: mobile number + PIN) ──
+
+export interface OwnerLoginRecord {
+  /** 10-digit mobile number, the sign-in name. */
+  phone: string;
+  name: string;
+  /** The account the owner signs in as (in the restaurants' owner list). */
+  email: string;
+  /** HMAC of the PIN ('' until the owner picks one). */
+  pinHash: string;
+  /** HMAC of the one-time setup code, and when it stops working. */
+  setupHash: string;
+  setupExpiresAt: Date | null;
+  /** Wrong tries in a row; at the limit the number is locked until lockedUntil. */
+  failed: number;
+  lockedUntil: Date | null;
+  lastLoginAt: Date | null;
+  createdAt: Date;
+}
+
+export interface OwnerLoginRepository {
+  find(phone: string): Promise<OwnerLoginRecord | null>;
+  list(): Promise<OwnerLoginRecord[]>;
+  save(r: OwnerLoginRecord): Promise<void>;
+  remove(phone: string): Promise<void>;
+}
+
+/** Makes a real signed-in session for an account (Supabase in production, demo tokens in the demo). */
+export interface SessionMinter {
+  mint(email: string): Promise<{ accessToken: string; refreshToken: string | null }>;
+}

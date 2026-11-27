@@ -24,6 +24,8 @@ import {
   PushTestBody,
   SaveMessBody,
   TiffinMarkBody,
+  partnerLoginSchema,
+  partnerSetPinSchema,
 } from '@ss/contracts';
 import { type Context, Hono } from 'hono';
 import { fail } from '../../application/errors';
@@ -170,6 +172,20 @@ campusRoutes.get('/owner/messes/:slug/orders', async (c) => {
   const { principal } = await requireLive(c);
   const k = c.get('container');
   return c.json(await k.orders.board(principal, await k.account.isAdmin(principal), c.req.param('slug')));
+});
+
+/** One customer's record at this restaurant (12 months): visits, every order, habits. */
+campusRoutes.get('/owner/messes/:slug/customers/:userId', async (c) => {
+  const { principal } = await requireLive(c);
+  const k = c.get('container');
+  return c.json(
+    await k.orders.customer(
+      principal,
+      await k.account.isAdmin(principal),
+      c.req.param('slug'),
+      c.req.param('userId'),
+    ),
+  );
 });
 
 /** The owner's customers: everyone who ordered in the last 90 days. */
@@ -575,4 +591,20 @@ campusRoutes.post('/admin/push/test-person', async (c) => {
 campusRoutes.post('/admin/push/run', async (c) => {
   await requireAdmin(c);
   return c.json(await c.get('container').reminders.run());
+});
+
+// ── Partner app: restaurant owners sign in with mobile number + PIN ──
+
+campusRoutes.get('/partner/status', (c) => c.json({ available: c.get('container').partnerLogin.available }));
+
+campusRoutes.post('/partner/login', async (c) => {
+  await throttle(c, 'partner-login', (await requestMeta(c)).ipHash);
+  const body = partnerLoginSchema.parse(await c.req.json());
+  return c.json(await c.get('container').partnerLogin.login(body));
+});
+
+campusRoutes.post('/partner/set-pin', async (c) => {
+  await throttle(c, 'partner-login', (await requestMeta(c)).ipHash);
+  const body = partnerSetPinSchema.parse(await c.req.json());
+  return c.json(await c.get('container').partnerLogin.setPin(body));
 });

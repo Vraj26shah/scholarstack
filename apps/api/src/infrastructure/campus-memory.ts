@@ -27,6 +27,8 @@ import {
   type MessViewRepository,
   type OrderChatRepository,
   type OrderChatState,
+  type OwnerLoginRecord,
+  type OwnerLoginRepository,
   type PhoneRecord,
   type PhoneRepository,
   type PushCounter,
@@ -395,5 +397,22 @@ export class MemoryTiffinMarks implements TiffinMarkRepository {
   }
   async clear(m: Omit<TiffinMarkRecord, 'status'>) {
     this.rows.delete(this.key(m));
+  }
+}
+
+export class MemoryOwnerLogins implements OwnerLoginRepository {
+  readonly rows = new Map<string, OwnerLoginRecord>();
+  async find(phone: string) {
+    const r = this.rows.get(phone);
+    return r ? structuredClone(r) : null;
+  }
+  async list() {
+    return [...this.rows.values()].map((r) => structuredClone(r));
+  }
+  async save(r: OwnerLoginRecord) {
+    this.rows.set(r.phone, structuredClone(r));
+  }
+  async remove(phone: string) {
+    this.rows.delete(phone);
   }
 }

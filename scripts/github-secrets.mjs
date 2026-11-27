@@ -31,6 +31,10 @@ const SECRETS = [
   'VAPID_PUBLIC_KEY',
   'VAPID_PRIVATE_KEY',
   'VAPID_SUBJECT',
+  // app notifications (Firebase Cloud Messaging) and restaurant owners' PIN sign-in
+  'FCM_PROJECT_ID',
+  'FCM_SERVICE_ACCOUNT',
+  'OWNER_PIN_PEPPER',
   // SMS codes for students' mobile numbers (fill one of the two services)
   'TWOFACTOR_API_KEY',
   'TWOFACTOR_TEMPLATE',

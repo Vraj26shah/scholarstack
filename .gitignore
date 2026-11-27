@@ -24,3 +24,7 @@ reports/
 supabase/.temp/
 apps/web/sweep-out/
 *.tsbuildinfo
+
+# Firebase app config for the Android apps (kept out of git; copy from Firebase console)
+apps/mobile-config/
+**/google-services.json

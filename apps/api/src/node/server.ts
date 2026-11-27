@@ -59,6 +59,25 @@ const { container, db, seeder, sources } = memoryContainer({
 dbRef = db;
 seederRef = seeder;
 
+// The demo restaurant's owner can try the Partner app (/partner): mobile 98765 43210, PIN 1234.
+// Demo server only; the live site has no such login.
+void (async () => {
+  const dhaba = (
+    await container.orders.owned(
+      { userId: '', email: 'dhaba.demo@gmail.com', sessionId: '', accessToken: '' },
+      false,
+    )
+  )[0];
+  if (!dhaba) return;
+  const { code } = await container.partnerLogin.add({
+    phone: '9876543210',
+    name: 'Demo dhaba owner',
+    messSlug: dhaba.slug,
+    email: 'dhaba.demo@gmail.com',
+  });
+  await container.partnerLogin.setPin({ phone: '9876543210', code, pin: '1234' });
+})().catch((e) => console.warn('demo partner login not seeded:', e));
+
 // DEMO_DRIFT=1: make R2 differ from the database (one new, one edited, one deleted file in
 // DBMS) so the admin "Check storage" step has something to show. Demo server only.
 if (process.env.DEMO_DRIFT === '1') {

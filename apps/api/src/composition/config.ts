@@ -38,6 +38,11 @@ export interface WorkerEnv {
   VAPID_PRIVATE_KEY?: string;
   /** mailto: address the push services can contact. */
   VAPID_SUBJECT?: string;
+  /** Firebase Cloud Messaging for the Android apps: project id + base64 service-account JSON. Optional. */
+  FCM_PROJECT_ID?: string;
+  FCM_SERVICE_ACCOUNT?: string;
+  /** Server secret mixed into restaurant owners' PIN hashes. Without it, PIN sign-in is off. */
+  OWNER_PIN_PEPPER?: string;
   PUSH_PER_RUN?: string;
   PUSH_PER_BATCH?: string;
   /** SMS codes for mobile numbers: 2Factor.in, or Twilio Verify. Optional. */

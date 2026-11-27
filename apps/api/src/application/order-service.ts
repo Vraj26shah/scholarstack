@@ -7,6 +7,7 @@ import {
   type MessOrderDto,
   type MessOrderStatus,
   type OwnedMessDto,
+  type OwnerCustomerDetailDto,
   type OwnerCustomerDto,
   type OwnerMessInput,
   type PlaceMessOrderInput,
@@ -420,6 +421,92 @@ export class OrderService {
       by.set(o.userId, c);
     }
     return [...by.values()].sort((a, b) => b.lastOrderAt.localeCompare(a.lastOrderAt));
+  }
+
+  /** One student's record at this restaurant over the last 12 months: visits, orders, habits. */
+  async customer(
+    p: Principal,
+    admin: boolean,
+    slug: string,
+    userId: string,
+  ): Promise<OwnerCustomerDetailDto> {
+    await this.ownedMess(p, admin, slug);
+    const now = this.clock.now();
+    const since = new Date(now.getTime() - 365 * DAY_MS);
+    const today = campusClock(now).date;
+    const fromDay = campusClock(since).date;
+    const [all, views, blocks] = await Promise.all([
+      this.orders.listSince(since, 5000, slug),
+      this.extras.views ? this.extras.views.between(slug, fromDay, today) : Promise.resolve([]),
+      this.extras.blocks ? this.extras.blocks.list(slug) : Promise.resolve([]),
+    ]);
+    const mine = all
+      .filter((o) => o.userId === userId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    if (!mine.length) throw fail.notFound('That customer');
+    const last = mine[mine.length - 1]!;
+    const done = mine.filter((o) => o.status === 'accepted' || o.status === 'ready' || o.status === 'done');
+    const spent = done.reduce((n, o) => n + o.total, 0);
+    const active = mine.filter((o) => o.tiffin && o.status === 'done' && o.tiffin.endsOn >= today).at(-1);
+    const dishes = new Map<string, number>();
+    for (const o of done) for (const l of o.lines) dishes.set(l.name, (dishes.get(l.name) ?? 0) + l.qty);
+    const hours = new Array(24).fill(0) as number[];
+    for (const o of mine) hours[Math.floor(campusClock(o.createdAt).minutes / 60)]!++;
+    const peak = Math.max(...hours);
+    const months = new Map<string, { spent: number; orders: number }>();
+    for (const o of mine) {
+      const m = campusClock(o.createdAt).date.slice(0, 7);
+      const row = months.get(m) ?? { spent: 0, orders: 0 };
+      row.orders++;
+      if (done.includes(o)) row.spent += o.total;
+      months.set(m, row);
+    }
+    const seen = views.filter((v) => v.userId === userId || v.visitor === `u:${userId}`);
+    return {
+      customer: {
+        userId,
+        name: last.name,
+        phone: last.phone,
+        orders: mine.length,
+        spent,
+        firstOrderAt: mine[0]!.createdAt.toISOString(),
+        lastOrderAt: last.createdAt.toISOString(),
+        lastOrderId: last.id,
+        tiffin: active?.tiffin ? ({ ...active.tiffin } as OwnerCustomerDto['tiffin']) : null,
+        blocked: blocks.some((b) => b.userId === userId),
+      },
+      visitDays: seen.length,
+      views: seen.reduce((n, v) => n + v.views, 0),
+      completed: done.length,
+      cancelledByThem: mine.filter((o) => o.status === 'cancelled' && o.chat.endedBy === 'student').length,
+      declinedByYou: mine.filter(
+        (o) => o.status === 'rejected' || (o.status === 'cancelled' && o.chat.endedBy === 'owner'),
+      ).length,
+      unanswered: mine.filter((o) => o.status === 'cancelled' && o.chat.endedBy === 'auto').length,
+      avgOrder: done.length ? Math.round(spent / done.length) : 0,
+      modes: {
+        delivery: mine.filter((o) => o.mode === 'delivery').length,
+        pickup: mine.filter((o) => o.mode === 'pickup').length,
+      },
+      favourites: [...dishes.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([name, qty]) => ({ name, qty })),
+      usualHour: peak > 0 ? hours.indexOf(peak) : -1,
+      months: [...months.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([month, r]) => ({ month, ...r })),
+      history: [...mine].reverse().map((o) => ({
+        id: o.id,
+        code: o.code,
+        createdAt: o.createdAt.toISOString(),
+        total: o.total,
+        status: o.status,
+        mode: o.mode,
+        items: o.lines.map((l) => `${l.qty} × ${l.name}`).join(', '),
+        offer: o.offer,
+      })),
+    };
   }
 
   /**

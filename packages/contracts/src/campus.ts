@@ -522,6 +522,40 @@ export interface OwnerCustomerDto {
   blocked: boolean;
 }
 
+/** One student's whole record at a restaurant (the last 12 months), for its owner. */
+export interface OwnerCustomerDetailDto {
+  customer: OwnerCustomerDto;
+  /** Days they opened the restaurant's page, and opens in all (signed in only). */
+  visitDays: number;
+  views: number;
+  /** Orders that went through (accepted, ready or delivered). */
+  completed: number;
+  /** Cancelled by the student, declined or cancelled by the restaurant, or never answered. */
+  cancelledByThem: number;
+  declinedByYou: number;
+  unanswered: number;
+  /** Rupees per completed order (0 when none). */
+  avgOrder: number;
+  modes: { delivery: number; pickup: number };
+  /** What they order most, with how many in all. */
+  favourites: { name: string; qty: number }[];
+  /** Busiest hour for them (0–23, campus time), or -1. */
+  usualHour: number;
+  /** Rupees spent per month, oldest first ("2026-11"). */
+  months: { month: string; spent: number; orders: number }[];
+  /** Every order, newest first. */
+  history: {
+    id: string;
+    code: string;
+    createdAt: string;
+    total: number;
+    status: MessOrderStatus;
+    mode: 'delivery' | 'pickup';
+    items: string;
+    offer: string;
+  }[];
+}
+
 export const MessOrderStatusBody = z.object({
   status: z.enum(MESS_ORDER_STATUSES),
   /** Why it was declined, or a word to the student ("ready in 20 min"). */
@@ -673,15 +707,19 @@ export type ChatReportStatus = z.infer<typeof ChatReportStatus>;
 export const ChatReportStatusBody = z.object({ status: ChatReportStatus });
 
 /** A device that wants order alerts and chat messages for the signed-in account. */
-export const PushAccountBody = z.object({
-  endpoint: z
-    .string()
-    .url()
-    .max(1000)
-    .refine((u) => isPushAddress(u), 'Not a push address'),
-  keys: z.object({ p256dh: z.string().min(20).max(200), auth: z.string().min(8).max(100) }),
-  label: z.string().trim().max(60).default(''),
-});
+export const PushAccountBody = z
+  .object({
+    endpoint: z
+      .string()
+      .max(1000)
+      .refine((u) => isPushAddress(u), 'Not a push address'),
+    keys: z.object({ p256dh: z.string().max(200), auth: z.string().max(100) }),
+    label: z.string().trim().max(60).default(''),
+  })
+  .refine(
+    (v) => /^fcm:/.test(v.endpoint) || (v.keys.p256dh.length >= 20 && v.keys.auth.length >= 8),
+    'Missing push keys',
+  );
 export type PushAccountInput = z.infer<typeof PushAccountBody>;
 
 export interface ChatMessageDto {
@@ -863,20 +901,29 @@ const PUSH_HOSTS = [
   /^web\.push\.apple\.com$/, // Safari, iPhone home-screen apps
   /^[a-z0-9-]+\.notify\.windows\.com$/, // Edge on Windows
 ];
+/** An Android app's Firebase Cloud Messaging token, stored as "fcm:<token>". */
+export const isAppDevice = (u: string) => /^fcm:[A-Za-z0-9_:-]{20,400}$/.test(u);
 export const isPushAddress = (u: string) => {
+  if (isAppDevice(u)) return true;
   // "https://" + a bare host name (no port, no user, nothing odd) + "/".
   const m = /^https:\/\/([a-z0-9.-]+)\//i.exec(u);
   return !!m && PUSH_HOSTS.some((h) => h.test(m[1]!.toLowerCase()));
 };
-const endpoint = z.string().url().max(1000).refine(isPushAddress, 'Not a push address');
+const endpoint = z.string().max(1000).refine(isPushAddress, 'Not a push address');
+/** Web Push keys; app devices (fcm:) have none and send empty strings. */
+const pushKeys = z.object({ p256dh: z.string().max(200), auth: z.string().max(100) });
+const keysFit = (v: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+  isAppDevice(v.endpoint) || (v.keys.p256dh.length >= 20 && v.keys.auth.length >= 8);
 
-export const PushSubscribeBody = z.object({
-  endpoint,
-  keys: z.object({ p256dh: z.string().min(20).max(200), auth: z.string().min(8).max(100) }),
-  prefs: ReminderPrefs,
-  /** "Android · Chrome", so a student can tell their devices apart. */
-  label: z.string().trim().max(60).default(''),
-});
+export const PushSubscribeBody = z
+  .object({
+    endpoint,
+    keys: pushKeys,
+    prefs: ReminderPrefs,
+    /** "Android · Chrome", so a student can tell their devices apart. */
+    label: z.string().trim().max(60).default(''),
+  })
+  .refine(keysFit, 'Missing push keys');
 export type PushSubscribeInput = z.infer<typeof PushSubscribeBody>;
 export const PushEndpointBody = z.object({ endpoint });
 /** "Send a test" from a tool: a meal sample from the Mess menu, a class sample from the Timetable. */
@@ -886,10 +933,7 @@ export const PushPrefsBody = z.object({ endpoint, prefs: ReminderPrefs });
 /** The browser replaced a device's push address (sent by the service worker). */
 export const PushRenewBody = z.object({
   oldEndpoint: endpoint,
-  subscription: z.object({
-    endpoint,
-    keys: z.object({ p256dh: z.string().min(20).max(200), auth: z.string().min(8).max(100) }),
-  }),
+  subscription: z.object({ endpoint, keys: pushKeys }).refine(keysFit, 'Missing push keys'),
 });
 export type PushRenewInput = z.infer<typeof PushRenewBody>;
 
@@ -1240,4 +1284,111 @@ export interface OwnerInsightsDto {
   topCustomers: { name: string; orders: number; spent: number }[];
   /** Offers used on confirmed orders: how often, and how much they gave away. */
   offers: { label: string; orders: number; discount: number; revenue: number }[];
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Partner app: restaurant owners sign in with their mobile number and a 4-digit PIN
+//
+// No SMS: the admin checks the number in person when adding the owner, then reads them a one-time
+// setup code (valid 24 hours). The owner types number + code, picks a PIN, and stays signed in.
+// ════════════════════════════════════════════════════════════════════════════
+
+export const OWNER_PIN = {
+  /** Wrong PINs (or setup codes) in a row before the number is locked for a while. */
+  maxTries: 5,
+  lockMinutes: 15,
+  setupHours: 24,
+} as const;
+
+const mobileField = z
+  .string()
+  .trim()
+  .refine((v) => normaliseMobile(v) !== null, 'Use a 10-digit Indian mobile number')
+  .transform((v) => normaliseMobile(v)!);
+const pinField = z
+  .string()
+  .trim()
+  .regex(/^\d{4}$/, 'The PIN is 4 digits');
+
+export const partnerLoginSchema = z.object({ phone: mobileField, pin: pinField });
+export type PartnerLoginInput = z.infer<typeof partnerLoginSchema>;
+
+export const partnerSetPinSchema = z.object({
+  phone: mobileField,
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, 'The setup code is 6 digits'),
+  pin: pinField,
+});
+export type PartnerSetPinInput = z.infer<typeof partnerSetPinSchema>;
+
+/** What a successful sign-in returns: a normal session for the owner's account. */
+export interface PartnerSessionDto {
+  accessToken: string;
+  /** Null in the demo (its tokens aren't refreshed). */
+  refreshToken: string | null;
+  email: string;
+}
+
+export const ownerLoginAddSchema = z.object({
+  phone: mobileField,
+  name: z.string().trim().max(60).default(''),
+  /** The restaurant this owner runs. */
+  messSlug: z.string().trim().min(1).max(80),
+  /** The owner's own email if they have one; otherwise a private address is made for the number. */
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email()
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
+});
+export type OwnerLoginAddInput = z.infer<typeof ownerLoginAddSchema>;
+
+/** One owner sign-in, as the admin sees it. */
+export interface OwnerLoginDto {
+  phone: string;
+  name: string;
+  email: string;
+  /** The restaurants this owner runs (names). */
+  messes: { slug: string; name: string }[];
+  hasPin: boolean;
+  /** A setup code is waiting to be used (until this time). */
+  setupUntil: string | null;
+  lockedUntil: string | null;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+/** Shown once to the admin, to read out to the owner. */
+export interface OwnerSetupCodeDto {
+  phone: string;
+  code: string;
+  expiresAt: string;
+}
+
+/** The private address made for an owner without email (never mailed: .invalid can't receive). */
+export const ownerAddressFor = (phone: string) => `p${phone}@owners.invalid`;
+export const isOwnerAddress = (email: string) => /^p[6-9]\d{9}@owners\.invalid$/.test(email);
+
+/** Admin overview of the apps and the restaurants: owners, devices, orders, takings. */
+export interface AppsSummaryDto {
+  owners: { total: number; withPin: number; locked: number; signedInThisWeek: number };
+  /** Devices that get notifications: browsers (website) and the Android apps. */
+  devices: { website: number; apps: number; ownersReachable: number };
+  restaurants: { total: number; openNow: number };
+  orders: {
+    today: number;
+    todayRevenue: number;
+    month: number;
+    monthRevenue: number;
+    year: number;
+    yearRevenue: number;
+    /** Different students who ordered this year. */
+    customersThisYear: number;
+  };
+  /** Per restaurant, this year (best first). */
+  byRestaurant: { slug: string; name: string; open: boolean; orders: number; revenue: number }[];
 }

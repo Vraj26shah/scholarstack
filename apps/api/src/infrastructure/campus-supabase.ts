@@ -27,6 +27,8 @@ import type {
   MessViewRepository,
   OrderChatRepository,
   OrderChatState,
+  OwnerLoginRecord,
+  OwnerLoginRepository,
   PhoneRecord,
   PhoneRepository,
   PushCounter,
@@ -905,5 +907,55 @@ export class SupabaseTiffinMarks implements TiffinMarkRepository {
         .eq('meal', m.meal)
         .eq('makeup_for', m.makeupFor),
     );
+  }
+}
+
+const toOwnerLogin = (r: Row): OwnerLoginRecord => ({
+  phone: r.phone as string,
+  name: (r.name as string) ?? '',
+  email: r.email as string,
+  pinHash: (r.pin_hash as string) ?? '',
+  setupHash: (r.setup_hash as string) ?? '',
+  setupExpiresAt: r.setup_expires_at ? new Date(r.setup_expires_at as string) : null,
+  failed: Number(r.failed ?? 0),
+  lockedUntil: r.locked_until ? new Date(r.locked_until as string) : null,
+  lastLoginAt: r.last_login_at ? new Date(r.last_login_at as string) : null,
+  createdAt: new Date(r.created_at as string),
+});
+
+export class SupabaseOwnerLogins implements OwnerLoginRepository {
+  constructor(private readonly db: SupabaseClient) {}
+  async find(phone: string) {
+    const rows = must(await this.db.from('owner_logins').select('*').eq('phone', phone).limit(1)) as Row[];
+    return rows[0] ? toOwnerLogin(rows[0]) : null;
+  }
+  async list() {
+    const rows = must(
+      await this.db.from('owner_logins').select('*').order('created_at', { ascending: false }).limit(500),
+    ) as Row[];
+    return rows.map(toOwnerLogin);
+  }
+  async save(r: OwnerLoginRecord) {
+    must(
+      await this.db.from('owner_logins').upsert(
+        {
+          phone: r.phone,
+          name: r.name,
+          email: r.email,
+          pin_hash: r.pinHash,
+          setup_hash: r.setupHash,
+          setup_expires_at: r.setupExpiresAt?.toISOString() ?? null,
+          failed: r.failed,
+          locked_until: r.lockedUntil?.toISOString() ?? null,
+          last_login_at: r.lastLoginAt?.toISOString() ?? null,
+          created_at: r.createdAt.toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'phone' },
+      ),
+    );
+  }
+  async remove(phone: string) {
+    must(await this.db.from('owner_logins').delete().eq('phone', phone));
   }
 }

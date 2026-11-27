@@ -1,3 +1,4 @@
+import type { AppsSummaryDto } from '@ss/contracts';
 import type { AcademicService } from '../application/academic-service';
 import type { AccessMailService } from '../application/access-mail';
 import type { AccountService } from '../application/account-service';
@@ -20,6 +21,7 @@ import type { OfferService } from '../application/offer-service';
 import type { ChatService } from '../application/order-chat';
 import type { OrderService } from '../application/order-service';
 import type { PackService } from '../application/packs';
+import type { PartnerLoginService } from '../application/partner-login';
 import type { PhoneService } from '../application/phone-service';
 import type { PreviewService } from '../application/preview-service';
 import type { PriceBook } from '../application/price-book';
@@ -73,6 +75,9 @@ export interface Container {
   orders: OrderService;
   /** Students' mobile numbers, checked once with an SMS code. */
   phones: PhoneService;
+  partnerLogin: PartnerLoginService;
+  /** Admin's look at the apps and restaurants. */
+  appsSummary: () => Promise<AppsSummaryDto>;
   /** The chat on each order (student ⇄ restaurant), blocks, reports, and the admin's view. */
   chats: ChatService;
   /** Admins and restaurant owners may sign in from outside the college domain. */

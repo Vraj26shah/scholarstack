@@ -11,6 +11,7 @@ import {
   SupabaseMessViews,
   SupabaseMesses,
   SupabaseOrderChat,
+  SupabaseOwnerLogins,
   SupabasePhones,
   SupabasePush,
   SupabaseTiffinMarks,
@@ -23,8 +24,10 @@ import {
   RandomIds,
   SystemClock,
 } from '../infrastructure/crypto';
+import { FcmPushSender, SplitPushSender, readServiceAccount } from '../infrastructure/fcm';
 import { BrevoMailer, NoMailer } from '../infrastructure/mail';
 import { RazorpayGateway } from '../infrastructure/payments';
+import { SupabaseSessionMinter } from '../infrastructure/session-minter';
 import { NoSms, TwilioVerifySms, TwoFactorSms } from '../infrastructure/sms-verifier';
 import {
   SupabaseAnnouncements,
@@ -119,7 +122,8 @@ export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): C
       push: new SupabasePush(db),
       pushQueue: runtime.pushQueue,
       // Without keys, reminders stay off (the site says so) and nothing is sent.
-      pushSender:
+      // Browsers through Web Push (VAPID), the Android apps through Firebase (fcm: devices).
+      pushSender: new SplitPushSender(
         env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY
           ? new VapidPushSender(
               env.VAPID_PUBLIC_KEY.trim(),
@@ -127,7 +131,12 @@ export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): C
               env.VAPID_SUBJECT?.trim() || `mailto:${config.adminEmails[0] ?? 'admin@example.com'}`,
             )
           : new MemoryPushSender(''),
+        fcmSender(env.FCM_PROJECT_ID, env.FCM_SERVICE_ACCOUNT),
+      ),
       phones: new SupabasePhones(db),
+      ownerLogins: new SupabaseOwnerLogins(db),
+      sessionMinter: new SupabaseSessionMinter(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY),
+      ownerPinPepper: env.OWNER_PIN_PEPPER?.trim() ?? '',
       messViews: new SupabaseMessViews(db),
       tiffinMarks: new SupabaseTiffinMarks(db),
       // One SMS service: 2Factor (India) when its key is set, else Twilio Verify, else none (then
@@ -188,4 +197,11 @@ export function supabaseContainer(env: SupabaseEnv, runtime: RuntimeAdapters): C
 /** The catalogue adapter on its own (ops CLI, local converter). */
 export function supabaseCatalogue(env: Pick<SupabaseEnv, 'SUPABASE_URL' | 'SUPABASE_SECRET_KEY'>) {
   return new SupabaseCatalogue(supabaseClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY));
+}
+
+/** Firebase for the apps, when its project and service account are set (else app devices are skipped). */
+function fcmSender(projectId: string | undefined, serviceAccount: string | undefined) {
+  const account = readServiceAccount(serviceAccount ?? '');
+  const project = projectId?.trim() || account?.project_id || '';
+  return account && project ? new FcmPushSender(project, account) : null;
 }
