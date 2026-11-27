@@ -1,5 +1,6 @@
 import {
   DAY_NAMES,
+  MAX_OWNERS,
   MEAL_KEYS,
   MEAL_NAMES,
   type MealKey,
@@ -194,7 +195,7 @@ function MessEditor({
   const ownerOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ownerDraft.trim());
   const addOwner = () => {
     const email = ownerDraft.trim().toLowerCase();
-    if (!ownerOk || form.ownerEmails.includes(email) || form.ownerEmails.length >= 5) return;
+    if (!ownerOk || form.ownerEmails.includes(email) || form.ownerEmails.length >= MAX_OWNERS) return;
     set({ ownerEmails: [...form.ownerEmails, email] });
     setOwnerDraft('');
   };
@@ -410,7 +411,11 @@ function MessEditor({
                   placeholder="owner@gmail.com"
                   aria-label="Owner's email"
                 />
-                <Button type="submit" variant="outline" disabled={!ownerOk || form.ownerEmails.length >= 5}>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={!ownerOk || form.ownerEmails.length >= MAX_OWNERS}
+                >
                   Add owner
                 </Button>
               </form>

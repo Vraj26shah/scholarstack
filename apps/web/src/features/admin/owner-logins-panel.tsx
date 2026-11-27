@@ -1,4 +1,10 @@
-import { type OwnerSetupCodeDto, formatMobile, isOwnerAddress, normaliseMobile } from '@ss/contracts';
+import {
+  MAX_OWNERS,
+  type OwnerSetupCodeDto,
+  formatMobile,
+  isOwnerAddress,
+  normaliseMobile,
+} from '@ss/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api, friendly } from '../../lib/api';
@@ -31,7 +37,12 @@ export function OwnerLoginsPanel() {
   const [slug, setSlug] = useState('');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState<OwnerSetupCodeDto | null>(null);
-  const refresh = () => qc.invalidateQueries({ queryKey: ['admin-owner-logins'] });
+  // Both lists: the sign-ins, and who can open each restaurant.
+  const refresh = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ['admin-owner-logins'] }),
+      qc.invalidateQueries({ queryKey: ['admin-messes'] }),
+    ]);
 
   const add = useMutation({
     mutationFn: () =>
@@ -138,6 +149,7 @@ export function OwnerLoginsPanel() {
         </Button>
       </form>
       {add.isError && <p className="m-0 text-[14px] font-semibold text-blush-text">{friendly(add.error)}</p>}
+      <WhoCanOpen slug={slug || restaurants[0]?.slug || ''} />
       {act.isError && <p className="m-0 text-[14px] font-semibold text-blush-text">{friendly(act.error)}</p>}
 
       {list.isError ? (
@@ -217,5 +229,77 @@ export function OwnerLoginsPanel() {
         </ul>
       )}
     </Panel>
+  );
+}
+
+/**
+ * Everyone who can open the chosen restaurant's orders (Partner app numbers and email addresses),
+ * with Remove, so a full restaurant can make room right here.
+ */
+function WhoCanOpen({ slug }: { slug: string }) {
+  const qc = useQueryClient();
+  const all = useQuery({ queryKey: ['admin-messes'], queryFn: api.adminMesses });
+  const mess = all.data?.find((m) => m.slug === slug);
+  const remove = useMutation({
+    mutationFn: async (email: string) => {
+      if (!mess) return;
+      const { sort: _s, updatedAt: _u, ...input } = mess;
+      await api.adminSaveMess(mess.slug, {
+        ...input,
+        ownerEmails: mess.ownerEmails.filter((e) => e !== email),
+      });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin-messes'] });
+      void qc.invalidateQueries({ queryKey: ['admin-owner-logins'] });
+    },
+  });
+  if (!slug) return null;
+  if (!mess) return all.isLoading ? <Skeleton className="h-16 rounded-2xl" /> : null;
+  return (
+    <section className="flex flex-col gap-2 rounded-2xl bg-sunk px-4 py-3">
+      <h3 className="m-0 text-[15px] font-bold">
+        Who can open {mess.name}{' '}
+        <span className="font-normal text-ink2">
+          · {mess.ownerEmails.length} of {MAX_OWNERS}
+        </span>
+      </h3>
+      {mess.ownerEmails.length === 0 ? (
+        <p className="m-0 text-[14px] text-ink2">Nobody yet. Add a number above.</p>
+      ) : (
+        <ul className="m-0 p-0 list-none flex flex-col divide-y divide-line">
+          {mess.ownerEmails.map((e) => (
+            <li key={e} className="flex flex-wrap items-center justify-between gap-3 py-2">
+              <span className="min-w-0 text-[14px]">
+                {isOwnerAddress(e) ? (
+                  <>
+                    <strong className="tabular-nums">{formatMobile(e.slice(1, 11))}</strong>
+                    <span className="text-ink2"> · Partner app</span>
+                  </>
+                ) : (
+                  <span className="break-all">{e}</span>
+                )}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={remove.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Stop ${isOwnerAddress(e) ? formatMobile(e.slice(1, 11)) : e} opening ${mess.name}?`,
+                    )
+                  )
+                    remove.mutate(e);
+                }}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {remove.isError && <p className="m-0 text-[13px] text-blush-text">{friendly(remove.error)}</p>}
+    </section>
   );
 }

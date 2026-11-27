@@ -1,4 +1,5 @@
 import {
+  MAX_OWNERS,
   OWNER_PIN,
   type OwnerLoginAddInput,
   type OwnerLoginDto,
@@ -168,7 +169,10 @@ export class PartnerLoginService {
     const email =
       existing?.email ?? (input.email ? normaliseEmail(input.email) : ownerAddressFor(input.phone));
     if (!mess.ownerEmails.includes(email)) {
-      if (mess.ownerEmails.length >= 5) throw fail.badRequest('A restaurant can have at most 5 owners.');
+      if (mess.ownerEmails.length >= MAX_OWNERS)
+        throw fail.badRequest(
+          `${mess.name} already has ${MAX_OWNERS} people who can open it. Remove one under "Who can open ${mess.name}" below, then add this number.`,
+        );
       await this.messes.save({ ...mess, ownerEmails: [...mess.ownerEmails, email] });
       this.ownersChanged();
     }
@@ -215,8 +219,17 @@ export class PartnerLoginService {
   }
 
   /** Stops PIN sign-in for this number (the account stays on the restaurant until removed there). */
+  /** Removes the number's sign-in, and takes its address off every restaurant it could open. */
   async remove(phone: string): Promise<void> {
+    const r = await this.repo.find(phone);
     await this.repo.remove(phone);
+    if (!r) return;
+    for (const mess of await this.messes.list()) {
+      if (!mess.ownerEmails.includes(r.email)) continue;
+      const { updatedAt: _u, ...rest } = mess;
+      await this.messes.save({ ...rest, ownerEmails: mess.ownerEmails.filter((e) => e !== r.email) });
+    }
+    this.ownersChanged();
   }
 }
 

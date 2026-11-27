@@ -1,4 +1,4 @@
-import { OWNER_PIN, ownerAddressFor } from '@ss/contracts';
+import { MAX_OWNERS, OWNER_PIN, ownerAddressFor } from '@ss/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { memoryContainer } from '../src/composition/memory';
 import type { createApp } from '../src/http/app';
@@ -91,6 +91,23 @@ describe('restaurant owners sign in with mobile number + PIN', () => {
     expect(await lookup('+91 98765 43210')).toEqual({ next: 'pin' });
     // A bad number is refused, not looked up.
     expect((await new Browser(app).call('POST', '/partner/lookup', { phone: '12' })).status).toBe(400);
+  });
+
+  it('a full restaurant says how to make room; ten people can open one', async () => {
+    const a = await admin();
+    const { updatedAt: _u, sort: _s, ...input } = (await a.call('GET', `/mess/${SLUG}`)).json;
+    const ten = Array.from({ length: MAX_OWNERS }, (_, i) => `staff${i}@example.com`);
+    expect((await a.call('PUT', `/admin/mess/${SLUG}`, { ...input, ownerEmails: ten })).status).toBe(200);
+    const full = await a.call('POST', '/admin/owner-logins', { phone: PHONE, messSlug: SLUG });
+    expect(full.status).toBe(400);
+    expect(full.json.error.message).toMatch(/Who can open/);
+    // Make room and it works.
+    await a.call('PUT', `/admin/mess/${SLUG}`, { ...input, ownerEmails: ten.slice(1) });
+    expect((await a.call('POST', '/admin/owner-logins', { phone: PHONE, messSlug: SLUG })).status).toBe(200);
+    expect((await a.call('GET', `/mess/${SLUG}`)).json.ownerEmails).toContain(ownerAddressFor(PHONE));
+    // Removing the sign-in frees its place on the restaurant too.
+    await a.call('DELETE', `/admin/owner-logins/${PHONE}`);
+    expect((await a.call('GET', `/mess/${SLUG}`)).json.ownerEmails).not.toContain(ownerAddressFor(PHONE));
   });
 
   it('locks the number after 5 wrong PINs, then opens again after 15 minutes', async () => {

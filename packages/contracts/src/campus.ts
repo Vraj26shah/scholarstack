@@ -227,6 +227,9 @@ export function bestDiscount(
   return { offer: best, saving, codeProblem };
 }
 
+/** Most people who can open one restaurant's orders (owner, manager, cooks, a counter phone…). */
+export const MAX_OWNERS = 10;
+
 const MessFields = z.object({
   slug,
   name: z.string().trim().min(2, 'Give it a name').max(80),
@@ -248,7 +251,7 @@ const MessFields = z.object({
   /** What students can order, by section, with the owner's prices. */
   order: z.array(MessOrderSection).max(12).default([]),
   /** Who runs the restaurant: these addresses may sign in (any domain) and see its orders. */
-  ownerEmails: z.array(z.string().trim().toLowerCase().email()).max(5).default([]),
+  ownerEmails: z.array(z.string().trim().toLowerCase().email()).max(MAX_OWNERS).default([]),
   /** The owner is taking orders on the site right now. */
   ordersOpen: z.boolean().default(false),
   /** Most orders the restaurant takes on the site in one day (campus time); 0 = no limit. */
