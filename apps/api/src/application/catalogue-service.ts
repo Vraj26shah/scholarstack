@@ -204,6 +204,12 @@ export class CatalogueService {
     return out;
   }
 
+  /** Every live, readable course's and bundle's slug: what the sitemap lists for search engines. */
+  async publicSlugs(): Promise<{ courses: string[]; bundles: string[] }> {
+    const [courses, bundles] = await Promise.all([this.searchable(), this.bundleCards()]);
+    return { courses: courses.map((c) => c.card.slug), bundles: bundles.map((b) => b.slug) };
+  }
+
   /** Search the whole live catalogue: every word typed must appear (title, code, sem, year, programme). */
   async search(query: string): Promise<CatalogueSearchDto> {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 8);

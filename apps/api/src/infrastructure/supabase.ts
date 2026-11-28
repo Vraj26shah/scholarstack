@@ -1706,6 +1706,24 @@ export class SupabaseInsights implements InsightsRepository {
         lastAt: iso(u.lastAt),
         topPage: (u.topPage as string | null) ?? null,
       })),
+      // Missing until 20261128000100_retention.sql is applied: the panel then just leaves it out.
+      ...(r.retention && typeof r.retention === 'object'
+        ? {
+            retention: {
+              countingSince: (r.retention as Row).countingSince
+                ? String((r.retention as Row).countingSince)
+                : null,
+              weeks: rows((r.retention as Row).weeks).map((w) => ({
+                week: String(w.week),
+                joined: num(w.joined),
+                weekReady: num(w.weekReady),
+                weekBack: num(w.weekBack),
+                monthReady: num(w.monthReady),
+                monthBack: num(w.monthBack),
+              })),
+            },
+          }
+        : {}),
     };
   }
   async people() {

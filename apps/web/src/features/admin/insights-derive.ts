@@ -277,3 +277,43 @@ export function sourceTotals(rows: SourceRow[]) {
   }
   return [...by.values()].sort((p, q) => q.signedIn - p.signedIn || q.arrived - p.arrived);
 }
+
+/** One signup week, in words an admin can act on. Percentages are null until the week can be judged. */
+export interface ComebackRow {
+  week: string;
+  joined: number;
+  /** Came back within 7 days, of those who joined at least 7 days ago. */
+  weekPct: number | null;
+  weekBack: number;
+  weekReady: number;
+  /** Still around in week 4, of those who joined at least 28 days ago. */
+  monthPct: number | null;
+  monthBack: number;
+  monthReady: number;
+}
+
+const share = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : null);
+
+/** Who comes back, newest signup week first, plus the overall "back within a week" across them. */
+export function comeback(activity: AdminActivityDto | undefined): {
+  rows: ComebackRow[];
+  weekPct: number | null;
+  weekReady: number;
+  countingSince: string | null;
+} | null {
+  const r = activity?.retention;
+  if (!r) return null;
+  const rows = r.weeks.map((w) => ({
+    week: w.week,
+    joined: w.joined,
+    weekPct: share(w.weekBack, w.weekReady),
+    weekBack: w.weekBack,
+    weekReady: w.weekReady,
+    monthPct: share(w.monthBack, w.monthReady),
+    monthBack: w.monthBack,
+    monthReady: w.monthReady,
+  }));
+  const ready = rows.reduce((t, w) => t + w.weekReady, 0);
+  const back = rows.reduce((t, w) => t + w.weekBack, 0);
+  return { rows, weekPct: share(back, ready), weekReady: ready, countingSince: r.countingSince };
+}

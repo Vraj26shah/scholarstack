@@ -71,3 +71,25 @@ describe('Insights answers', () => {
     expect(steps[biggestDrop(steps)!]!.label).toBe('Paid'); // 20 → 4 is 20%, worse than 60 → 20
   });
 });
+
+describe('Who comes back', () => {
+  it('is hidden until the database sends retention, and waits for a full week before judging', async () => {
+    const { comeback } = await import('../features/admin/insights-derive');
+    expect(comeback(activity([], []))).toBeNull();
+    const c = comeback({
+      ...activity([], []),
+      retention: {
+        countingSince: '2026-11-22',
+        weeks: [
+          { week: '2026-11-23', joined: 4, weekReady: 0, weekBack: 0, monthReady: 0, monthBack: 0 },
+          { week: '2026-11-16', joined: 5, weekReady: 4, weekBack: 1, monthReady: 0, monthBack: 0 },
+        ],
+      },
+    })!;
+    expect(c.rows[0]!.weekPct).toBeNull();
+    expect(c.rows[1]!.weekPct).toBe(25);
+    expect(c.rows[1]!.monthPct).toBeNull();
+    expect(c.weekPct).toBe(25);
+    expect(c.weekReady).toBe(4);
+  });
+});

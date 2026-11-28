@@ -4,6 +4,8 @@ Status as of 23 Oct 2026 (v0.7.0). **Me** = built here. **You** = an account ste
 Everything marked done is covered by an automated test (see QA_REPORT.md).
 
 ## Done
+- [x] 0.51.0 · Fix: tool, app, contribute and restaurant link previews now reach crawlers (run_worker_first); sitemap.xml + robots.txt; Admin › Insights › Students › Who comes back (by signup week)
+- [ ] 0.51.0 · **You:** apply `20261128000100_retention.sql` to live Supabase (`pnpm ops db:apply`), deploy, then submit `/sitemap.xml` in Google Search Console
 - [x] 0.50.0 · Marketing: own link-preview card for each tool page, class reminders at the top of the Timetable maker, tagged share links counted in Admin › Insights › Where people come from (visits + sign-ins per group/post), link maker
 - [ ] 0.50.0 · **You:** deploy; then make every shared link in Admin › Insights › Where people come from › Make a link to share (one per group, post or poster)
 - [x] 0.49.0 · Header buttons arrive with the account (no shifting clicks); cron jobs jittered, keep-alive pings the database directly with retries

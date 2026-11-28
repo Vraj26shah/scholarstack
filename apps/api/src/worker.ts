@@ -67,6 +67,11 @@ const handler = {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/'))
       return withEdgeCache(request, ctx, () => Promise.resolve(app.fetch(request, env, ctx)));
+    // Search engines read the sitemap at the root; the API builds it from what is live.
+    if (url.pathname === '/sitemap.xml') {
+      const api = new Request(new URL('/api/sitemap.xml', url), request);
+      return withEdgeCache(api, ctx, () => Promise.resolve(app.fetch(api, env, ctx)));
+    }
     // A course or bundle link opened by a link-preview crawler (LinkedIn, WhatsApp, X…): the page
     // with that course's own title and description. Any trouble: the plain page, as for people.
     const item = sharedItem(url.pathname);
@@ -88,10 +93,12 @@ const handler = {
         return out;
       }
     }
-    // Everything else is the static website (single-page app). Course and bundle paths reach
-    // here first (for the crawlers above), so a miss falls back to the app shell itself.
+    // Everything else is the static website (single-page app). Shared pages (run_worker_first in
+    // wrangler.jsonc) reach here first for the crawlers above, so a page miss falls back to the app
+    // shell itself; a missing file (anything with an extension) stays a 404.
     let res = await env.ASSETS!.fetch(request);
-    if (res.status === 404 && item) res = await env.ASSETS!.fetch(new Request(new URL('/', url), request));
+    if (res.status === 404 && !/\.[a-z0-9]+$/i.test(url.pathname))
+      res = await env.ASSETS!.fetch(new Request(new URL('/', url), request));
     const out = new Response(res.body, res);
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) out.headers.set(k, v);
     return out;

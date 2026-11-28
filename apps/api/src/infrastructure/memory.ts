@@ -1235,6 +1235,56 @@ export class MemoryInsights implements InsightsRepository {
       pages: group('page'),
       actions: group('action').map(({ studentHits: _s, ...a }) => a),
       students,
+      retention: this.retention(),
+    };
+  }
+
+  /** Same as the database's admin_retention(): who comes back, by signup week (Monday, IST). */
+  private retention() {
+    const all = this.activityRows(new Date(0));
+    const countingSince = all.length ? all.map((r) => r.day).sort()[0]! : null;
+    if (!countingSince) return { countingSince: null, weeks: [] };
+    const today = istDay(this.db.clock.now());
+    const plus = (day: string, n: number) =>
+      new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+    const monday = (day: string) => {
+      const d = new Date(`${day}T00:00:00Z`);
+      return plus(day, -((d.getUTCDay() + 6) % 7));
+    };
+    const admins = new Set(this.db.admins.map((a) => a.email.toLowerCase()));
+    const from = [countingSince, plus(today, -55)].sort()[1]!;
+    const activeOn = (userId: string, a: string, b: string) =>
+      all.some((r) => r.userId === userId && r.day >= a && r.day <= b);
+    const weeks = new Map<
+      string,
+      { joined: number; weekReady: number; weekBack: number; monthReady: number; monthBack: number }
+    >();
+    for (const p of this.db.profiles.values()) {
+      const joinedAt = this.db.createdAt.get(p.id);
+      if (!joinedAt || p.email.endsWith('@owners.invalid') || admins.has(p.email.toLowerCase())) continue;
+      const jd = istDay(joinedAt);
+      if (jd < from) continue;
+      const w = weeks.get(monday(jd)) ?? {
+        joined: 0,
+        weekReady: 0,
+        weekBack: 0,
+        monthReady: 0,
+        monthBack: 0,
+      };
+      w.joined += 1;
+      if (plus(jd, 7) <= today) {
+        w.weekReady += 1;
+        if (activeOn(p.id, plus(jd, 1), plus(jd, 7))) w.weekBack += 1;
+      }
+      if (plus(jd, 28) <= today) {
+        w.monthReady += 1;
+        if (activeOn(p.id, plus(jd, 22), plus(jd, 28))) w.monthBack += 1;
+      }
+      weeks.set(monday(jd), w);
+    }
+    return {
+      countingSince,
+      weeks: [...weeks].sort((a, b) => b[0].localeCompare(a[0])).map(([week, w]) => ({ week, ...w })),
     };
   }
 

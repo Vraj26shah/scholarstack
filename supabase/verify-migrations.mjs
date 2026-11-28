@@ -1232,6 +1232,15 @@ check('RLS: students cannot run the earnings report', await denied('select * fro
       activity.daily.length === 8,
     JSON.stringify(activity.summary),
   );
+  check(
+    'admin_activity carries who comes back, by signup week, judged only after a full week',
+    activity.retention &&
+      typeof activity.retention.countingSince === 'string' &&
+      Array.isArray(activity.retention.weeks) &&
+      activity.retention.weeks.every((w) => w.weekBack <= w.weekReady && w.weekReady <= w.joined),
+    JSON.stringify(activity.retention),
+  );
+  check('RLS: students cannot read who comes back', await denied('select public.admin_retention()'));
   const mine = (await one(`select public.admin_student_activity($1, now() - interval '30 days') as r`, [uid]))
     .r;
   check(

@@ -2772,6 +2772,30 @@ export interface AdminActivityDto {
   actions: ActivityActionDto[];
   /** Most recently active first. */
   students: ActiveStudentDto[];
+  /** Who comes back, by signup week. Missing until the retention migration is applied. */
+  retention?: RetentionDto;
+}
+
+/** Students who signed up in one week (Monday, IST) and how many came back. */
+export interface RetentionWeekDto {
+  /** Monday of the signup week, YYYY-MM-DD. */
+  week: string;
+  joined: number;
+  /** Joined at least 7 days ago, so "back within a week" can be judged. */
+  weekReady: number;
+  /** Of weekReady: opened anything again on days 1–7 after signing up. */
+  weekBack: number;
+  /** Joined at least 28 days ago. */
+  monthReady: number;
+  /** Of monthReady: opened anything on days 22–28 (still around in week 4). */
+  monthBack: number;
+}
+
+export interface RetentionDto {
+  /** First day activity was counted (YYYY-MM-DD), or null before anything was counted. */
+  countingSince: string | null;
+  /** Newest signup week first, last 8 weeks. Admins and restaurant owners are left out. */
+  weeks: RetentionWeekDto[];
 }
 
 export interface StudentActivityItemDto {

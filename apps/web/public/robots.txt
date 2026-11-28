@@ -8,3 +8,6 @@ Disallow: /account
 Disallow: /shelf
 Disallow: /auth/
 Disallow: /api/
+
+# The list of public pages for search engines (built from what is live).
+Sitemap: https://scholarstack.campusnotes.workers.dev/sitemap.xml

@@ -5,7 +5,7 @@ import { Browser, setup } from './harness';
 const UA = { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0 Safari/537.36' };
 
 async function world() {
-  const { env, app } = setup();
+  const { env, app, clock } = setup();
   const admin = new Browser(app);
   await admin.signIn('admin@vitbhopal.ac.in');
   const hit = (b: Browser, body: unknown, headers: Record<string, string> = UA) =>
@@ -13,7 +13,7 @@ async function world() {
   const page = (b: Browser, path: string) => hit(b, { kind: 'page', path });
   const activity = async (days = '7') => (await admin.call('GET', `/admin/activity?days=${days}`)).json;
   const userId = (email: string) => [...env.db.profiles.values()].find((p) => p.email === email)!.id;
-  return { env, app, admin, hit, page, activity, userId };
+  return { env, app, clock, admin, hit, page, activity, userId };
 }
 
 describe('what pages are recorded as', () => {
@@ -198,6 +198,34 @@ describe('student activity', () => {
     // Still sorted by email, buyers and everyone else together.
     const emails = list.map((s) => s.email);
     expect(emails).toEqual([...emails].sort((a, b) => a.localeCompare(b)));
+  });
+
+  it('who comes back: by signup week, judged only after a full week, admins left out', async () => {
+    const { env, app, clock, admin, page, activity } = await world();
+    env.db.admins.push({ email: 'admin@vitbhopal.ac.in', source: 'manual', addedAt: new Date(0) });
+    const back = new Browser(app);
+    await back.signIn('back.23bce10006@vitbhopal.ac.in');
+    await page(back, '/tools/timetable');
+    const once = new Browser(app);
+    await once.signIn('once.23bce10007@vitbhopal.ac.in');
+    await page(once, '/tools/cgpa');
+    // Too soon to say anything about the week.
+    let r = (await activity()).retention;
+    expect(r.weeks.reduce((t: number, w: { joined: number }) => t + w.joined, 0)).toBe(2);
+    expect(r.weeks.every((w: { weekReady: number }) => w.weekReady === 0)).toBe(true);
+    // Two days later one of them comes back; a week on, both can be judged.
+    clock.advance(2 * 86_400_000);
+    await page(back, '/tools/timetable');
+    clock.advance(6 * 86_400_000);
+    await admin.signIn('admin@vitbhopal.ac.in');
+    r = (await activity()).retention;
+    const sum = (k: 'joined' | 'weekReady' | 'weekBack' | 'monthReady') =>
+      r.weeks.reduce((t: number, w: Record<string, number>) => t + w[k]!, 0);
+    expect(r.countingSince).toEqual(expect.any(String));
+    expect(sum('joined')).toBe(2);
+    expect(sum('weekReady')).toBe(2);
+    expect(sum('weekBack')).toBe(1);
+    expect(sum('monthReady')).toBe(0);
   });
 
   it('only admins can read activity', async () => {

@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { api, friendly } from '../../lib/api';
 import { formatMoney } from '../../lib/format';
 import { ErrorState, Skeleton } from '../../shared/ui/feedback';
+import { ComebackView } from './comeback-view';
 import {
   DROP_ADVICE,
   VERDICT,
@@ -625,7 +626,12 @@ function Report({ data, activity }: { data: AdminInsightsDto; activity: Activity
       {view === 'tools' && <ToolsView activity={activity} />}
       {view === 'stuck' && <StuckView activity={activity} />}
       {view === 'pages' && <ActivityTables activity={activity} part="pages" />}
-      {view === 'students' && <ActivityTables activity={activity} part="students" />}
+      {view === 'students' && (
+        <>
+          <ComebackView activity={activity.data} />
+          <ActivityTables activity={activity} part="students" />
+        </>
+      )}
 
       {view === 'buying' && (
         <>

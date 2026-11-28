@@ -12,12 +12,27 @@ import { z } from 'zod';
 import { fetchCover } from '../../application/book-lookup';
 import { sha256Hex } from '../../infrastructure/crypto';
 import { type AppEnv, bearer, networkKey, requestMeta, throttle } from '../helpers';
+import { sitemapXml } from '../sitemap';
 
 export const catalogueRoutes = new Hono<AppEnv>();
 
 catalogueRoutes.get('/catalogue', async (c) => {
   c.header('cache-control', 'no-store');
   return c.json(await c.get('container').catalogue.index());
+});
+
+/**
+ * sitemap.xml for search engines (the Worker serves /sitemap.xml from here). Restaurants are left
+ * out while the mess feature is switched off; any trouble there still gives the rest.
+ */
+catalogueRoutes.get('/sitemap.xml', async (c) => {
+  const k = c.get('container');
+  const [slugs, messes] = await Promise.all([k.catalogue.publicSlugs(), k.mess.list(false).catch(() => [])]);
+  const origin = new URL(c.req.url).origin;
+  return c.body(sitemapXml(origin, { ...slugs, messes: messes.map((m) => m.slug) }), 200, {
+    'content-type': 'application/xml; charset=utf-8',
+    'cache-control': 'public, max-age=3600',
+  });
 });
 
 /** Sales running right now (a Diwali offer, say), for the banner above the catalogue. */

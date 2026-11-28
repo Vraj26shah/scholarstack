@@ -10,8 +10,18 @@
     "directory": "../web/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // /c/* and /b/*: so link-preview crawlers get each course's own title (share-preview.ts).
-    "run_worker_first": ["/api/*", "/c/*", "/b/*"]
+    // Shared pages: so link-preview crawlers get each page's own card (share-preview.ts). Any path
+    // in PAGE_PREVIEWS or sharedItem() must be listed here, or the home-page card is served instead.
+    "run_worker_first": [
+      "/api/*",
+      "/c/*",
+      "/b/*",
+      "/m/*",
+      "/tools/*",
+      "/get-app",
+      "/contribute",
+      "/sitemap.xml"
+    ]
   },
   "r2_buckets": [{ "binding": "NOTES", "bucket_name": "scholarstack" }],
   "ratelimits": [{ "name": "PAGE_LIMITER", "namespace_id": "1001", "simple": { "limit": 40, "period": 60 } }],

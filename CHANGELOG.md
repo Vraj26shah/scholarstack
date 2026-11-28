@@ -4,6 +4,11 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Link previews actually reach crawlers, sitemap, "Who comes back" (28 Nov)
+- **Fix: tool and restaurant link previews were never served.** The Worker only ran before the static site for `/api`, `/c` and `/b`, so a shared `/tools/…`, `/get-app`, `/contribute` or `/m/…` link still showed the home page's "semester notes" card (checked live with a WhatsApp crawler). `run_worker_first` in `wrangler.jsonc` now lists every shared page, and a test fails if a page with its own preview is missing from it. A page path the static site doesn't have falls back to the app shell (missing files stay 404).
+- **sitemap.xml** for Google: home, the four tools, /get-app, /contribute, /help and every live course (`/c/…`), bundle (`/b/…`) and published restaurant (`/m/…`), built from what is live and cached for an hour. Never lists reading, checkout, account or admin pages. `robots.txt` points to it.
+- **Who comes back** (Admin › Insights › Students): students grouped by the week they signed up, with how many opened anything again within 7 days and how many were still around in week 4 ("too soon" until a week can be judged), plus one headline figure and what it means. Admins and restaurant owners are left out; only students who joined after activity counting started (22 Nov) are included. Carried inside the existing `admin_activity()` call (still one request). Migration `20261128000100_retention` (in apply-all.sql); until it is applied the section simply doesn't show.
+
 ### Marketing: link previews, tagged links, reminders up front (28 Nov)
 - **Every tool link has its own preview card**: links to the Timetable maker, Attendance and CGPA calculators, Mess menu, /get-app and /contribute shared on WhatsApp, Instagram, Telegram and the like now show that page's own title and description (e.g. "Timetable maker + class reminders") instead of the home page's "semester notes" card. Crawlers only; people get the page as before.
 - **Class reminders at the top of the Timetable maker**: before any course is added, a "Get class reminders" line sits right under the header with a **Sign in for reminders** button (it was near the bottom of the page). Signing in returns to the reminders card.
